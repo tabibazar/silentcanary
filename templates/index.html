@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome - SilentCanary{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="jumbotron bg-light p-5 rounded">
+            <h1 class="display-4">
+                <i class="fas fa-dove text-primary"></i> SilentCanary
+            </h1>
+            <p class="lead">A modern dead man's switch monitoring service to keep your critical systems under watch.</p>
+            <hr class="my-4">
+            <p>Create canaries to monitor your cron jobs, scripts, and services. Get alerted when they stop checking in.</p>
+            <div class="d-grid gap-2 d-md-flex justify-content-md-start">
+                <a class="btn btn-primary btn-lg" href="{{ url_for('register') }}" role="button">Get Started</a>
+                <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('login') }}" role="button">Sign In</a>
+            </div>
+        </div>
+
+        <div class="row mt-5">
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-heartbeat fa-3x text-primary mb-3"></i>
+                        <h5 class="card-title">Health Monitoring</h5>
+                        <p class="card-text">Monitor your critical processes and get alerts when they fail to check in.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-envelope fa-3x text-primary mb-3"></i>
+                        <h5 class="card-title">Email Alerts</h5>
+                        <p class="card-text">Receive instant email notifications when your canaries stop responding.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-cogs fa-3x text-primary mb-3"></i>
+                        <h5 class="card-title">Easy Setup</h5>
+                        <p class="card-text">Simple HTTP endpoints make it easy to integrate with any system or script.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

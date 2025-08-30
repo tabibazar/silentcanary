@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Create Canary - SilentCanary{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title mb-4">
+                    <i class="fas fa-plus-circle text-primary"></i> Create New Canary
+                </h2>
+                
+                <form method="POST">
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.name.label(class="form-label") }}
+                        {{ form.name(class="form-control") }}
+                        {% if form.name.errors %}
+                            <div class="text-danger">
+                                {% for error in form.name.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-text">Give your canary a descriptive name (e.g., "Database Backup Job")</div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                {{ form.interval_minutes.label(class="form-label") }}
+                                {{ form.interval_minutes(class="form-control") }}
+                                {% if form.interval_minutes.errors %}
+                                    <div class="text-danger">
+                                        {% for error in form.interval_minutes.errors %}
+                                            <small>{{ error }}</small>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">How often should your process check in?</div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                {{ form.grace_minutes.label(class="form-label") }}
+                                {{ form.grace_minutes(class="form-control") }}
+                                {% if form.grace_minutes.errors %}
+                                    <div class="text-danger">
+                                        {% for error in form.grace_minutes.errors %}
+                                            <small>{{ error }}</small>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">Extra time before marking as failed</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.alert_type.label(class="form-label") }}
+                        {{ form.alert_type(class="form-control", id="alert_type") }}
+                        {% if form.alert_type.errors %}
+                            <div class="text-danger">
+                                {% for error in form.alert_type.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-text">Choose how you want to receive failure notifications</div>
+                    </div>
+                    
+                    <div class="mb-3" id="email_field">
+                        {{ form.alert_email.label(class="form-label") }}
+                        {{ form.alert_email(class="form-control", placeholder="Leave empty to use your account email") }}
+                        {% if form.alert_email.errors %}
+                            <div class="text-danger">
+                                {% for error in form.alert_email.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-text">Where to send email alerts (optional, defaults to your account email)</div>
+                    </div>
+                    
+                    <div class="mb-3" id="slack_field">
+                        {{ form.slack_webhook.label(class="form-label") }}
+                        {{ form.slack_webhook(class="form-control", placeholder="https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK") }}
+                        {% if form.slack_webhook.errors %}
+                            <div class="text-danger">
+                                {% for error in form.slack_webhook.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Slack webhook URL for notifications 
+                            <a href="https://api.slack.com/messaging/webhooks" target="_blank" class="text-decoration-none">
+                                <small>(How to get webhook URL?)</small>
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary me-md-2">Cancel</a>
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-info-circle text-info"></i> How it Works
+                </h5>
+                <p class="card-text">
+                    After creating your canary, you'll get a unique URL that your process should call regularly. 
+                    If your process fails to check in within the specified interval plus grace period, 
+                    you'll receive an email alert.
+                </p>
+                <p class="mb-0">
+                    <strong>Example usage:</strong><br>
+                    <code>curl -X POST https://your-domain/checkin/your-token</code>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const alertType = document.getElementById('alert_type');
+    const emailField = document.getElementById('email_field');
+    const slackField = document.getElementById('slack_field');
+    
+    function updateFieldVisibility() {
+        const selectedType = alertType.value;
+        
+        // Show/hide email field
+        if (selectedType === 'email' || selectedType === 'both') {
+            emailField.style.display = 'block';
+        } else {
+            emailField.style.display = 'none';
+        }
+        
+        // Show/hide slack field
+        if (selectedType === 'slack' || selectedType === 'both') {
+            slackField.style.display = 'block';
+        } else {
+            slackField.style.display = 'none';
+        }
+    }
+    
+    // Update visibility on page load
+    updateFieldVisibility();
+    
+    // Update visibility when selection changes
+    alertType.addEventListener('change', updateFieldVisibility);
+});
+</script>
+{% endblock %}
