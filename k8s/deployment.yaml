@@ -103,4 +103,4 @@ spec:
     targetPort: 5000
     protocol: TCP
     name: http
-  type: ClusterIP
+  type: LoadBalancer
