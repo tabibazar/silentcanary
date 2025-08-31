@@ -10,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 import pytz
 import os
+from decimal import Decimal
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -223,7 +224,7 @@ class Canary:
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
         self.last_checkin = last_checkin
         self.next_expected = next_expected
-        self.sla_threshold = float(sla_threshold) if sla_threshold is not None else 99.9
+        self.sla_threshold = Decimal(str(sla_threshold)) if sla_threshold is not None else Decimal('99.9')
     
     def checkin(self, source_ip=None, user_agent=None):
         """Record a check-in"""
@@ -461,13 +462,13 @@ class Canary:
             uptime_stats = self.get_uptime_stats(days)
             current_uptime = uptime_stats['uptime_percentage']
             
-            is_breach = current_uptime < self.sla_threshold
+            is_breach = current_uptime < float(self.sla_threshold)
             
             return {
                 'is_breach': is_breach,
                 'current_uptime': current_uptime,
-                'sla_threshold': self.sla_threshold,
-                'difference': current_uptime - self.sla_threshold,
+                'sla_threshold': float(self.sla_threshold),
+                'difference': current_uptime - float(self.sla_threshold),
                 'days_analyzed': days,
                 'total_incidents': uptime_stats['total_incidents'],
                 'downtime_seconds': uptime_stats['downtime_seconds']
@@ -477,7 +478,7 @@ class Canary:
             return {
                 'is_breach': False,
                 'current_uptime': 0,
-                'sla_threshold': self.sla_threshold,
+                'sla_threshold': float(self.sla_threshold),
                 'difference': 0,
                 'days_analyzed': days,
                 'total_incidents': 0,
@@ -506,7 +507,7 @@ class Canary:
                     created_at=item['created_at'],
                     last_checkin=item.get('last_checkin'),
                     next_expected=item.get('next_expected'),
-                    sla_threshold=item.get('sla_threshold', 99.9)
+                    sla_threshold=item.get('sla_threshold', Decimal('99.9'))
                 )
             return None
         except ClientError as e:
@@ -538,7 +539,7 @@ class Canary:
                     created_at=item['created_at'],
                     last_checkin=item.get('last_checkin'),
                     next_expected=item.get('next_expected'),
-                    sla_threshold=item.get('sla_threshold', 99.9)
+                    sla_threshold=item.get('sla_threshold', Decimal('99.9'))
                 )
             return None
         except ClientError as e:
@@ -570,7 +571,7 @@ class Canary:
                     created_at=item['created_at'],
                     last_checkin=item.get('last_checkin'),
                     next_expected=item.get('next_expected'),
-                    sla_threshold=item.get('sla_threshold', 99.9)
+                    sla_threshold=item.get('sla_threshold', Decimal('99.9'))
                 ))
             return canaries
         except ClientError as e:
@@ -601,7 +602,7 @@ class Canary:
                     created_at=item['created_at'],
                     last_checkin=item.get('last_checkin'),
                     next_expected=item.get('next_expected'),
-                    sla_threshold=item.get('sla_threshold', 99.9)
+                    sla_threshold=item.get('sla_threshold', Decimal('99.9'))
                 ))
             return canaries
         except ClientError as e:
