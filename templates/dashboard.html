@@ -85,6 +85,9 @@
                                     <button onclick="checkinCanary('{{ canary.token }}')" class="btn btn-sm btn-outline-success" title="Test Check-in">
                                         <i class="fas fa-heartbeat"></i>
                                     </button>
+                                    <a href="{{ url_for('canary_analytics', canary_id=canary.canary_id) }}" class="btn btn-sm btn-outline-warning" title="Analytics">
+                                        <i class="fas fa-chart-line"></i>
+                                    </a>
                                     <a href="{{ url_for('canary_logs', canary_id=canary.canary_id) }}" class="btn btn-sm btn-outline-info" title="View Logs">
                                         <i class="fas fa-list"></i>
                                     </a>

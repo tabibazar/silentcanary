@@ -3,7 +3,7 @@ from functools import wraps
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from flask_mail import Mail, Message
-from wtforms import StringField, PasswordField, SubmitField, IntegerField, TextAreaField, SelectField
+from wtforms import StringField, PasswordField, SubmitField, IntegerField, TextAreaField, SelectField, FloatField
 from wtforms.validators import DataRequired, Email, Length, EqualTo, Optional, NumberRange, ValidationError
 from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -101,6 +101,10 @@ class CanaryForm(FlaskForm):
     ], validators=[DataRequired()], default='email')
     alert_email = StringField('Alert Email', validators=[Optional(), Email()])
     slack_webhook = StringField('Slack Webhook URL', validators=[Optional()])
+    sla_threshold = FloatField('SLA Threshold (%)', validators=[
+        DataRequired(),
+        NumberRange(min=0.0, max=100.0, message='SLA threshold must be between 0 and 100')
+    ], default=99.9)
     submit = SubmitField('Create Canary')
 
 class SettingsForm(FlaskForm):
@@ -513,7 +517,8 @@ def create_canary():
             grace_minutes=form.grace_minutes.data,
             alert_type=form.alert_type.data,
             alert_email=form.alert_email.data if form.alert_email.data else None,
-            slack_webhook=form.slack_webhook.data if form.slack_webhook.data else None
+            slack_webhook=form.slack_webhook.data if form.slack_webhook.data else None,
+            sla_threshold=form.sla_threshold.data
         )
         
         if canary.save():
@@ -662,6 +667,7 @@ def edit_canary(canary_id):
         canary.alert_type = form.alert_type.data
         canary.alert_email = form.alert_email.data if form.alert_email.data else None
         canary.slack_webhook = form.slack_webhook.data if form.slack_webhook.data else None
+        canary.sla_threshold = form.sla_threshold.data
         
         # Recalculate next expected check-in if interval changed
         if canary.last_checkin:
@@ -685,6 +691,7 @@ def edit_canary(canary_id):
         form.alert_type.data = canary.alert_type
         form.alert_email.data = canary.alert_email
         form.slack_webhook.data = canary.slack_webhook
+        form.sla_threshold.data = canary.sla_threshold
     
     return render_template('edit_canary.html', form=form, canary=canary)
 
@@ -745,6 +752,154 @@ def canary_logs(canary_id):
                          has_more=has_more,
                          next_key=next_key_encoded,
                          page=page)
+
+@app.route('/canary_analytics/<canary_id>')
+@login_required
+def canary_analytics(canary_id):
+    """Display analytics for a specific canary"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        flash('Canary not found or access denied')
+        return redirect(url_for('dashboard'))
+    
+    # Get analytics data for different time periods
+    days_30 = canary.get_uptime_stats(30)
+    days_7 = canary.get_uptime_stats(7)
+    days_1 = canary.get_uptime_stats(1)
+    
+    # Get downtime incidents
+    incidents = canary.get_downtime_incidents(30)
+    
+    # Get trend analysis
+    trends = canary.get_trend_analysis(30)
+    
+    # Check SLA status
+    sla_status = canary.check_sla_breach(30)
+    
+    return render_template('canary_analytics.html',
+                         canary=canary,
+                         stats_30=days_30,
+                         stats_7=days_7,
+                         stats_1=days_1,
+                         incidents=incidents,
+                         trends=trends,
+                         sla_status=sla_status)
+
+@app.route('/export_canary_data/<canary_id>/<format>')
+@login_required
+def export_canary_data(canary_id, format):
+    """Export canary analytics data in CSV or JSON format"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        flash('Canary not found or access denied')
+        return redirect(url_for('dashboard'))
+    
+    # Get comprehensive analytics data
+    stats = canary.get_uptime_stats(30)
+    incidents = canary.get_downtime_incidents(30)
+    trends = canary.get_trend_analysis(30)
+    sla_status = canary.check_sla_breach(30)
+    
+    if format.lower() == 'json':
+        import json
+        from flask import Response
+        
+        data = {
+            'canary': {
+                'id': canary.canary_id,
+                'name': canary.name,
+                'interval_minutes': canary.interval_minutes,
+                'grace_minutes': canary.grace_minutes,
+                'sla_threshold': canary.sla_threshold,
+                'created_at': canary.created_at
+            },
+            'uptime_stats': stats,
+            'downtime_incidents': [
+                {
+                    'start_time': inc['start_time'].isoformat() if inc['start_time'] else None,
+                    'end_time': inc['end_time'].isoformat() if inc['end_time'] else None,
+                    'duration_seconds': inc['duration_seconds'],
+                    'resolved': inc['resolved']
+                } for inc in incidents
+            ],
+            'trend_analysis': trends,
+            'sla_status': sla_status,
+            'export_timestamp': datetime.now(timezone.utc).isoformat()
+        }
+        
+        response = Response(
+            json.dumps(data, indent=2, default=str),
+            mimetype='application/json',
+            headers={'Content-Disposition': f'attachment; filename={canary.name}_analytics.json'}
+        )
+        return response
+    
+    elif format.lower() == 'csv':
+        import csv
+        import io
+        from flask import Response
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write canary info header
+        writer.writerow(['Canary Analytics Report'])
+        writer.writerow(['Generated:', datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')])
+        writer.writerow(['Canary Name:', canary.name])
+        writer.writerow(['Interval:', f'{canary.interval_minutes} minutes'])
+        writer.writerow(['SLA Threshold:', f'{canary.sla_threshold}%'])
+        writer.writerow([])
+        
+        # Write uptime statistics
+        writer.writerow(['Uptime Statistics (Last 30 Days)'])
+        writer.writerow(['Metric', 'Value'])
+        writer.writerow(['Uptime Percentage', f"{stats['uptime_percentage']}%"])
+        writer.writerow(['Downtime (seconds)', stats['downtime_seconds']])
+        writer.writerow(['Total Incidents', stats['total_incidents']])
+        writer.writerow([])
+        
+        # Write SLA status
+        writer.writerow(['SLA Status'])
+        writer.writerow(['Metric', 'Value'])
+        writer.writerow(['Current Uptime', f"{sla_status['current_uptime']}%"])
+        writer.writerow(['SLA Threshold', f"{sla_status['sla_threshold']}%"])
+        writer.writerow(['SLA Breach', 'Yes' if sla_status['is_breach'] else 'No'])
+        writer.writerow(['Difference', f"{sla_status['difference']:.2f}%"])
+        writer.writerow([])
+        
+        # Write incidents
+        writer.writerow(['Downtime Incidents'])
+        writer.writerow(['Start Time', 'End Time', 'Duration (minutes)', 'Resolved'])
+        for incident in incidents:
+            start_str = incident['start_time'].strftime('%Y-%m-%d %H:%M:%S') if incident['start_time'] else 'N/A'
+            end_str = incident['end_time'].strftime('%Y-%m-%d %H:%M:%S') if incident['end_time'] else 'Ongoing'
+            duration_min = round(incident['duration_seconds'] / 60, 2) if incident['duration_seconds'] else 0
+            writer.writerow([start_str, end_str, duration_min, 'Yes' if incident['resolved'] else 'No'])
+        writer.writerow([])
+        
+        # Write trend analysis
+        writer.writerow(['Failure Trends by Hour'])
+        writer.writerow(['Hour', 'Failures'])
+        for hour, count in trends['hourly_failures'].items():
+            writer.writerow([f'{hour}:00', count])
+        writer.writerow([])
+        
+        writer.writerow(['Failure Trends by Day'])
+        writer.writerow(['Day', 'Failures'])
+        for day, count in trends['daily_failures'].items():
+            writer.writerow([day, count])
+        
+        output.seek(0)
+        response = Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename={canary.name}_analytics.csv'}
+        )
+        return response
+    
+    else:
+        flash('Invalid export format. Use CSV or JSON.')
+        return redirect(url_for('canary_analytics', canary_id=canary_id))
 
 def send_notifications(canary, log_entry=None):
     """Send notifications based on canary alert type and log timestamps."""

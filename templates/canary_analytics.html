@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics - {{ canary.name }} - SilentCanary{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-chart-line text-primary"></i> Analytics: {{ canary.name }}</h1>
+    <div>
+        <a href="{{ url_for('export_canary_data', canary_id=canary.canary_id, format='csv') }}" class="btn btn-outline-success btn-sm">
+            <i class="fas fa-download"></i> Export CSV
+        </a>
+        <a href="{{ url_for('export_canary_data', canary_id=canary.canary_id, format='json') }}" class="btn btn-outline-info btn-sm">
+            <i class="fas fa-download"></i> Export JSON
+        </a>
+        <a href="{{ url_for('canary_logs', canary_id=canary.canary_id) }}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-list"></i> View Logs
+        </a>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary btn-sm">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+</div>
+
+<!-- SLA Status Alert -->
+{% if sla_status.is_breach %}
+<div class="alert alert-danger" role="alert">
+    <i class="fas fa-exclamation-triangle"></i> <strong>SLA Breach Alert!</strong>
+    Current uptime ({{ sla_status.current_uptime }}%) is below your SLA threshold of {{ sla_status.sla_threshold }}%.
+</div>
+{% else %}
+<div class="alert alert-success" role="alert">
+    <i class="fas fa-check-circle"></i> <strong>SLA Met!</strong>
+    Current uptime ({{ sla_status.current_uptime }}%) meets your SLA threshold of {{ sla_status.sla_threshold }}%.
+</div>
+{% endif %}
+
+<!-- Uptime Statistics -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-clock fa-2x me-3"></i>
+                    <div>
+                        <h3 class="mb-0">{{ stats_1.uptime_percentage }}%</h3>
+                        <small>24 Hours Uptime</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-calendar-week fa-2x me-3"></i>
+                    <div>
+                        <h3 class="mb-0">{{ stats_7.uptime_percentage }}%</h3>
+                        <small>7 Days Uptime</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-calendar-alt fa-2x me-3"></i>
+                    <div>
+                        <h3 class="mb-0">{{ stats_30.uptime_percentage }}%</h3>
+                        <small>30 Days Uptime</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detailed Statistics -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-pie"></i> 30-Day Summary
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td><strong>Total Incidents:</strong></td>
+                        <td>{{ stats_30.total_incidents }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Total Downtime:</strong></td>
+                        <td>{{ (stats_30.downtime_seconds / 3600) | round(2) }} hours</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Average Incident Duration:</strong></td>
+                        <td>
+                            {% if stats_30.total_incidents > 0 %}
+                                {{ ((stats_30.downtime_seconds / stats_30.total_incidents) / 60) | round(1) }} minutes
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>SLA Status:</strong></td>
+                        <td>
+                            {% if sla_status.is_breach %}
+                                <span class="badge bg-danger">Breach</span>
+                            {% else %}
+                                <span class="badge bg-success">Met</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-cogs"></i> Canary Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td><strong>Check Interval:</strong></td>
+                        <td>{{ canary.interval_minutes }} minutes</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Grace Period:</strong></td>
+                        <td>{{ canary.grace_minutes }} minutes</td>
+                    </tr>
+                    <tr>
+                        <td><strong>SLA Threshold:</strong></td>
+                        <td>{{ canary.sla_threshold }}%</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Alert Type:</strong></td>
+                        <td>
+                            <span class="badge bg-secondary">{{ canary.alert_type.title() }}</span>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Downtime Incidents -->
+{% if incidents %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="fas fa-exclamation-triangle text-warning"></i> Recent Downtime Incidents (Last 30 Days)
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Start Time</th>
+                        <th>End Time</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for incident in incidents[:10] %}
+                    <tr>
+                        <td>{{ incident.start_time.strftime('%Y-%m-%d %H:%M:%S') if incident.start_time else 'N/A' }}</td>
+                        <td>
+                            {% if incident.end_time %}
+                                {{ incident.end_time.strftime('%Y-%m-%d %H:%M:%S') }}
+                            {% else %}
+                                <span class="text-danger">Ongoing</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if incident.duration_seconds %}
+                                {{ (incident.duration_seconds / 60) | round(1) }} minutes
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if incident.resolved %}
+                                <span class="badge bg-success">Resolved</span>
+                            {% else %}
+                                <span class="badge bg-danger">Ongoing</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if incidents|length > 10 %}
+            <p class="text-muted"><small>Showing 10 of {{ incidents|length }} incidents</small></p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card mb-4">
+    <div class="card-body text-center">
+        <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+        <h5>No Downtime Incidents</h5>
+        <p class="text-muted">Your canary has been running perfectly for the last 30 days!</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- Trend Analysis -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-clock"></i> Failures by Hour of Day
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if trends.total_failures > 0 %}
+                <canvas id="hourlyChart" width="400" height="200"></canvas>
+                {% else %}
+                <div class="text-center">
+                    <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">No failure data to display</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-calendar"></i> Failures by Day of Week
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if trends.total_failures > 0 %}
+                <canvas id="dailyChart" width="400" height="200"></canvas>
+                {% else %}
+                <div class="text-center">
+                    <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">No failure data to display</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Hourly failures chart
+{% if trends.total_failures > 0 %}
+const hourlyCtx = document.getElementById('hourlyChart').getContext('2d');
+const hourlyChart = new Chart(hourlyCtx, {
+    type: 'bar',
+    data: {
+        labels: Array.from({length: 24}, (_, i) => i + ':00'),
+        datasets: [{
+            label: 'Failures',
+            data: {{ trends.hourly_failures.values() | list }},
+            backgroundColor: 'rgba(220, 53, 69, 0.6)',
+            borderColor: 'rgba(220, 53, 69, 1)',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                display: false
+            }
+        }
+    }
+});
+
+// Daily failures chart
+const dailyCtx = document.getElementById('dailyChart').getContext('2d');
+const dailyChart = new Chart(dailyCtx, {
+    type: 'bar',
+    data: {
+        labels: {{ trends.daily_failures.keys() | list }},
+        datasets: [{
+            label: 'Failures',
+            data: {{ trends.daily_failures.values() | list }},
+            backgroundColor: 'rgba(255, 193, 7, 0.6)',
+            borderColor: 'rgba(255, 193, 7, 1)',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                display: false
+            }
+        }
+    }
+});
+{% endif %}
+</script>
+{% endblock %}

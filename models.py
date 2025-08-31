@@ -194,7 +194,7 @@ class Canary:
     def __init__(self, canary_id=None, name=None, user_id=None, interval_minutes=60, 
                  grace_minutes=5, token=None, status='waiting', is_active=True, 
                  alert_type='email', alert_email=None, slack_webhook=None, 
-                 created_at=None, last_checkin=None, next_expected=None):
+                 created_at=None, last_checkin=None, next_expected=None, sla_threshold=99.9):
         self.canary_id = canary_id or str(uuid.uuid4())
         self.name = name
         self.user_id = user_id
@@ -223,6 +223,7 @@ class Canary:
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
         self.last_checkin = last_checkin
         self.next_expected = next_expected
+        self.sla_threshold = float(sla_threshold) if sla_threshold is not None else 99.9
     
     def checkin(self, source_ip=None, user_agent=None):
         """Record a check-in"""
@@ -276,7 +277,8 @@ class Canary:
                     'slack_webhook': self.slack_webhook,
                     'created_at': self.created_at,
                     'last_checkin': self.last_checkin,
-                    'next_expected': self.next_expected
+                    'next_expected': self.next_expected,
+                    'sla_threshold': self.sla_threshold
                 }
             )
             return True
@@ -292,6 +294,195 @@ class Canary:
         except ClientError as e:
             print(f"Error deleting canary: {e}")
             return False
+    
+    def get_uptime_stats(self, days=30):
+        """Calculate uptime statistics for the past N days"""
+        try:
+            end_time = datetime.now(timezone.utc)
+            start_time = end_time - timedelta(days=days)
+            
+            # Get all logs for this canary in the time period
+            logs_result = CanaryLog.get_by_canary_id(self.canary_id, limit=1000)
+            logs = logs_result['logs']
+            
+            # Filter logs to the time period
+            period_logs = []
+            for log in logs:
+                log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                if start_time <= log_time <= end_time:
+                    period_logs.append(log)
+            
+            # Calculate total time period in seconds
+            total_seconds = (end_time - start_time).total_seconds()
+            
+            # Calculate downtime
+            downtime_seconds = 0
+            failure_start = None
+            
+            for log in sorted(period_logs, key=lambda x: x.timestamp):
+                log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                
+                if log.event_type == 'miss' and failure_start is None:
+                    failure_start = log_time
+                elif log.event_type in ['ping', 'recovery'] and failure_start is not None:
+                    downtime_seconds += (log_time - failure_start).total_seconds()
+                    failure_start = None
+            
+            # If still in failure state, count downtime to now
+            if failure_start is not None:
+                downtime_seconds += (end_time - failure_start).total_seconds()
+            
+            # Calculate uptime percentage
+            uptime_seconds = total_seconds - downtime_seconds
+            uptime_percentage = (uptime_seconds / total_seconds * 100) if total_seconds > 0 else 100
+            
+            return {
+                'uptime_percentage': round(uptime_percentage, 2),
+                'downtime_seconds': int(downtime_seconds),
+                'total_incidents': len([log for log in period_logs if log.event_type == 'miss']),
+                'days_analyzed': days,
+                'start_date': start_time.isoformat(),
+                'end_date': end_time.isoformat()
+            }
+        except Exception as e:
+            print(f"Error calculating uptime stats: {e}")
+            return {
+                'uptime_percentage': 0,
+                'downtime_seconds': 0,
+                'total_incidents': 0,
+                'days_analyzed': days,
+                'start_date': start_time.isoformat() if 'start_time' in locals() else None,
+                'end_date': end_time.isoformat() if 'end_time' in locals() else None
+            }
+    
+    def get_downtime_incidents(self, days=30):
+        """Get detailed downtime incidents for the past N days"""
+        try:
+            end_time = datetime.now(timezone.utc)
+            start_time = end_time - timedelta(days=days)
+            
+            # Get all logs for this canary in the time period
+            logs_result = CanaryLog.get_by_canary_id(self.canary_id, limit=1000)
+            logs = logs_result['logs']
+            
+            # Filter logs to the time period
+            period_logs = []
+            for log in logs:
+                log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                if start_time <= log_time <= end_time:
+                    period_logs.append(log)
+            
+            # Group into incidents
+            incidents = []
+            current_incident = None
+            
+            for log in sorted(period_logs, key=lambda x: x.timestamp):
+                log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                
+                if log.event_type == 'miss' and current_incident is None:
+                    current_incident = {
+                        'start_time': log_time,
+                        'end_time': None,
+                        'duration_seconds': None,
+                        'resolved': False
+                    }
+                elif log.event_type in ['ping', 'recovery'] and current_incident is not None:
+                    current_incident['end_time'] = log_time
+                    current_incident['duration_seconds'] = int((log_time - current_incident['start_time']).total_seconds())
+                    current_incident['resolved'] = True
+                    incidents.append(current_incident)
+                    current_incident = None
+            
+            # Handle ongoing incident
+            if current_incident is not None:
+                current_incident['end_time'] = end_time
+                current_incident['duration_seconds'] = int((end_time - current_incident['start_time']).total_seconds())
+                current_incident['resolved'] = False
+                incidents.append(current_incident)
+            
+            return incidents
+        except Exception as e:
+            print(f"Error getting downtime incidents: {e}")
+            return []
+    
+    def get_trend_analysis(self, days=30):
+        """Analyze failure patterns by time of day and day of week"""
+        try:
+            end_time = datetime.now(timezone.utc)
+            start_time = end_time - timedelta(days=days)
+            
+            # Get all failure logs for this canary
+            logs_result = CanaryLog.get_by_canary_id(self.canary_id, limit=1000)
+            logs = logs_result['logs']
+            
+            failure_logs = []
+            for log in logs:
+                if log.event_type == 'miss':
+                    log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                    if start_time <= log_time <= end_time:
+                        failure_logs.append(log_time)
+            
+            # Analyze by hour of day
+            hourly_failures = {}
+            for hour in range(24):
+                hourly_failures[hour] = 0
+            
+            # Analyze by day of week (0=Monday, 6=Sunday)
+            daily_failures = {}
+            for day in range(7):
+                daily_failures[day] = 0
+            
+            for failure_time in failure_logs:
+                hour = failure_time.hour
+                day = failure_time.weekday()
+                hourly_failures[hour] += 1
+                daily_failures[day] += 1
+            
+            day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            
+            return {
+                'hourly_failures': hourly_failures,
+                'daily_failures': {day_names[k]: v for k, v in daily_failures.items()},
+                'total_failures': len(failure_logs),
+                'analysis_period_days': days
+            }
+        except Exception as e:
+            print(f"Error getting trend analysis: {e}")
+            return {
+                'hourly_failures': {},
+                'daily_failures': {},
+                'total_failures': 0,
+                'analysis_period_days': days
+            }
+    
+    def check_sla_breach(self, days=30):
+        """Check if SLA has been breached in the given time period"""
+        try:
+            uptime_stats = self.get_uptime_stats(days)
+            current_uptime = uptime_stats['uptime_percentage']
+            
+            is_breach = current_uptime < self.sla_threshold
+            
+            return {
+                'is_breach': is_breach,
+                'current_uptime': current_uptime,
+                'sla_threshold': self.sla_threshold,
+                'difference': current_uptime - self.sla_threshold,
+                'days_analyzed': days,
+                'total_incidents': uptime_stats['total_incidents'],
+                'downtime_seconds': uptime_stats['downtime_seconds']
+            }
+        except Exception as e:
+            print(f"Error checking SLA breach: {e}")
+            return {
+                'is_breach': False,
+                'current_uptime': 0,
+                'sla_threshold': self.sla_threshold,
+                'difference': 0,
+                'days_analyzed': days,
+                'total_incidents': 0,
+                'downtime_seconds': 0
+            }
     
     @staticmethod
     def get_by_id(canary_id):
@@ -314,7 +505,8 @@ class Canary:
                     slack_webhook=item.get('slack_webhook'),
                     created_at=item['created_at'],
                     last_checkin=item.get('last_checkin'),
-                    next_expected=item.get('next_expected')
+                    next_expected=item.get('next_expected'),
+                    sla_threshold=item.get('sla_threshold', 99.9)
                 )
             return None
         except ClientError as e:
@@ -345,7 +537,8 @@ class Canary:
                     slack_webhook=item.get('slack_webhook'),
                     created_at=item['created_at'],
                     last_checkin=item.get('last_checkin'),
-                    next_expected=item.get('next_expected')
+                    next_expected=item.get('next_expected'),
+                    sla_threshold=item.get('sla_threshold', 99.9)
                 )
             return None
         except ClientError as e:
@@ -376,7 +569,8 @@ class Canary:
                     slack_webhook=item.get('slack_webhook'),
                     created_at=item['created_at'],
                     last_checkin=item.get('last_checkin'),
-                    next_expected=item.get('next_expected')
+                    next_expected=item.get('next_expected'),
+                    sla_threshold=item.get('sla_threshold', 99.9)
                 ))
             return canaries
         except ClientError as e:
@@ -406,7 +600,8 @@ class Canary:
                     slack_webhook=item.get('slack_webhook'),
                     created_at=item['created_at'],
                     last_checkin=item.get('last_checkin'),
-                    next_expected=item.get('next_expected')
+                    next_expected=item.get('next_expected'),
+                    sla_threshold=item.get('sla_threshold', 99.9)
                 ))
             return canaries
         except ClientError as e:
