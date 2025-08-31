@@ -1,26 +1,26 @@
 from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from flask_mail import Mail, Message
 from wtforms import StringField, PasswordField, SubmitField, IntegerField, TextAreaField, SelectField
 from wtforms.validators import DataRequired, Email, Length, EqualTo, Optional
-from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from itsdangerous import URLSafeTimedSerializer
 from dotenv import load_dotenv
 import os
 import uuid
 import pytz
+import requests
+
+# Import our DynamoDB models
+from models import User, Canary, CanaryLog, get_dynamodb_resource
 
 # Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'asdfkjahc rha384y92834yc cx832b48234918xb487214jhasf')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('SQLALCHEMY_DATABASE_URI', 'sqlite:///silentcanary.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # SendGrid Email Configuration
 app.config['MAIL_SERVER'] = 'smtp.sendgrid.net'
@@ -31,7 +31,6 @@ app.config['MAIL_USERNAME'] = 'apikey'
 app.config['MAIL_PASSWORD'] = os.environ.get('SENDGRID_API_KEY')
 app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'auth@avriz.com')
 
-db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
@@ -40,91 +39,18 @@ mail = Mail(app)
 # Initialize scheduler
 scheduler = BackgroundScheduler()
 
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128))
-    is_verified = db.Column(db.Boolean, default=False)
-    timezone = db.Column(db.String(50), default='UTC')
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
-    canaries = db.relationship('Canary', backref='user', lazy=True, cascade='all, delete-orphan')
-
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
-
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
-    
-    def localize_datetime(self, dt):
-        """Convert UTC datetime to user's local timezone."""
-        if not dt:
-            return None
-        if dt.tzinfo is None:
-            # Assume naive datetime is UTC
-            dt = dt.replace(tzinfo=timezone.utc)
-        
-        user_tz = pytz.timezone(getattr(self, 'timezone', 'UTC'))
-        return dt.astimezone(user_tz)
-
-class Canary(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    token = db.Column(db.String(36), unique=True, nullable=False)
-    interval_minutes = db.Column(db.Integer, nullable=False, default=60)
-    grace_minutes = db.Column(db.Integer, nullable=False, default=5)
-    alert_type = db.Column(db.String(20), nullable=False, default='email')
-    alert_email = db.Column(db.String(120))
-    slack_webhook = db.Column(db.String(500))
-    is_active = db.Column(db.Boolean, default=True)
-    last_checkin = db.Column(db.DateTime)
-    next_expected = db.Column(db.DateTime)
-    status = db.Column(db.String(20), default='waiting')
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-
-    def __init__(self, **kwargs):
-        super(Canary, self).__init__(**kwargs)
-        if not self.token:
-            self.token = str(uuid.uuid4())
-
-    def checkin(self):
-        now_utc = datetime.now(timezone.utc)
-        # Store as naive datetime for SQLite compatibility
-        self.last_checkin = now_utc.replace(tzinfo=None)
-        self.next_expected = self.last_checkin + timedelta(minutes=self.interval_minutes)
-        self.status = 'healthy'
-        db.session.commit()
-
-    def is_overdue(self):
-        if not self.next_expected:
-            return False
-        grace_period = timedelta(minutes=self.grace_minutes)
-        # Convert next_expected to UTC timezone if it's naive
-        if self.next_expected.tzinfo is None:
-            next_expected_utc = self.next_expected.replace(tzinfo=timezone.utc)
-        else:
-            next_expected_utc = self.next_expected
-        return datetime.now(timezone.utc) > (next_expected_utc + grace_period)
-
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return User.get_by_id(user_id)
 
 @app.template_filter('user_timezone')
 def user_timezone_filter(dt):
     """Template filter to convert datetime to user's timezone."""
-    from flask_login import current_user
     if not current_user.is_authenticated or not dt:
         return dt
     return current_user.localize_datetime(dt)
 
-def init_db():
-    """Initialize the database by creating all tables."""
-    with app.app_context():
-        db.create_all()
-        print("Database tables created successfully!")
-
+# Forms
 class RegistrationForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired(), Length(min=4, max=20)])
     email = StringField('Email', validators=[DataRequired(), Email()])
@@ -141,19 +67,25 @@ class CanaryForm(FlaskForm):
     name = StringField('Canary Name', validators=[DataRequired(), Length(min=1, max=100)])
     interval_minutes = IntegerField('Check-in Interval (minutes)', validators=[DataRequired()], default=60)
     grace_minutes = IntegerField('Grace Period (minutes)', validators=[DataRequired()], default=5)
-    alert_type = SelectField('Alert Type', choices=[('email', 'Email'), ('slack', 'Slack'), ('both', 'Email + Slack')], default='email')
+    alert_type = SelectField('Alert Type', choices=[
+        ('email', 'Email'),
+        ('slack', 'Slack'),
+        ('both', 'Email + Slack')
+    ], validators=[DataRequired()], default='email')
     alert_email = StringField('Alert Email', validators=[Optional(), Email()])
     slack_webhook = StringField('Slack Webhook URL', validators=[Optional()])
     submit = SubmitField('Create Canary')
 
 class SettingsForm(FlaskForm):
     username = StringField('Username', render_kw={'readonly': True})
-    email = StringField('Email', render_kw={'readonly': True})
-    timezone = SelectField('Timezone', choices=[], validators=[DataRequired()])
+    email = StringField('Email', render_kw={'readonly': True})  
+    timezone = SelectField('Timezone', choices=[], validators=[Optional()])
     current_password = PasswordField('Current Password')
     new_password = PasswordField('New Password', validators=[Optional(), Length(min=8)])
     confirm_password = PasswordField('Confirm New Password', validators=[Optional(), EqualTo('new_password')])
     submit = SubmitField('Update Settings')
+    verify_email = SubmitField('Verify Email')
+    delete_account = SubmitField('Delete Account')
 
 class ForgotPasswordForm(FlaskForm):
     email = StringField('Email', validators=[DataRequired(), Email()])
@@ -164,116 +96,7 @@ class ResetPasswordForm(FlaskForm):
     password2 = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
     submit = SubmitField('Reset Password')
 
-def generate_confirmation_token(email):
-    serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
-    return serializer.dumps(email, salt='email-confirm')
-
-def confirm_token(token, expiration=3600):
-    serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
-    try:
-        email = serializer.loads(token, salt='email-confirm', max_age=expiration)
-    except Exception:
-        return False
-    return email
-
-def generate_reset_token(email):
-    serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
-    return serializer.dumps(email, salt='password-reset')
-
-def confirm_reset_token(token, expiration=3600):
-    serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
-    try:
-        email = serializer.loads(token, salt='password-reset', max_age=expiration)
-    except Exception:
-        return False
-    return email
-
-def send_slack_notification(webhook_url, message):
-    """Send notification to Slack via webhook."""
-    if not webhook_url:
-        print("❌ No Slack webhook URL provided")
-        return False
-    
-    try:
-        import requests
-        
-        payload = {
-            "text": message,
-            "username": "SilentCanary",
-            "icon_emoji": ":bird:"
-        }
-        
-        response = requests.post(webhook_url, json=payload)
-        
-        if response.status_code == 200:
-            print("✅ Slack notification sent successfully!")
-            return True
-        else:
-            print(f"❌ Slack webhook error: {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Failed to send Slack notification: {e}")
-        return False
-
-def send_email(to, subject, template):
-    """Send email using SendGrid Web API."""
-    api_key = os.environ.get('SENDGRID_API_KEY')
-    sender_email = app.config['MAIL_DEFAULT_SENDER']
-    
-    if not api_key:
-        print("❌ SENDGRID_API_KEY not configured")
-        return False
-    
-    try:
-        import requests
-        
-        print(f"Sending email to: {to}")
-        print(f"Subject: {subject}")
-        print(f"Sender: {sender_email}")
-        
-        payload = {
-            "personalizations": [
-                {
-                    "to": [{"email": to}],
-                    "subject": subject
-                }
-            ],
-            "from": {"email": sender_email},
-            "content": [
-                {
-                    "type": "text/html",
-                    "value": template
-                }
-            ]
-        }
-        
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(
-            "https://api.sendgrid.com/v3/mail/send",
-            json=payload,
-            headers=headers
-        )
-        
-        if response.status_code == 202:
-            print("✅ Email sent successfully via SendGrid API!")
-            return True
-        else:
-            print(f"❌ SendGrid API error: {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Failed to send email: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
+# Routes
 @app.route('/')
 def index():
     if current_user.is_authenticated:
@@ -287,50 +110,31 @@ def register():
     
     form = RegistrationForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data).first()
-        if user:
+        # Check if user already exists
+        existing_user = User.get_by_email(form.email.data)
+        if existing_user:
             flash('Email already registered')
-            return redirect(url_for('register'))
+            return render_template('register.html', form=form)
         
-        user = User.query.filter_by(username=form.username.data).first()
-        if user:
+        existing_username = User.get_by_username(form.username.data)
+        if existing_username:
             flash('Username already taken')
-            return redirect(url_for('register'))
+            return render_template('register.html', form=form)
         
-        user = User(username=form.username.data, email=form.email.data)
+        # Create new user
+        user = User(
+            username=form.username.data,
+            email=form.email.data
+        )
         user.set_password(form.password.data)
-        db.session.add(user)
-        db.session.commit()
         
-        token = generate_confirmation_token(user.email)
-        confirm_url = url_for('confirm_email', token=token, _external=True)
-        html = f'Please click the link to confirm your email: <a href="{confirm_url}">Confirm Email</a>'
-        
-        if send_email(user.email, 'Confirm Your Email', html):
-            flash('A confirmation email has been sent to your email address.')
+        if user.save():
+            flash('Registration successful! Please log in.')
+            return redirect(url_for('login'))
         else:
-            flash('Registration successful! Please contact admin to verify your email.')
-        
-        return redirect(url_for('login'))
+            flash('Registration failed. Please try again.')
     
     return render_template('register.html', form=form)
-
-@app.route('/confirm/<token>')
-def confirm_email(token):
-    email = confirm_token(token)
-    if not email:
-        flash('The confirmation link is invalid or has expired.')
-        return redirect(url_for('login'))
-    
-    user = User.query.filter_by(email=email).first_or_404()
-    if user.is_verified:
-        flash('Account already confirmed.')
-    else:
-        user.is_verified = True
-        db.session.commit()
-        flash('Your account has been confirmed!')
-    
-    return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -339,12 +143,8 @@ def login():
     
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data).first()
+        user = User.get_by_email(form.email.data)
         if user and user.check_password(form.password.data):
-            if not user.is_verified:
-                flash('Please verify your email before logging in.')
-                return redirect(url_for('login'))
-            
             login_user(user)
             next_page = request.args.get('next')
             return redirect(next_page) if next_page else redirect(url_for('dashboard'))
@@ -364,27 +164,38 @@ def forgot_password():
     
     form = ForgotPasswordForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data).first()
+        user = User.get_by_email(form.email.data)
         if user:
-            token = generate_reset_token(user.email)
-            reset_url = url_for('reset_password', token=token, _external=True)
-            html = f'''
-            <h2>Password Reset Request</h2>
-            <p>Hello {user.username},</p>
-            <p>You requested a password reset for your SilentCanary account.</p>
-            <p>Click the link below to reset your password:</p>
-            <p><a href="{reset_url}">Reset Password</a></p>
-            <p>This link will expire in 1 hour.</p>
-            <p>If you didn't request this, please ignore this email.</p>
-            '''
+            # Generate reset token
+            serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+            token = serializer.dumps({'user_id': user.user_id}, salt='password-reset')
             
-            if send_email(user.email, 'SilentCanary - Password Reset Request', html):
-                flash('A password reset link has been sent to your email address.')
-            else:
-                flash('Error sending email. Please contact support.')
+            # Send reset email
+            try:
+                reset_link = url_for('reset_password', token=token, _external=True)
+                msg = Message(
+                    subject='SilentCanary Password Reset',
+                    recipients=[user.email],
+                    html=f'''
+                    <h2>Password Reset Request</h2>
+                    <p>Hello {user.username},</p>
+                    <p>You requested a password reset for your SilentCanary account.</p>
+                    <p>Click the link below to reset your password:</p>
+                    <p><a href="{reset_link}">Reset Password</a></p>
+                    <p>This link will expire in 1 hour.</p>
+                    <p>If you didn't request this reset, please ignore this email.</p>
+                    <hr>
+                    <p><small>SilentCanary</small></p>
+                    '''
+                )
+                mail.send(msg)
+                flash('Password reset link sent to your email')
+            except Exception as e:
+                flash('Failed to send reset email. Please try again.')
+                print(f"Email error: {e}")
         else:
             # Don't reveal if email exists or not for security
-            flash('If that email address exists, a password reset link has been sent.')
+            flash('Password reset link sent to your email')
         
         return redirect(url_for('login'))
     
@@ -395,34 +206,58 @@ def reset_password(token):
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     
-    email = confirm_reset_token(token)
-    if not email:
-        flash('The password reset link is invalid or has expired.')
+    # Verify token
+    serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+    try:
+        data = serializer.loads(token, salt='password-reset', max_age=3600)  # 1 hour
+        user_id = data['user_id']
+        user = User.get_by_id(user_id)
+        if not user:
+            flash('Invalid or expired reset link')
+            return redirect(url_for('forgot_password'))
+    except:
+        flash('Invalid or expired reset link')
         return redirect(url_for('forgot_password'))
     
     form = ResetPasswordForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(email=email).first()
-        if user:
-            user.set_password(form.password.data)
-            db.session.commit()
-            flash('Your password has been reset successfully!')
+        user.set_password(form.password.data)
+        if user.save():
+            flash('Password reset successful! Please log in.')
             return redirect(url_for('login'))
         else:
-            flash('User not found.')
-            return redirect(url_for('forgot_password'))
+            flash('Failed to reset password. Please try again.')
     
     return render_template('reset_password.html', form=form)
+
+@app.route('/verify_email/<token>')
+def verify_email(token):
+    """Handle email verification"""
+    serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+    try:
+        data = serializer.loads(token, salt='email-verification', max_age=3600)  # 1 hour
+        user_id = data['user_id']
+        user = User.get_by_id(user_id)
+        if not user:
+            flash('Invalid or expired verification link')
+            return redirect(url_for('index'))
+    except:
+        flash('Invalid or expired verification link')
+        return redirect(url_for('index'))
+    
+    # Update user verification status
+    user.is_verified = True
+    if user.save():
+        flash('Email verified successfully! Your account is now fully activated.')
+    else:
+        flash('Failed to update verification status. Please try again.')
+    
+    return redirect(url_for('login'))
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    canaries = current_user.canaries
-    for canary in canaries:
-        if canary.is_overdue() and canary.status != 'failed':
-            canary.status = 'failed'
-            db.session.commit()
-    
+    canaries = Canary.get_by_user_id(current_user.user_id)
     return render_template('dashboard.html', canaries=canaries)
 
 @app.route('/create_canary', methods=['GET', 'POST'])
@@ -432,24 +267,33 @@ def create_canary():
     if form.validate_on_submit():
         canary = Canary(
             name=form.name.data,
+            user_id=current_user.user_id,
             interval_minutes=form.interval_minutes.data,
             grace_minutes=form.grace_minutes.data,
             alert_type=form.alert_type.data,
-            alert_email=form.alert_email.data or current_user.email,
-            slack_webhook=form.slack_webhook.data,
-            user_id=current_user.id
+            alert_email=form.alert_email.data if form.alert_email.data else None,
+            slack_webhook=form.slack_webhook.data if form.slack_webhook.data else None
         )
-        db.session.add(canary)
-        db.session.commit()
-        flash(f'Canary "{canary.name}" created successfully!')
-        return redirect(url_for('dashboard'))
+        
+        if canary.save():
+            flash(f'Canary "{canary.name}" created successfully!')
+            return redirect(url_for('dashboard'))
+        else:
+            flash('Failed to create canary. Please try again.')
     
     return render_template('create_canary.html', form=form)
 
-@app.route('/checkin/<token>', methods=['POST', 'GET'])
+@app.route('/checkin/<token>', methods=['GET', 'POST'])
 def checkin(token):
-    canary = Canary.query.filter_by(token=token).first_or_404()
-    canary.checkin()
+    canary = Canary.get_by_token(token)
+    if not canary:
+        return jsonify({'status': 'error', 'message': 'Invalid token'}), 404
+    
+    # Get client info for logging
+    source_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    user_agent = request.headers.get('User-Agent', 'Unknown')
+    
+    canary.checkin(source_ip=source_ip, user_agent=user_agent)
     return jsonify({'status': 'success', 'message': 'Check-in received'})
 
 @app.route('/settings', methods=['GET', 'POST'])
@@ -472,35 +316,98 @@ def settings():
         form.timezone.choices = [(tz, tz) for tz in common_timezones]
     
     if form.validate_on_submit():
-        # Check if user is trying to change password
-        if form.new_password.data:
-            if not form.current_password.data:
-                flash('Current password is required when changing password')
-                return render_template('settings.html', form=form)
-            if not current_user.check_password(form.current_password.data):
-                flash('Current password is incorrect')
-                return render_template('settings.html', form=form)
-            current_user.set_password(form.new_password.data)
+        # Handle verify email button
+        if form.verify_email.data:
+            # Generate verification token
+            serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+            token = serializer.dumps({'user_id': current_user.user_id}, salt='email-verification')
+            
+            # Send verification email
+            try:
+                verification_link = url_for('verify_email', token=token, _external=True)
+                msg = Message(
+                    subject='SilentCanary - Verify Your Email',
+                    recipients=[current_user.email],
+                    html=f'''
+                    <h2>Email Verification</h2>
+                    <p>Hello {current_user.username},</p>
+                    <p>Please verify your email address to complete your SilentCanary account setup.</p>
+                    <p>Click the link below to verify your email:</p>
+                    <p><a href="{verification_link}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Verify Email Address</a></p>
+                    <p>This link will expire in 1 hour.</p>
+                    <p>If you didn't request this verification, please ignore this email.</p>
+                    <hr>
+                    <p><small>SilentCanary</small></p>
+                    '''
+                )
+                mail.send(msg)
+                flash('Verification email sent! Check your inbox and click the link to verify your email.')
+            except Exception as e:
+                flash('Failed to send verification email. Please try again.')
+                print(f"Email error: {e}")
+            return redirect(url_for('settings'))
+            
+        # Handle delete account button
+        elif form.delete_account.data:
+            try:
+                # Delete all user's canaries first
+                canaries = Canary.get_by_user_id(current_user.user_id)
+                for canary in canaries:
+                    canary.delete()
+                
+                # Delete user account
+                user_email = current_user.email
+                username = current_user.username
+                
+                # Delete from DynamoDB
+                from models import users_table
+                users_table.delete_item(Key={'user_id': current_user.user_id})
+                
+                # Log out user
+                logout_user()
+                
+                flash(f'Account {username} ({user_email}) has been permanently deleted.')
+                return redirect(url_for('index'))
+                
+            except Exception as e:
+                flash('Failed to delete account. Please try again.')
+                print(f"Delete account error: {e}")
+                return redirect(url_for('settings'))
         
-        # Update only timezone (username/email are read-only)
-        current_user.timezone = form.timezone.data
-        
-        db.session.commit()
-        flash('Settings updated successfully!')
-        return redirect(url_for('settings'))
+        # Handle regular settings update
+        else:
+            # Check if user is trying to change password
+            if form.new_password.data:
+                if not form.current_password.data:
+                    flash('Current password is required when changing password')
+                    return render_template('settings.html', form=form)
+                if not current_user.check_password(form.current_password.data):
+                    flash('Current password is incorrect')
+                    return render_template('settings.html', form=form)
+                current_user.set_password(form.new_password.data)
+            
+            # Update timezone
+            current_user.timezone = form.timezone.data
+            
+            if current_user.save():
+                flash('Settings updated successfully!')
+            else:
+                flash('Failed to update settings.')
+            return redirect(url_for('settings'))
     
-    elif request.method == 'GET':
-        form.username.data = current_user.username
-        form.email.data = current_user.email
-        form.timezone.data = getattr(current_user, 'timezone', 'UTC')
+    # Always populate form data (for both GET and failed POST requests)
+    form.username.data = current_user.username
+    form.email.data = current_user.email
+    if not form.timezone.data:
+        form.timezone.data = current_user.timezone or 'UTC'
     
     return render_template('settings.html', form=form)
 
-@app.route('/edit_canary/<int:canary_id>', methods=['GET', 'POST'])
+@app.route('/edit_canary/<canary_id>', methods=['GET', 'POST'])
 @login_required
 def edit_canary(canary_id):
-    canary = Canary.query.get_or_404(canary_id)
-    if canary.user_id != current_user.id:
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
         flash('Access denied')
         return redirect(url_for('dashboard'))
     
@@ -516,10 +423,16 @@ def edit_canary(canary_id):
         
         # Recalculate next expected check-in if interval changed
         if canary.last_checkin:
-            canary.next_expected = canary.last_checkin + timedelta(minutes=canary.interval_minutes)
+            if isinstance(canary.last_checkin, str):
+                last_checkin_dt = datetime.fromisoformat(canary.last_checkin.replace('Z', '+00:00'))
+            else:
+                last_checkin_dt = canary.last_checkin
+            canary.next_expected = (last_checkin_dt + timedelta(minutes=canary.interval_minutes)).isoformat()
         
-        db.session.commit()
-        flash(f'Canary "{canary.name}" updated successfully')
+        if canary.save():
+            flash(f'Canary "{canary.name}" updated successfully')
+        else:
+            flash('Failed to update canary')
         return redirect(url_for('dashboard'))
     
     # Pre-populate form with current values
@@ -533,106 +446,248 @@ def edit_canary(canary_id):
     
     return render_template('edit_canary.html', form=form, canary=canary)
 
-@app.route('/delete_canary/<int:canary_id>', methods=['POST'])
+@app.route('/delete_canary/<canary_id>', methods=['POST'])
 @login_required
 def delete_canary(canary_id):
-    canary = Canary.query.get_or_404(canary_id)
-    if canary.user_id != current_user.id:
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
         flash('Access denied')
         return redirect(url_for('dashboard'))
     
-    db.session.delete(canary)
-    db.session.commit()
-    flash(f'Canary "{canary.name}" deleted')
+    canary_name = canary.name
+    if canary.delete():
+        flash(f'Canary "{canary_name}" deleted')
+    else:
+        flash('Failed to delete canary')
     return redirect(url_for('dashboard'))
 
-def send_notifications(canary):
-    """Send notifications based on canary alert type."""
+@app.route('/canary_logs/<canary_id>')
+@login_required
+def canary_logs(canary_id):
+    # Verify canary ownership
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        flash('Access denied')
+        return redirect(url_for('dashboard'))
+    
+    # Get pagination parameters
+    page = int(request.args.get('page', 1))
+    per_page = 25
+    last_evaluated_key = request.args.get('last_key')
+    
+    # Decode last_evaluated_key if present
+    if last_evaluated_key:
+        import json
+        import base64
+        try:
+            last_evaluated_key = json.loads(base64.b64decode(last_evaluated_key))
+        except:
+            last_evaluated_key = None
+    
+    # Get logs with pagination
+    result = CanaryLog.get_by_canary_id(canary_id, limit=per_page, last_evaluated_key=last_evaluated_key)
+    logs = result['logs']
+    has_more = result['has_more']
+    next_key = result['last_evaluated_key']
+    
+    # Encode next_key for URL
+    next_key_encoded = None
+    if next_key:
+        import json
+        import base64
+        next_key_encoded = base64.b64encode(json.dumps(next_key, default=str).encode()).decode()
+    
+    return render_template('canary_logs.html', 
+                         canary=canary, 
+                         logs=logs, 
+                         has_more=has_more,
+                         next_key=next_key_encoded,
+                         page=page)
+
+def send_notifications(canary, log_entry=None):
+    """Send notifications based on canary alert type and log timestamps."""
     subject = f'SilentCanary Alert: {canary.name} has failed'
     
-    # Email message
+    # Get user for email fallback
+    user = User.get_by_id(canary.user_id)
+    
+    # Email message with HTML formatting
     html_message = f'''
     <h2>🚨 SilentCanary Alert</h2>
-    <p>Your canary "<strong>{canary.name}</strong>" has failed to check in.</p>
+    <p>Your canary "<strong>{canary.name}</strong>" has failed to check in!</p>
+    
+    <h3>Details:</h3>
     <ul>
-        <li><strong>Last check-in:</strong> {canary.last_checkin.strftime('%Y-%m-%d %H:%M UTC') if canary.last_checkin else 'Never'}</li>
-        <li><strong>Expected check-in:</strong> {canary.next_expected.strftime('%Y-%m-%d %H:%M UTC') if canary.next_expected else 'N/A'}</li>
+        <li><strong>Last check-in:</strong> {canary.last_checkin or 'Never'}</li>
+        <li><strong>Expected check-in:</strong> {canary.next_expected or 'N/A'}</li>
         <li><strong>Grace period:</strong> {canary.grace_minutes} minutes</li>
         <li><strong>Check-in interval:</strong> {canary.interval_minutes} minutes</li>
     </ul>
+    
     <p>Please investigate your monitoring target immediately.</p>
+    
     <hr>
-    <p><small>This alert was sent by SilentCanary monitoring system.</small></p>
+    <p><small>This alert was sent by SilentCanary</small></p>
     '''
     
-    # Slack message  
+    # Slack message with markdown formatting
     slack_message = f"""🚨 *SilentCanary Alert*
-    
+
 Canary "*{canary.name}*" has failed to check in!
 
-• *Last check-in:* {canary.last_checkin.strftime('%Y-%m-%d %H:%M UTC') if canary.last_checkin else 'Never'}
-• *Expected check-in:* {canary.next_expected.strftime('%Y-%m-%d %H:%M UTC') if canary.next_expected else 'N/A'}  
-• *Grace period:* {canary.grace_minutes} minutes
-• *Check-in interval:* {canary.interval_minutes} minutes
+• Last check-in: {canary.last_checkin or 'Never'}
+• Expected check-in: {canary.next_expected or 'N/A'}
+• Grace period: {canary.grace_minutes} minutes
+• Check-in interval: {canary.interval_minutes} minutes
 
 Please investigate your monitoring target immediately."""
 
-    success = False
+    from datetime import datetime, timezone
     
-    # Send notifications based on alert type
-    if canary.alert_type in ['email', 'both']:
-        if canary.alert_email:
-            email_sent = send_email(canary.alert_email, subject, html_message)
-            if email_sent:
-                print(f"✅ Email sent to {canary.alert_email}")
-                success = True
+    try:
+        # Send email notification
+        if canary.alert_type in ['email', 'both']:
+            recipient = canary.alert_email or (user.email if user else None)
+            if recipient:
+                try:
+                    msg = Message(
+                        subject=subject,
+                        recipients=[recipient],
+                        html=html_message
+                    )
+                    mail.send(msg)
+                    print(f"📧 Email notification sent to {recipient}")
+                    
+                    # Log successful email notification
+                    if log_entry:
+                        log_entry.update_email_notification('sent')
+                        
+                except Exception as e:
+                    print(f"❌ Email notification failed: {e}")
+                    # Log failed email notification
+                    if log_entry:
+                        log_entry.update_email_notification('failed')
             else:
-                print(f"❌ Failed to send email to {canary.alert_email}")
-    
-    if canary.alert_type in ['slack', 'both']:
-        if canary.slack_webhook:
-            slack_sent = send_slack_notification(canary.slack_webhook, slack_message)
-            if slack_sent:
-                print(f"✅ Slack notification sent")
-                success = True
-            else:
-                print(f"❌ Failed to send Slack notification")
-    
-    return success
+                print("❌ No email recipient available")
+                # Log that email was not required
+                if log_entry:
+                    log_entry.update_email_notification('not_required')
+        
+        # Send Slack notification
+        if canary.alert_type in ['slack', 'both'] and canary.slack_webhook:
+            try:
+                payload = {"text": slack_message}
+                response = requests.post(canary.slack_webhook, json=payload)
+                if response.status_code == 200:
+                    print(f"💬 Slack notification sent")
+                    
+                    # Log successful Slack notification
+                    if log_entry:
+                        log_entry.update_slack_notification('sent')
+                        
+                else:
+                    print(f"❌ Slack notification failed: {response.status_code}")
+                    # Log failed Slack notification
+                    if log_entry:
+                        log_entry.update_slack_notification('failed')
+                        
+            except Exception as e:
+                print(f"❌ Slack notification error: {e}")
+                # Log failed Slack notification
+                if log_entry:
+                    log_entry.update_slack_notification('failed')
+        elif canary.alert_type in ['slack', 'both']:
+            # Slack was requested but no webhook available
+            if log_entry:
+                log_entry.update_slack_notification('not_configured')
+        
+    except Exception as e:
+        print(f"❌ Error sending notifications: {e}")
+        # Log general failure
+        if log_entry:
+            if canary.alert_type in ['email', 'both'] and not log_entry.email_status:
+                log_entry.update_email_notification('failed')
+            if canary.alert_type in ['slack', 'both'] and not log_entry.slack_status:
+                log_entry.update_slack_notification('failed')
+
+@app.route('/api/canaries/status')
+@login_required
+def api_canaries_status():
+    """API endpoint to get current canary status for real-time updates"""
+    try:
+        canaries = Canary.get_by_user_id(current_user.user_id)
+        canary_status = []
+        
+        for canary in canaries:
+            # Check if canary is overdue in real-time
+            is_overdue = canary.is_overdue()
+            current_status = 'failed' if is_overdue else canary.status
+            
+            canary_data = {
+                'canary_id': canary.canary_id,
+                'name': canary.name,
+                'status': current_status,
+                'last_checkin': canary.last_checkin,
+                'next_expected': canary.next_expected,
+                'is_overdue': is_overdue
+            }
+            canary_status.append(canary_data)
+        
+        return jsonify({
+            'status': 'success',
+            'canaries': canary_status,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 def check_failed_canaries():
     with app.app_context():
         print(f"🔍 Checking for failed canaries at {datetime.now(timezone.utc)}")
-        overdue_canaries = Canary.query.filter(
-            Canary.is_active == True,
-            Canary.status != 'failed'
-        ).all()
+        active_canaries = Canary.get_active_canaries()
         
         failed_count = 0
-        for canary in overdue_canaries:
-            if canary.is_overdue():
+        for canary in active_canaries:
+            if canary.status != 'failed' and canary.is_overdue():
                 print(f"⚠️ Canary '{canary.name}' is overdue - sending notifications")
                 canary.status = 'failed'
-                send_notifications(canary)
+                canary.save()
+                
+                # Log the miss event
+                miss_log = CanaryLog.log_miss(canary.canary_id, f"Canary '{canary.name}' missed expected check-in")
+                
+                # Send notifications and log timestamps
+                send_notifications(canary, miss_log)
                 failed_count += 1
         
         if failed_count > 0:
             print(f"📧 Processed {failed_count} failed canaries")
         else:
             print("✅ All canaries are healthy")
-        
-        db.session.commit()
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        scheduler.add_job(
-            func=check_failed_canaries,
-            trigger="interval",
-            minutes=1,
-            id='canary_check'
-        )
-        scheduler.start()
+    # Initialize DynamoDB tables
+    print("🔄 Initializing DynamoDB...")
+    try:
+        # Test connection
+        dynamodb = get_dynamodb_resource()
+        print("✅ DynamoDB connection successful")
+    except Exception as e:
+        print(f"❌ DynamoDB connection failed: {e}")
+        exit(1)
+    
+    # Start scheduler
+    scheduler.add_job(
+        func=check_failed_canaries,
+        trigger="interval",
+        minutes=1,
+        id='canary_check'
+    )
+    scheduler.start()
     
     try:
         app.run(debug=True, port=5000, host='127.0.0.1')

@@ -31,16 +31,17 @@ def get_dynamodb_resource():
 dynamodb = get_dynamodb_resource()
 users_table = dynamodb.Table('SilentCanary_Users')
 canaries_table = dynamodb.Table('SilentCanary_Canaries')
+canary_logs_table = dynamodb.Table('SilentCanary_CanaryLogs')
 
 class User:
     def __init__(self, user_id=None, username=None, email=None, password_hash=None, 
-                 is_verified=False, timezone='UTC', created_at=None):
+                 is_verified=False, user_timezone='UTC', created_at=None):
         self.user_id = user_id or str(uuid.uuid4())
         self.username = username
         self.email = email
         self.password_hash = password_hash
         self.is_verified = is_verified
-        self.timezone = timezone
+        self.timezone = user_timezone
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
     
     def set_password(self, password):
@@ -98,7 +99,7 @@ class User:
                     email=item['email'],
                     password_hash=item['password_hash'],
                     is_verified=item.get('is_verified', False),
-                    timezone=item.get('timezone', 'UTC'),
+                    user_timezone=item.get('timezone', 'UTC'),
                     created_at=item['created_at']
                 )
             return None
@@ -122,7 +123,7 @@ class User:
                     email=item['email'],
                     password_hash=item['password_hash'],
                     is_verified=item.get('is_verified', False),
-                    timezone=item.get('timezone', 'UTC'),
+                    user_timezone=item.get('timezone', 'UTC'),
                     created_at=item['created_at']
                 )
             return None
@@ -146,7 +147,7 @@ class User:
                     email=item['email'],
                     password_hash=item['password_hash'],
                     is_verified=item.get('is_verified', False),
-                    timezone=item.get('timezone', 'UTC'),
+                    user_timezone=item.get('timezone', 'UTC'),
                     created_at=item['created_at']
                 )
             return None
@@ -188,13 +189,22 @@ class Canary:
         self.last_checkin = last_checkin
         self.next_expected = next_expected
     
-    def checkin(self):
+    def checkin(self, source_ip=None, user_agent=None):
         """Record a check-in"""
         now = datetime.now(timezone.utc)
+        was_failed = self.status == 'failed'
+        
         self.last_checkin = now.isoformat()
         self.next_expected = (now + timedelta(minutes=int(self.interval_minutes))).isoformat()
         self.status = 'healthy'
         self.save()
+        
+        # Log the check-in event
+        CanaryLog.log_ping(self.canary_id, 'success', source_ip, user_agent)
+        
+        # Log recovery if canary was previously failed
+        if was_failed:
+            CanaryLog.log_recovery(self.canary_id)
     
     def is_overdue(self):
         """Check if canary is overdue"""
@@ -367,3 +377,170 @@ class Canary:
         except ClientError as e:
             print(f"Error getting active canaries: {e}")
             return []
+
+class CanaryLog:
+    def __init__(self, log_id=None, canary_id=None, event_type=None, timestamp=None, 
+                 status=None, message=None, source_ip=None, user_agent=None,
+                 email_sent_at=None, slack_sent_at=None, email_status=None, slack_status=None):
+        self.log_id = log_id or str(uuid.uuid4())
+        self.canary_id = canary_id
+        self.event_type = event_type  # 'ping', 'miss', 'recovery'
+        self.timestamp = timestamp or datetime.now(timezone.utc).isoformat()
+        self.status = status  # 'success', 'failed', 'late'
+        self.message = message
+        self.source_ip = source_ip
+        self.user_agent = user_agent
+        # Notification tracking fields
+        self.email_sent_at = email_sent_at  # Timestamp when email was sent
+        self.slack_sent_at = slack_sent_at  # Timestamp when Slack notification was sent
+        self.email_status = email_status    # 'sent', 'failed', 'not_required'
+        self.slack_status = slack_status    # 'sent', 'failed', 'not_required'
+    
+    def save(self):
+        """Save log entry to DynamoDB"""
+        try:
+            item = {
+                'log_id': self.log_id,
+                'canary_id': self.canary_id,
+                'event_type': self.event_type,
+                'timestamp': self.timestamp,
+                'status': self.status,
+                'message': self.message,
+                'source_ip': self.source_ip,
+                'user_agent': self.user_agent
+            }
+            
+            # Only include notification fields if they have values
+            if self.email_sent_at:
+                item['email_sent_at'] = self.email_sent_at
+            if self.slack_sent_at:
+                item['slack_sent_at'] = self.slack_sent_at
+            if self.email_status:
+                item['email_status'] = self.email_status
+            if self.slack_status:
+                item['slack_status'] = self.slack_status
+                
+            canary_logs_table.put_item(Item=item)
+            return True
+        except ClientError as e:
+            print(f"Error saving canary log: {e}")
+            return False
+    
+    @staticmethod
+    def get_by_canary_id(canary_id, limit=50, last_evaluated_key=None):
+        """Get paginated logs for a canary"""
+        try:
+            # Build query parameters
+            query_params = {
+                'IndexName': 'canary-id-timestamp-index',
+                'KeyConditionExpression': Key('canary_id').eq(canary_id),
+                'ScanIndexForward': False,  # Sort descending (newest first)
+                'Limit': limit
+            }
+            
+            if last_evaluated_key:
+                query_params['ExclusiveStartKey'] = last_evaluated_key
+            
+            response = canary_logs_table.query(**query_params)
+            
+            logs = []
+            for item in response['Items']:
+                logs.append(CanaryLog(
+                    log_id=item['log_id'],
+                    canary_id=item['canary_id'],
+                    event_type=item['event_type'],
+                    timestamp=item['timestamp'],
+                    status=item['status'],
+                    message=item.get('message'),
+                    source_ip=item.get('source_ip'),
+                    user_agent=item.get('user_agent'),
+                    email_sent_at=item.get('email_sent_at'),
+                    slack_sent_at=item.get('slack_sent_at'),
+                    email_status=item.get('email_status'),
+                    slack_status=item.get('slack_status')
+                ))
+            
+            return {
+                'logs': logs,
+                'last_evaluated_key': response.get('LastEvaluatedKey'),
+                'has_more': 'LastEvaluatedKey' in response
+            }
+        except ClientError as e:
+            print(f"Error getting canary logs: {e}")
+            return {'logs': [], 'last_evaluated_key': None, 'has_more': False}
+    
+    @staticmethod
+    def log_ping(canary_id, status='success', source_ip=None, user_agent=None):
+        """Log a ping event"""
+        message = 'Successful check-in' if status == 'success' else 'Failed check-in'
+        log = CanaryLog(
+            canary_id=canary_id,
+            event_type='ping',
+            status=status,
+            message=message,
+            source_ip=source_ip,
+            user_agent=user_agent
+        )
+        return log.save()
+    
+    @staticmethod
+    def log_miss(canary_id, message='Canary missed expected check-in'):
+        """Log a missed check-in event"""
+        log = CanaryLog(
+            canary_id=canary_id,
+            event_type='miss',
+            status='failed',
+            message=message
+        )
+        if log.save():
+            return log
+        return None
+    
+    @staticmethod
+    def log_recovery(canary_id, message='Canary recovered after missing check-ins'):
+        """Log a recovery event"""
+        log = CanaryLog(
+            canary_id=canary_id,
+            event_type='recovery',
+            status='success',
+            message=message
+        )
+        return log.save()
+    
+    def update_email_notification(self, status, timestamp=None):
+        """Update email notification status on this log entry"""
+        self.email_status = status
+        self.email_sent_at = timestamp or datetime.now(timezone.utc).isoformat()
+        return self.save()
+    
+    def update_slack_notification(self, status, timestamp=None):
+        """Update Slack notification status on this log entry"""
+        self.slack_status = status
+        self.slack_sent_at = timestamp or datetime.now(timezone.utc).isoformat()
+        return self.save()
+    
+    @staticmethod
+    def get_by_id(log_id):
+        """Get a specific log entry by ID"""
+        try:
+            response = canary_logs_table.get_item(Key={'log_id': log_id})
+            if 'Item' in response:
+                item = response['Item']
+                return CanaryLog(
+                    log_id=item['log_id'],
+                    canary_id=item['canary_id'],
+                    event_type=item['event_type'],
+                    timestamp=item['timestamp'],
+                    status=item['status'],
+                    message=item.get('message'),
+                    source_ip=item.get('source_ip'),
+                    user_agent=item.get('user_agent'),
+                    email_sent_at=item.get('email_sent_at'),
+                    slack_sent_at=item.get('slack_sent_at'),
+                    email_status=item.get('email_status'),
+                    slack_status=item.get('slack_status')
+                )
+            return None
+        except ClientError as e:
+            print(f"Error getting canary log: {e}")
+            return None

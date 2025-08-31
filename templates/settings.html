@@ -16,13 +16,13 @@
                     
                     <div class="mb-3">
                         {{ form.username.label(class="form-label") }}
-                        {{ form.username(class="form-control", readonly=true, disabled=true) }}
+                        {{ form.username(class="form-control", readonly=true) }}
                         <div class="form-text text-muted">Username cannot be changed</div>
                     </div>
                     
                     <div class="mb-3">
                         {{ form.email.label(class="form-label") }}
-                        {{ form.email(class="form-control", readonly=true, disabled=true) }}
+                        {{ form.email(class="form-control", readonly=true) }}
                         <div class="form-text text-muted">Email cannot be changed</div>
                     </div>
                     
@@ -110,9 +110,40 @@
                             <span class="text-success"><i class="fas fa-check-circle"></i> Yes</span>
                         {% else %}
                             <span class="text-warning"><i class="fas fa-exclamation-triangle"></i> Not verified</span>
+                            <div class="mt-2">
+                                <form method="POST" class="d-inline">
+                                    {{ form.hidden_tag() }}
+                                    {{ form.verify_email(class="btn btn-sm btn-warning") }}
+                                </form>
+                            </div>
                         {% endif %}
                     </div>
                 </div>
+            </div>
+        </div>
+        
+        <!-- Danger Zone -->
+        <div class="card mt-4 border-danger">
+            <div class="card-body">
+                <h5 class="card-title text-danger">
+                    <i class="fas fa-exclamation-triangle"></i> Danger Zone
+                </h5>
+                <p class="text-muted">Once you delete your account, there is no going back. This action cannot be undone.</p>
+                
+                <div class="alert alert-warning" role="alert">
+                    <strong>Warning:</strong> Deleting your account will:
+                    <ul class="mb-0 mt-2">
+                        <li>Permanently delete all your canaries</li>
+                        <li>Remove all monitoring data</li>
+                        <li>Cancel any active monitoring alerts</li>
+                        <li>Delete your account information</li>
+                    </ul>
+                </div>
+                
+                <form method="POST" class="d-inline" onsubmit="return confirmDelete()">
+                    {{ form.hidden_tag() }}
+                    {{ form.delete_account(class="btn btn-danger") }}
+                </form>
             </div>
         </div>
     </div>
@@ -121,6 +152,22 @@
 
 {% block scripts %}
 <script>
+function confirmDelete() {
+    const username = '{{ current_user.username }}';
+    const userInput = prompt(`This action cannot be undone. To confirm account deletion, please type "${username}" (without quotes):`);
+    
+    if (userInput === null) {
+        return false; // User cancelled
+    }
+    
+    if (userInput.trim() !== username) {
+        alert('Username confirmation did not match. Account deletion cancelled.');
+        return false;
+    }
+    
+    return confirm('Are you absolutely sure you want to delete your account? This action is PERMANENT and cannot be undone.');
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const detectBtn = document.getElementById('detect-timezone');
     const timezoneSelect = document.getElementById('timezone-select');

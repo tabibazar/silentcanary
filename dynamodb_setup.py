@@ -153,6 +153,61 @@ def create_canaries_table(dynamodb):
             print(f"❌ Error creating Canaries table: {e}")
             raise
 
+def create_canary_logs_table(dynamodb):
+    """Create Canary Logs table"""
+    try:
+        table = dynamodb.create_table(
+            TableName='SilentCanary_CanaryLogs',
+            KeySchema=[
+                {
+                    'AttributeName': 'log_id',
+                    'KeyType': 'HASH'  # Partition key
+                }
+            ],
+            AttributeDefinitions=[
+                {
+                    'AttributeName': 'log_id',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'canary_id',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'timestamp',
+                    'AttributeType': 'S'
+                }
+            ],
+            GlobalSecondaryIndexes=[
+                {
+                    'IndexName': 'canary-id-timestamp-index',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'canary_id',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'timestamp',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                }
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        )
+        print("✅ Canary Logs table created successfully")
+        return table
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            print("✅ Canary Logs table already exists")
+            return dynamodb.Table('SilentCanary_CanaryLogs')
+        else:
+            print(f"❌ Error creating Canary Logs table: {e}")
+            raise
+
 def setup_tables():
     """Set up all DynamoDB tables"""
     print("🔄 Setting up DynamoDB tables for SilentCanary...")
@@ -163,15 +218,18 @@ def setup_tables():
         # Create tables
         users_table = create_users_table(dynamodb)
         canaries_table = create_canaries_table(dynamodb)
+        logs_table = create_canary_logs_table(dynamodb)
         
         # Wait for tables to be active
         print("⏳ Waiting for tables to be active...")
         users_table.wait_until_exists()
         canaries_table.wait_until_exists()
+        logs_table.wait_until_exists()
         
         print("🎉 DynamoDB setup completed successfully!")
         print(f"📊 Users table: {users_table.table_status}")
         print(f"📊 Canaries table: {canaries_table.table_status}")
+        print(f"📊 Canary Logs table: {logs_table.table_status}")
         
         return True
         
