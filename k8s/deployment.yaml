@@ -38,6 +38,16 @@ spec:
             secretKeyRef:
               name: silentcanary-secrets
               key: sendgrid-default-sender
+        - name: MAIL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: silentcanary-secrets
+              key: sendgrid-api-key
+        - name: MAIL_DEFAULT_SENDER
+          valueFrom:
+            secretKeyRef:
+              name: silentcanary-secrets
+              key: sendgrid-default-sender
         - name: SECRET_KEY
           valueFrom:
             secretKeyRef:
