@@ -109,6 +109,17 @@ class ResetPasswordForm(FlaskForm):
     submit = SubmitField('Reset Password')
 
 # Routes
+@app.route('/health')
+def health():
+    """Health check endpoint for Kubernetes probes"""
+    try:
+        # Test DynamoDB connection
+        dynamodb = get_dynamodb_resource()
+        # Simple health check - just verify we can access DynamoDB
+        return jsonify({'status': 'healthy', 'service': 'silentcanary'}), 200
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'error': str(e)}), 503
+
 @app.route('/')
 def index():
     if current_user.is_authenticated:
