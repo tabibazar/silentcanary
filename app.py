@@ -3,7 +3,7 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from flask_wtf import FlaskForm
 from flask_mail import Mail, Message
 from wtforms import StringField, PasswordField, SubmitField, IntegerField, TextAreaField, SelectField
-from wtforms.validators import DataRequired, Email, Length, EqualTo, Optional
+from wtforms.validators import DataRequired, Email, Length, EqualTo, Optional, NumberRange, ValidationError
 from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from itsdangerous import URLSafeTimedSerializer
@@ -50,6 +50,12 @@ def user_timezone_filter(dt):
         return dt
     return current_user.localize_datetime(dt)
 
+# Custom validators
+def validate_integer_required(form, field):
+    """Custom validator that treats 0 as valid but requires a value"""
+    if field.data is None:
+        raise ValidationError('This field is required.')
+
 # Forms
 class RegistrationForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired(), Length(min=4, max=20)])
@@ -65,8 +71,14 @@ class LoginForm(FlaskForm):
 
 class CanaryForm(FlaskForm):
     name = StringField('Canary Name', validators=[DataRequired(), Length(min=1, max=100)])
-    interval_minutes = IntegerField('Check-in Interval (minutes)', validators=[DataRequired()], default=60)
-    grace_minutes = IntegerField('Grace Period (minutes)', validators=[DataRequired()], default=5)
+    interval_minutes = IntegerField('Check-in Interval (minutes)', validators=[
+        DataRequired(), 
+        NumberRange(min=1, message='Interval must be at least 1 minute')
+    ], default=60)
+    grace_minutes = IntegerField('Grace Period (minutes)', validators=[
+        validate_integer_required,
+        NumberRange(min=0, message='Grace period cannot be negative')
+    ], default=5)
     alert_type = SelectField('Alert Type', choices=[
         ('email', 'Email'),
         ('slack', 'Slack'),

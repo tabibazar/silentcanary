@@ -176,9 +176,22 @@ class Canary:
         self.canary_id = canary_id or str(uuid.uuid4())
         self.name = name
         self.user_id = user_id
-        # Convert Decimal to int for DynamoDB compatibility
-        self.interval_minutes = int(interval_minutes) if interval_minutes is not None else 60
-        self.grace_minutes = int(grace_minutes) if grace_minutes is not None else 5
+        # Convert Decimal to int for DynamoDB compatibility and validate ranges
+        if interval_minutes is not None:
+            interval_val = int(interval_minutes)
+            if interval_val < 1:
+                raise ValueError("Interval minutes must be at least 1")
+            self.interval_minutes = interval_val
+        else:
+            self.interval_minutes = 60
+            
+        if grace_minutes is not None:
+            grace_val = int(grace_minutes)
+            if grace_val < 0:
+                raise ValueError("Grace period cannot be negative")
+            self.grace_minutes = grace_val
+        else:
+            self.grace_minutes = 5
         self.token = token or str(uuid.uuid4())
         self.status = status
         self.is_active = bool(is_active) if is_active is not None else True
