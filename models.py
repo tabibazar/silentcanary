@@ -35,7 +35,7 @@ canary_logs_table = dynamodb.Table('SilentCanary_CanaryLogs')
 
 class User:
     def __init__(self, user_id=None, username=None, email=None, password_hash=None, 
-                 is_verified=False, user_timezone='UTC', created_at=None):
+                 is_verified=False, user_timezone='UTC', created_at=None, last_login=None):
         self.user_id = user_id or str(uuid.uuid4())
         self.username = username
         self.email = email
@@ -43,6 +43,7 @@ class User:
         self.is_verified = is_verified
         self.timezone = user_timezone
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
+        self.last_login = last_login
     
     def set_password(self, password):
         """Set password hash"""
@@ -51,6 +52,12 @@ class User:
     def check_password(self, password):
         """Check password"""
         return check_password_hash(self.password_hash, password)
+    
+    def update_last_login(self):
+        """Update last login timestamp to now"""
+        from datetime import datetime, timezone
+        self.last_login = datetime.now(timezone.utc).isoformat()
+        return self.save()
     
     def localize_datetime(self, dt):
         """Convert UTC datetime to user's local timezone"""
@@ -70,20 +77,32 @@ class User:
     def save(self):
         """Save user to DynamoDB"""
         try:
-            users_table.put_item(
-                Item={
-                    'user_id': self.user_id,
-                    'username': self.username,
-                    'email': self.email,
-                    'password_hash': self.password_hash,
-                    'is_verified': self.is_verified,
-                    'timezone': self.timezone,
-                    'created_at': self.created_at
-                }
-            )
+            item = {
+                'user_id': self.user_id,
+                'username': self.username,
+                'email': self.email,
+                'password_hash': self.password_hash,
+                'is_verified': self.is_verified,
+                'timezone': self.timezone,
+                'created_at': self.created_at
+            }
+            
+            if self.last_login is not None:
+                item['last_login'] = self.last_login
+            
+            users_table.put_item(Item=item)
             return True
         except ClientError as e:
             print(f"Error saving user: {e}")
+            return False
+    
+    def delete(self):
+        """Delete user from DynamoDB"""
+        try:
+            users_table.delete_item(Key={'user_id': self.user_id})
+            return True
+        except ClientError as e:
+            print(f"Error deleting user: {e}")
             return False
     
     @staticmethod
@@ -100,7 +119,8 @@ class User:
                     password_hash=item['password_hash'],
                     is_verified=item.get('is_verified', False),
                     user_timezone=item.get('timezone', 'UTC'),
-                    created_at=item['created_at']
+                    created_at=item['created_at'],
+                    last_login=item.get('last_login')
                 )
             return None
         except ClientError as e:
@@ -124,7 +144,8 @@ class User:
                     password_hash=item['password_hash'],
                     is_verified=item.get('is_verified', False),
                     user_timezone=item.get('timezone', 'UTC'),
-                    created_at=item['created_at']
+                    created_at=item['created_at'],
+                    last_login=item.get('last_login')
                 )
             return None
         except ClientError as e:
@@ -148,7 +169,8 @@ class User:
                     password_hash=item['password_hash'],
                     is_verified=item.get('is_verified', False),
                     user_timezone=item.get('timezone', 'UTC'),
-                    created_at=item['created_at']
+                    created_at=item['created_at'],
+                    last_login=item.get('last_login')
                 )
             return None
         except ClientError as e:

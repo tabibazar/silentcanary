@@ -1,4 +1,5 @@
 from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
+from functools import wraps
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from flask_mail import Mail, Message
@@ -42,6 +43,20 @@ scheduler = BackgroundScheduler()
 @login_manager.user_loader
 def load_user(user_id):
     return User.get_by_id(user_id)
+
+def is_admin():
+    """Check if current user is admin"""
+    return current_user.is_authenticated and current_user.email == 'reza@tabibazar.com'
+
+def admin_required(f):
+    """Decorator to require admin access"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_admin():
+            flash('Admin access required')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 @app.template_filter('user_timezone')
 def user_timezone_filter(dt):
@@ -152,7 +167,33 @@ def register():
         user.set_password(form.password.data)
         
         if user.save():
-            flash('Registration successful! Please log in.')
+            # Send verification email automatically
+            try:
+                serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+                token = serializer.dumps({'user_id': user.user_id}, salt='email-verification')
+                verification_link = url_for('verify_email', token=token, _external=True)
+                
+                msg = Message(
+                    subject='Welcome to SilentCanary - Please verify your email',
+                    sender=app.config['MAIL_DEFAULT_SENDER'],
+                    recipients=[user.email],
+                    html=f'''
+                    <h2>Welcome to SilentCanary!</h2>
+                    <p>Hello {user.username},</p>
+                    <p>Thank you for registering with SilentCanary!</p>
+                    <p>Please verify your email address to complete your account setup:</p>
+                    <p><a href="{verification_link}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Verify Email Address</a></p>
+                    <p>This link will expire in 1 hour.</p>
+                    <p>If you didn't create this account, please ignore this email.</p>
+                    <hr>
+                    <p><small>SilentCanary - Dead Man's Switch Monitoring</small></p>
+                    '''
+                )
+                mail.send(msg)
+                flash('Registration successful! Please check your email to verify your account.')
+            except Exception as e:
+                print(f"Registration email error: {e}")
+                flash('Registration successful! Please log in. Note: verification email could not be sent.')
             return redirect(url_for('login'))
         else:
             flash('Registration failed. Please try again.')
@@ -168,6 +209,7 @@ def login():
     if form.validate_on_submit():
         user = User.get_by_email(form.email.data)
         if user and user.check_password(form.password.data):
+            user.update_last_login()
             login_user(user)
             next_page = request.args.get('next')
             return redirect(next_page) if next_page else redirect(url_for('dashboard'))
@@ -282,6 +324,181 @@ def verify_email(token):
 def dashboard():
     canaries = Canary.get_by_user_id(current_user.user_id)
     return render_template('dashboard.html', canaries=canaries)
+
+@app.route('/admin')
+@login_required
+@admin_required
+def admin():
+    """Admin dashboard showing all users and statistics"""
+    try:
+        # Get all users from DynamoDB
+        from models import get_dynamodb_resource
+        dynamodb = get_dynamodb_resource()
+        users_table = dynamodb.Table('SilentCanary_Users')
+        canaries_table = dynamodb.Table('SilentCanary_Canaries')
+        
+        # Get all users
+        users_response = users_table.scan()
+        users_data = users_response['Items']
+        
+        # Get all canaries to count per user
+        canaries_response = canaries_table.scan()
+        canaries_data = canaries_response['Items']
+        
+        # Process user data and add canary counts
+        admin_users = []
+        for user_data in users_data:
+            # Count canaries for this user
+            canary_count = len([c for c in canaries_data if c.get('user_id') == user_data.get('user_id')])
+            
+            # Parse created_at datetime
+            created_at = None
+            if user_data.get('created_at'):
+                try:
+                    from datetime import datetime
+                    created_at = datetime.fromisoformat(user_data['created_at'].replace('Z', '+00:00'))
+                except:
+                    pass
+            
+            # Parse last_login if it exists
+            last_login = None
+            if user_data.get('last_login'):
+                try:
+                    last_login = datetime.fromisoformat(user_data['last_login'].replace('Z', '+00:00'))
+                except:
+                    pass
+            
+            admin_user = {
+                'user_id': user_data.get('user_id', 'N/A'),
+                'username': user_data.get('username', 'N/A'),
+                'email': user_data.get('email', 'N/A'),
+                'canary_count': canary_count,
+                'created_at': created_at,
+                'last_login': last_login,
+                'is_verified': user_data.get('is_verified', False),
+                'timezone': user_data.get('timezone', 'UTC')
+            }
+            admin_users.append(admin_user)
+        
+        # Sort by creation date (newest first)
+        admin_users.sort(key=lambda x: x['created_at'] or datetime.min, reverse=True)
+        
+        # Calculate summary stats
+        total_users = len(admin_users)
+        total_canaries = len(canaries_data)
+        verified_users = len([u for u in admin_users if u['is_verified']])
+        active_canaries = len([c for c in canaries_data if c.get('status') != 'failed'])
+        
+        stats = {
+            'total_users': total_users,
+            'total_canaries': total_canaries,
+            'verified_users': verified_users,
+            'active_canaries': active_canaries,
+            'verification_rate': round((verified_users / total_users * 100) if total_users > 0 else 0, 1)
+        }
+        
+        return render_template('admin.html', users=admin_users, stats=stats)
+        
+    except Exception as e:
+        flash(f'Error loading admin data: {e}')
+        return redirect(url_for('dashboard'))
+
+@app.route('/admin/delete_user/<user_id>', methods=['POST'])
+@login_required
+@admin_required
+def admin_delete_user(user_id):
+    """Admin function to delete a user and all their data"""
+    try:
+        # Prevent admin from deleting themselves
+        if user_id == current_user.user_id:
+            flash('Cannot delete your own admin account', 'error')
+            return redirect(url_for('admin'))
+        
+        # Get user to delete
+        user = User.get_by_id(user_id)
+        if not user:
+            flash('User not found', 'error')
+            return redirect(url_for('admin'))
+        
+        # Delete all user's canaries first
+        from models import Canary, get_dynamodb_resource
+        canaries = Canary.get_by_user_id(user_id)
+        for canary in canaries:
+            canary.delete()
+        
+        # Delete user's canary logs
+        dynamodb = get_dynamodb_resource()
+        logs_table = dynamodb.Table('SilentCanary_CanaryLogs')
+        
+        # Scan for logs belonging to this user's canaries
+        logs_response = logs_table.scan(
+            FilterExpression='user_id = :uid',
+            ExpressionAttributeValues={':uid': user_id}
+        )
+        
+        # Delete logs in batches
+        for log in logs_response['Items']:
+            logs_table.delete_item(
+                Key={
+                    'canary_id': log['canary_id'],
+                    'timestamp': log['timestamp']
+                }
+            )
+        
+        # Finally delete the user
+        if user.delete():
+            flash(f'User {user.username} and all associated data deleted successfully', 'success')
+        else:
+            flash('Failed to delete user', 'error')
+            
+    except Exception as e:
+        flash(f'Error deleting user: {e}', 'error')
+    
+    return redirect(url_for('admin'))
+
+@app.route('/admin/update_email/<user_id>', methods=['POST'])
+@login_required
+@admin_required  
+def admin_update_email(user_id):
+    """Admin function to update a user's email address"""
+    try:
+        new_email = request.form.get('new_email', '').strip()
+        
+        if not new_email:
+            flash('Email address is required', 'error')
+            return redirect(url_for('admin'))
+        
+        # Basic email validation
+        import re
+        if not re.match(r'^[^@]+@[^@]+\.[^@]+$', new_email):
+            flash('Invalid email format', 'error')
+            return redirect(url_for('admin'))
+        
+        # Get user to update
+        user = User.get_by_id(user_id)
+        if not user:
+            flash('User not found', 'error')
+            return redirect(url_for('admin'))
+        
+        # Check if new email already exists
+        existing_user = User.get_by_email(new_email)
+        if existing_user and existing_user.user_id != user_id:
+            flash('Email address already in use by another user', 'error')
+            return redirect(url_for('admin'))
+        
+        old_email = user.email
+        user.email = new_email
+        user.is_verified = False  # Reset verification status for new email
+        
+        if user.save():
+            flash(f'Email updated from {old_email} to {new_email}. User will need to verify new email.', 'success')
+        else:
+            flash('Failed to update email address', 'error')
+            
+    except Exception as e:
+        flash(f'Error updating email: {e}', 'error')
+    
+    return redirect(url_for('admin'))
 
 @app.route('/create_canary', methods=['GET', 'POST'])
 @login_required
@@ -692,6 +909,25 @@ def check_failed_canaries():
         else:
             print("✅ All canaries are healthy")
 
+# Start scheduler automatically when module is imported (not just when run as main)
+def start_background_scheduler():
+    """Start the scheduler for background canary monitoring"""
+    if not scheduler.running:
+        try:
+            scheduler.add_job(
+                func=check_failed_canaries,
+                trigger="interval",
+                minutes=1,
+                id='canary_check'
+            )
+            scheduler.start()
+            print("✅ Background scheduler started successfully")
+        except Exception as e:
+            print(f"❌ Failed to start background scheduler: {e}")
+
+# Initialize scheduler when module loads
+start_background_scheduler()
+
 if __name__ == '__main__':
     # Initialize DynamoDB tables
     print("🔄 Initializing DynamoDB...")
@@ -703,14 +939,7 @@ if __name__ == '__main__':
         print(f"❌ DynamoDB connection failed: {e}")
         exit(1)
     
-    # Start scheduler
-    scheduler.add_job(
-        func=check_failed_canaries,
-        trigger="interval",
-        minutes=1,
-        id='canary_check'
-    )
-    scheduler.start()
+    print("✅ Scheduler already initialized during module import")
     
     try:
         app.run(debug=False, port=5000, host='0.0.0.0')
