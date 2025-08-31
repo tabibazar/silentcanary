@@ -713,6 +713,6 @@ if __name__ == '__main__':
     scheduler.start()
     
     try:
-        app.run(debug=True, port=5000, host='127.0.0.1')
+        app.run(debug=False, port=5000, host='0.0.0.0')
     except (KeyboardInterrupt, SystemExit):
         scheduler.shutdown()
