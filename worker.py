@@ -82,7 +82,8 @@ Please investigate your monitoring target immediately."""
                     msg = Message(
                         subject=subject,
                         recipients=[recipient],
-                        html=html_message
+                        html=html_message,
+                        sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER'])
                     )
                     mail.send(msg)
                     print(f"📧 Email notification sent to {recipient}")

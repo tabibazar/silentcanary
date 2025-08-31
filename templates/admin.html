@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - SilentCanary{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-users-cog text-danger"></i> Admin Dashboard</h1>
+    <span class="badge bg-danger">Admin Access</span>
+</div>
+
+<!-- Summary Statistics -->
+<div class="row mb-4">
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-users fa-2x me-3"></i>
+                    <div>
+                        <h4 class="mb-0">{{ stats.total_users }}</h4>
+                        <small>Total Users</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-dove fa-2x me-3"></i>
+                    <div>
+                        <h4 class="mb-0">{{ stats.total_canaries }}</h4>
+                        <small>Total Canaries</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-check-circle fa-2x me-3"></i>
+                    <div>
+                        <h4 class="mb-0">{{ stats.verified_users }}</h4>
+                        <small>Verified Users</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-percentage fa-2x me-3"></i>
+                    <div>
+                        <h4 class="mb-0">{{ stats.verification_rate }}%</h4>
+                        <small>Verification Rate</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Users Table -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="fas fa-table"></i> User Management
+            <span class="badge bg-secondary ms-2">{{ users|length }} users</span>
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover" id="usersTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>Canaries</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Last Login</th>
+                        <th>Timezone</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>
+                            <strong>{{ user.username }}</strong>
+                            {% if user.email == current_user.email %}
+                                <span class="badge bg-danger ms-1">Admin</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ user.email }}</small>
+                        </td>
+                        <td>
+                            {% if user.canary_count > 0 %}
+                                <span class="badge bg-primary">{{ user.canary_count }}</span>
+                            {% else %}
+                                <span class="text-muted">0</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user.is_verified %}
+                                <span class="badge bg-success">
+                                    <i class="fas fa-check"></i> Verified
+                                </span>
+                            {% else %}
+                                <span class="badge bg-warning">
+                                    <i class="fas fa-exclamation-triangle"></i> Unverified
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user.created_at %}
+                                <small>{{ user.created_at.strftime('%Y-%m-%d') }}</small><br>
+                                <small class="text-muted">{{ user.created_at.strftime('%H:%M UTC') }}</small>
+                            {% else %}
+                                <span class="text-muted">Unknown</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user.last_login %}
+                                <small>{{ user.last_login.strftime('%Y-%m-%d') }}</small><br>
+                                <small class="text-muted">{{ user.last_login.strftime('%H:%M UTC') }}</small>
+                            {% else %}
+                                <span class="text-muted">Never</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ user.timezone }}</small>
+                        </td>
+                        <td>
+                            {% if user.email != current_user.email %}
+                            <div class="btn-group" role="group">
+                                <!-- Update Email Button -->
+                                <button type="button" class="btn btn-sm btn-outline-primary" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#updateEmailModal"
+                                        data-user-id="{{ user.user_id }}"
+                                        data-user-name="{{ user.username }}"
+                                        data-current-email="{{ user.email }}">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                
+                                <!-- Delete User Button -->
+                                <button type="button" class="btn btn-sm btn-outline-danger" 
+                                        onclick="confirmDeleteUser('{{ user.user_id }}', '{{ user.username }}', {{ user.canary_count }})">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                            {% else %}
+                            <small class="text-muted">Admin</small>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="fas fa-tools"></i> Quick Actions
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <h6>System Stats</h6>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success"></i> Active Canaries: {{ stats.active_canaries }}</li>
+                    <li><i class="fas fa-users text-primary"></i> Total Users: {{ stats.total_users }}</li>
+                    <li><i class="fas fa-shield-alt text-info"></i> Verified: {{ stats.verified_users }}/{{ stats.total_users }}</li>
+                </ul>
+            </div>
+            <div class="col-md-6">
+                <h6>Admin Actions</h6>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-primary btn-sm me-2">
+                    <i class="fas fa-tachometer-alt"></i> Back to Dashboard
+                </a>
+                <button class="btn btn-outline-secondary btn-sm" onclick="refreshData()">
+                    <i class="fas fa-sync-alt"></i> Refresh Data
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Update Email Modal -->
+<div class="modal fade" id="updateEmailModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-edit text-primary"></i> Update User Email
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="updateEmailForm">
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <strong>User:</strong> <span id="modalUserName"></span><br>
+                        <strong>Current Email:</strong> <span id="modalCurrentEmail"></span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="newEmail" class="form-label">New Email Address</label>
+                        <input type="email" class="form-control" id="newEmail" name="new_email" required>
+                        <div class="form-text">User will need to verify the new email address.</div>
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i> 
+                        <strong>Warning:</strong> The user's email verification status will be reset and they will need to verify the new email address.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Email</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden Delete Form -->
+<form method="POST" id="deleteUserForm" style="display: none;">
+    <input type="hidden" id="deleteUserId" name="user_id">
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function refreshData() {
+    location.reload();
+}
+
+function confirmDeleteUser(userId, username, canaryCount) {
+    let message = `Are you sure you want to delete user "${username}"?\\n\\n`;
+    message += `This will permanently delete:\\n`;
+    message += `- User account\\n`;
+    message += `- ${canaryCount} canary(ies)\\n`;
+    message += `- All associated monitoring data\\n\\n`;
+    message += `This action CANNOT be undone!\\n\\n`;
+    message += `Type "${username}" to confirm deletion:`;
+    
+    const confirmation = prompt(message);
+    
+    if (confirmation === null) {
+        return; // User cancelled
+    }
+    
+    if (confirmation.trim() !== username) {
+        alert('Username confirmation did not match. Deletion cancelled.');
+        return;
+    }
+    
+    if (confirm('FINAL CONFIRMATION: Delete user and all data permanently?')) {
+        const form = document.getElementById('deleteUserForm');
+        form.action = '/admin/delete_user/' + userId;
+        form.submit();
+    }
+}
+
+// Add search functionality
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle update email modal
+    const updateEmailModal = document.getElementById('updateEmailModal');
+    updateEmailModal.addEventListener('show.bs.modal', function (event) {
+        const button = event.relatedTarget;
+        const userId = button.getAttribute('data-user-id');
+        const userName = button.getAttribute('data-user-name');
+        const currentEmail = button.getAttribute('data-current-email');
+        
+        // Update modal content
+        document.getElementById('modalUserName').textContent = userName;
+        document.getElementById('modalCurrentEmail').textContent = currentEmail;
+        document.getElementById('newEmail').value = '';
+        
+        // Update form action
+        document.getElementById('updateEmailForm').action = '/admin/update_email/' + userId;
+    });
+
+    // Add search box
+    const tableCard = document.querySelector('.card .card-header h5');
+    const searchDiv = document.createElement('div');
+    searchDiv.className = 'float-end';
+    searchDiv.innerHTML = `
+        <input type="text" id="userSearch" class="form-control form-control-sm" placeholder="Search users..." style="width: 200px;">
+    `;
+    tableCard.parentNode.appendChild(searchDiv);
+    
+    // Search functionality
+    const searchInput = document.getElementById('userSearch');
+    const table = document.getElementById('usersTable');
+    const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+    
+    searchInput.addEventListener('keyup', function() {
+        const filter = this.value.toLowerCase();
+        
+        for (let i = 0; i < rows.length; i++) {
+            const username = rows[i].getElementsByTagName('td')[0].textContent.toLowerCase();
+            const email = rows[i].getElementsByTagName('td')[1].textContent.toLowerCase();
+            
+            if (username.includes(filter) || email.includes(filter)) {
+                rows[i].style.display = '';
+            } else {
+                rows[i].style.display = 'none';
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

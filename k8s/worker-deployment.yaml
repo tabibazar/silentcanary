@@ -1,26 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: silentcanary-app
+  name: silentcanary-worker
   namespace: silentcanary
   labels:
-    app: silentcanary
+    app: silentcanary-worker
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
-      app: silentcanary
+      app: silentcanary-worker
   template:
     metadata:
       labels:
-        app: silentcanary
+        app: silentcanary-worker
     spec:
       containers:
-      - name: silentcanary
+      - name: worker
         image: 251132308531.dkr.ecr.ca-central-1.amazonaws.com/silentcanary:last-login-9501057-amd64
-        ports:
-        - containerPort: 5000
-          name: http
+        command: ["python", "worker.py"]
         env:
         - name: FLASK_ENV
           value: "production"
@@ -28,6 +26,10 @@ spec:
           value: "ca-central-1"
         - name: DYNAMODB_LOCAL
           value: ""
+        - name: REDIS_HOST
+          value: "silentcanary-redis-service"
+        - name: REDIS_PORT
+          value: "6379"
         - name: SENDGRID_API_KEY
           valueFrom:
             secretKeyRef:
@@ -55,52 +57,18 @@ spec:
               key: flask-secret-key
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "250m"
+            memory: "128Mi"
+            cpu: "100m"
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "256Mi"
+            cpu: "200m"
         livenessProbe:
-          httpGet:
-            path: /health
-            port: 5000
+          exec:
+            command:
+            - python
+            - -c
+            - "import os; exit(0 if os.path.exists('/proc/1/cmdline') else 1)"
           initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 5000
-          initialDelaySeconds: 15
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        startupProbe:
-          httpGet:
-            path: /health
-            port: 5000
-          initialDelaySeconds: 20
-          periodSeconds: 15
-          timeoutSeconds: 10
-          failureThreshold: 20
-      # Use IAM roles for service accounts (IRSA) instead of embedding credentials
+          periodSeconds: 30
       serviceAccountName: silentcanary-service-account
       restartPolicy: Always
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: silentcanary-service
-  namespace: silentcanary
-  labels:
-    app: silentcanary
-spec:
-  selector:
-    app: silentcanary
-  ports:
-  - port: 80
-    targetPort: 5000
-    protocol: TCP
-    name: http
-  type: ClusterIP

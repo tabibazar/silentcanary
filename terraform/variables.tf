@@ -13,13 +13,13 @@ variable "environment" {
 variable "cluster_version" {
   description = "Kubernetes version to use for the EKS cluster"
   type        = string
-  default     = "1.28"
+  default     = "1.33"
 }
 
 variable "node_instance_types" {
   description = "List of instance types for the worker nodes"
   type        = list(string)
-  default     = ["t3.medium"]
+  default     = ["t3.micro"]
 }
 
 variable "node_desired_capacity" {

@@ -36,6 +36,13 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('create_canary') }}">Create Canary</a>
                     </li>
+                    {% if current_user.email == 'reza@tabibazar.com' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-danger" href="{{ url_for('admin') }}">
+                            <i class="fas fa-users-cog"></i> Admin
+                        </a>
+                    </li>
+                    {% endif %}
                     {% endif %}
                 </ul>
                 

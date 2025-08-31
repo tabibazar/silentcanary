@@ -175,7 +175,7 @@ def register():
                 
                 msg = Message(
                     subject='Welcome to SilentCanary - Please verify your email',
-                    sender=app.config['MAIL_DEFAULT_SENDER'],
+                    sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
                     recipients=[user.email],
                     html=f'''
                     <h2>Welcome to SilentCanary!</h2>
@@ -240,6 +240,7 @@ def forgot_password():
                 reset_link = url_for('reset_password', token=token, _external=True)
                 msg = Message(
                     subject='SilentCanary Password Reset',
+                    sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
                     recipients=[user.email],
                     html=f'''
                     <h2>Password Reset Request</h2>
@@ -567,6 +568,7 @@ def settings():
                 verification_link = url_for('verify_email', token=token, _external=True)
                 msg = Message(
                     subject='SilentCanary - Verify Your Email',
+                    sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
                     recipients=[current_user.email],
                     html=f'''
                     <h2>Email Verification</h2>
@@ -792,6 +794,7 @@ Please investigate your monitoring target immediately."""
                 try:
                     msg = Message(
                         subject=subject,
+                        sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
                         recipients=[recipient],
                         html=html_message
                     )
