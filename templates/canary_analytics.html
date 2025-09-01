@@ -12,6 +12,11 @@
         <a href="{{ url_for('export_canary_data', canary_id=canary.canary_id, format='json') }}" class="btn btn-outline-info btn-sm">
             <i class="fas fa-download"></i> Export JSON
         </a>
+        {% if trends.total_failures == 0 %}
+        <a href="{{ url_for('test_failure_data', canary_id=canary.canary_id) }}" class="btn btn-outline-warning btn-sm">
+            <i class="fas fa-vial"></i> Generate Test Data
+        </a>
+        {% endif %}
         <a href="{{ url_for('canary_logs', canary_id=canary.canary_id) }}" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-list"></i> View Logs
         </a>
@@ -270,13 +275,21 @@
 // Hourly failures chart
 {% if trends.total_failures > 0 %}
 const hourlyCtx = document.getElementById('hourlyChart').getContext('2d');
+
+// Prepare hourly data - ensure all 24 hours are represented
+const hourlyFailures = {{ trends.hourly_failures | tojson }};
+const hourlyData = [];
+for (let i = 0; i < 24; i++) {
+    hourlyData.push(hourlyFailures.hasOwnProperty(i) ? hourlyFailures[i] : 0);
+}
+
 const hourlyChart = new Chart(hourlyCtx, {
     type: 'bar',
     data: {
         labels: Array.from({length: 24}, (_, i) => i + ':00'),
         datasets: [{
             label: 'Failures',
-            data: {{ trends.hourly_failures.values() | list }},
+            data: hourlyData,
             backgroundColor: 'rgba(220, 53, 69, 0.6)',
             borderColor: 'rgba(220, 53, 69, 1)',
             borderWidth: 1
@@ -302,13 +315,19 @@ const hourlyChart = new Chart(hourlyCtx, {
 
 // Daily failures chart
 const dailyCtx = document.getElementById('dailyChart').getContext('2d');
+
+// Daily failures data
+const dailyData = {{ trends.daily_failures | tojson }};
+const dayNames = Object.keys(dailyData);
+const dayValues = Object.values(dailyData);
+
 const dailyChart = new Chart(dailyCtx, {
     type: 'bar',
     data: {
-        labels: {{ trends.daily_failures.keys() | list }},
+        labels: dayNames,
         datasets: [{
             label: 'Failures',
-            data: {{ trends.daily_failures.values() | list }},
+            data: dayValues,
             backgroundColor: 'rgba(255, 193, 7, 0.6)',
             borderColor: 'rgba(255, 193, 7, 1)',
             borderWidth: 1

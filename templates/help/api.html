@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+
+{% block title %}API Documentation - Help - SilentCanary{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-3">
+            <div class="list-group">
+                <a href="{{ url_for('help_overview') }}" class="list-group-item list-group-item-action">Overview</a>
+                <a href="{{ url_for('help_getting_started') }}" class="list-group-item list-group-item-action">Getting Started</a>
+                <a href="{{ url_for('help_examples') }}" class="list-group-item list-group-item-action">Examples</a>
+                <a href="{{ url_for('help_smart_alerts') }}" class="list-group-item list-group-item-action">Smart Alerts</a>
+                <a href="{{ url_for('help_api') }}" class="list-group-item list-group-item-action active">API Documentation</a>
+                <a href="{{ url_for('help_troubleshooting') }}" class="list-group-item list-group-item-action">Troubleshooting</a>
+                <a href="{{ url_for('help_faq') }}" class="list-group-item list-group-item-action">FAQ</a>
+            </div>
+        </div>
+        <div class="col-md-9">
+            <h1>API Documentation</h1>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Check-in Endpoint</h3>
+                </div>
+                <div class="card-body">
+                    <h5>POST/GET /checkin/&lt;token&gt;</h5>
+                    <p>Send a check-in signal for your canary.</p>
+                    
+                    <h6>URL Parameters:</h6>
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>token</code></td>
+                                <td>string</td>
+                                <td>Your canary's unique token (found in dashboard)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h6>Request Parameters:</h6>
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Type</th>
+                                <th>Required</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>message</code></td>
+                                <td>string</td>
+                                <td>No</td>
+                                <td>Custom message to log with the check-in (max 500 characters)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h6>Request Methods:</h6>
+                    <ul>
+                        <li><strong>GET:</strong> Message can be passed as query parameter</li>
+                        <li><strong>POST:</strong> Message can be passed as form data or JSON</li>
+                    </ul>
+
+                    <h6>Response Format:</h6>
+                    <pre><code>{
+  "status": "success",
+  "message": "Check-in received",
+  "received_message": "Your custom message here"  // Only if message was provided
+}</code></pre>
+
+                    <h6>Error Response:</h6>
+                    <pre><code>{
+  "status": "error",
+  "message": "Invalid token"
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Request Examples</h3>
+                </div>
+                <div class="card-body">
+                    <h6>1. Simple GET Request</h6>
+                    <pre><code>GET /checkin/abc123def456
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "status": "success",
+  "message": "Check-in received"
+}</code></pre>
+
+                    <h6>2. GET with Message</h6>
+                    <pre><code>GET /checkin/abc123def456?message=Task%20completed%20successfully
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "status": "success",
+  "message": "Check-in received",
+  "received_message": "Task completed successfully"
+}</code></pre>
+
+                    <h6>3. POST with Form Data</h6>
+                    <pre><code>POST /checkin/abc123def456
+Content-Type: application/x-www-form-urlencoded
+
+message=Processed+1234+records+in+5.2+seconds
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "status": "success",
+  "message": "Check-in received",
+  "received_message": "Processed 1234 records in 5.2 seconds"
+}</code></pre>
+
+                    <h6>4. POST with JSON</h6>
+                    <pre><code>POST /checkin/abc123def456
+Content-Type: application/json
+
+{
+  "message": "Database backup completed - 2.3GB backed up"
+}
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "status": "success",
+  "message": "Check-in received",
+  "received_message": "Database backup completed - 2.3GB backed up"
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Status Codes</h3>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Status Code</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>200 OK</code></td>
+                                <td>Check-in successful</td>
+                            </tr>
+                            <tr>
+                                <td><code>404 Not Found</code></td>
+                                <td>Invalid token or canary not found</td>
+                            </tr>
+                            <tr>
+                                <td><code>400 Bad Request</code></td>
+                                <td>Malformed request (rarely encountered)</td>
+                            </tr>
+                            <tr>
+                                <td><code>500 Internal Server Error</code></td>
+                                <td>Server error - please try again</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Rate Limiting</h3>
+                </div>
+                <div class="card-body">
+                    <p>Currently there are no strict rate limits, but excessive requests may be throttled. Best practices:</p>
+                    <ul>
+                        <li>Don't check in more frequently than your configured interval</li>
+                        <li>Use reasonable timeouts in your client code</li>
+                        <li>Implement exponential backoff for retries</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Client Libraries & Code Examples</h3>
+                </div>
+                <div class="card-body">
+                    <h6>cURL</h6>
+                    <pre><code>curl -X POST "https://yourapp.com/checkin/YOUR_TOKEN" \
+     -d "message=Script completed successfully"</code></pre>
+
+                    <h6>Python (requests)</h6>
+                    <pre><code>import requests
+
+response = requests.post(
+    'https://yourapp.com/checkin/YOUR_TOKEN',
+    json={'message': 'Python script completed'}
+)
+print(response.json())</code></pre>
+
+                    <h6>Node.js (fetch)</h6>
+                    <pre><code>const response = await fetch('https://yourapp.com/checkin/YOUR_TOKEN', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+        message: 'Node.js task completed'
+    })
+});
+const result = await response.json();
+console.log(result);</code></pre>
+
+                    <h6>PowerShell</h6>
+                    <pre><code>$body = @{
+    message = "PowerShell script completed"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "https://yourapp.com/checkin/YOUR_TOKEN" `
+                  -Method POST `
+                  -Body $body `
+                  -ContentType "application/json"</code></pre>
+
+                    <h6>Go</h6>
+                    <pre><code>package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+)
+
+func checkin() {
+    data := map[string]string{
+        "message": "Go service check-in",
+    }
+    
+    jsonData, _ := json.Marshal(data)
+    
+    resp, err := http.Post(
+        "https://yourapp.com/checkin/YOUR_TOKEN",
+        "application/json",
+        bytes.NewBuffer(jsonData),
+    )
+    if err != nil {
+        // handle error
+    }
+    defer resp.Body.Close()
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="alert alert-warning">
+                <i class="fas fa-shield-alt"></i>
+                <strong>Security Notes:</strong>
+                <ul class="mb-0 mt-2">
+                    <li>Keep your canary tokens secure - treat them like passwords</li>
+                    <li>Use HTTPS for all API requests</li>
+                    <li>Messages are logged and may contain sensitive information</li>
+                    <li>Consider using environment variables for tokens in your scripts</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

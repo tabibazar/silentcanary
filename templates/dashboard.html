@@ -45,6 +45,12 @@
                                     {% elif canary.alert_type == 'both' %}
                                         📧 Email + 💬 Slack
                                     {% endif %}<br>
+                                    {% if canary.tags %}
+                                    <strong>Tags:</strong>
+                                    {% for tag in canary.tags %}
+                                        <span class="badge bg-secondary me-1">{{ tag }}</span>
+                                    {% endfor %}<br>
+                                    {% endif %}
                                     <strong>Last Check-in:</strong> 
                                     <span class="last-checkin">
                                     {% if canary.last_checkin %}
@@ -87,6 +93,9 @@
                                     </button>
                                     <a href="{{ url_for('canary_analytics', canary_id=canary.canary_id) }}" class="btn btn-sm btn-outline-warning" title="Analytics">
                                         <i class="fas fa-chart-line"></i>
+                                    </a>
+                                    <a href="{{ url_for('smart_alert_config', canary_id=canary.canary_id) }}" class="btn btn-sm btn-outline-primary" title="Smart Alerts">
+                                        <i class="fas fa-brain"></i>
                                     </a>
                                     <a href="{{ url_for('canary_logs', canary_id=canary.canary_id) }}" class="btn btn-sm btn-outline-info" title="View Logs">
                                         <i class="fas fa-list"></i>

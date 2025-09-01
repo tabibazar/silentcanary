@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block title %}Smart Alerts - {{ canary.name }} - SilentCanary{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3">
+                <i class="fas fa-brain text-primary"></i> Smart Alerts: {{ canary.name }}
+            </h1>
+            <div>
+                <a href="{{ url_for('canary_analytics', canary_id=canary.canary_id) }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-chart-line"></i> Analytics
+                </a>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-secondary btn-sm">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+
+        <!-- Smart Alert Status Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-robot"></i> Smart Alert Status
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if smart_alert and smart_alert.is_enabled %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle"></i> Smart alerting is <strong>enabled</strong> for this canary
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Sensitivity:</strong></td>
+                                    <td>{{ (smart_alert.sensitivity * 100) | round(1) }}%</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Learning Period:</strong></td>
+                                    <td>{{ smart_alert.learning_period_days }} days</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Last Analysis:</strong></td>
+                                    <td>
+                                        {% if smart_alert.last_analysis %}
+                                            {{ (smart_alert.last_analysis | user_timezone).strftime('%Y-%m-%d %H:%M %Z') }}
+                                        {% else %}
+                                            Not analyzed yet
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Patterns Learned:</strong></td>
+                                    <td>
+                                        {% if smart_alert.pattern_data and smart_alert.pattern_data.total_checkins %}
+                                            {{ smart_alert.pattern_data.total_checkins }} check-ins analyzed
+                                        {% else %}
+                                            No patterns learned yet
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            {% if smart_alert.pattern_data and smart_alert.pattern_data.avg_interval %}
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-title">Learned Patterns</h6>
+                                    <p class="card-text">
+                                        <small class="text-muted">
+                                            <strong>Average Interval:</strong> {{ smart_alert.pattern_data.avg_interval | round(1) }} minutes<br>
+                                            <strong>Expected Interval:</strong> {{ smart_alert.pattern_data.expected_interval }} minutes<br>
+                                            <strong>Variability:</strong> ±{{ smart_alert.pattern_data.interval_std | round(1) }} minutes
+                                        </small>
+                                    </p>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <form method="POST" action="{{ url_for('disable_smart_alert', canary_id=canary.canary_id) }}" class="d-inline">
+                            <button type="submit" class="btn btn-outline-danger btn-sm" 
+                                    onclick="return confirm('Are you sure you want to disable smart alerting?')">
+                                <i class="fas fa-power-off"></i> Disable Smart Alerts
+                            </button>
+                        </form>
+                        
+                        {% if smart_alert.pattern_data %}
+                        <form method="POST" action="{{ url_for('relearn_patterns', canary_id=canary.canary_id) }}" class="d-inline ms-2">
+                            <button type="submit" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-sync-alt"></i> Re-learn Patterns
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> Smart alerting is <strong>disabled</strong> for this canary
+                    </div>
+                    
+                    <p class="text-muted">
+                        Smart alerting uses machine learning to analyze your check-in patterns and detect anomalies.
+                        It can identify irregular check-in times, unusual intervals, and patterns that deviate from your normal schedule.
+                    </p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Configuration Card -->
+        {% if not smart_alert or not smart_alert.is_enabled %}
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-cogs"></i> Enable Smart Alerting
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('enable_smart_alert', canary_id=canary.canary_id) }}">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="sensitivity" class="form-label">Sensitivity</label>
+                                <input type="range" class="form-range" id="sensitivity" name="sensitivity" 
+                                       min="0.5" max="1.0" step="0.1" 
+                                       value="{{ smart_alert.sensitivity if smart_alert else '0.8' }}"
+                                       oninput="updateSensitivityValue(this.value)">
+                                <div class="d-flex justify-content-between">
+                                    <small class="text-muted">Less sensitive</small>
+                                    <small class="text-muted">More sensitive</small>
+                                </div>
+                                <div class="form-text">
+                                    Current: <span id="sensitivity-value">{{ ((smart_alert.sensitivity if smart_alert else 0.8) * 100) | round(0) }}%</span>
+                                    <br>Higher sensitivity detects smaller deviations from normal patterns.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="learning_period" class="form-label">Learning Period (days)</label>
+                                <select class="form-select" id="learning_period" name="learning_period">
+                                    <option value="3" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 3 }}>3 days</option>
+                                    <option value="7" {{ 'selected' if not smart_alert or smart_alert.learning_period_days == 7 }}>7 days (recommended)</option>
+                                    <option value="14" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 14 }}>14 days</option>
+                                    <option value="30" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 30 }}>30 days</option>
+                                </select>
+                                <div class="form-text">How many days of check-in history to analyze for pattern learning.</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Note:</strong> Smart alerting requires at least 3 successful check-ins within the learning period to establish patterns.
+                        If insufficient data is available, patterns will be learned as more check-ins occur.
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-brain"></i> Enable Smart Alerting
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- How It Works Card -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-question-circle"></i> How Smart Alerting Works
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6><i class="fas fa-chart-line text-primary"></i> Pattern Learning</h6>
+                        <p class="small">Analyzes your check-in history to understand normal patterns by time of day, day of week, and intervals.</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6><i class="fas fa-search text-warning"></i> Anomaly Detection</h6>
+                        <p class="small">Compares current behavior against learned patterns to identify unusual deviations that may indicate issues.</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6><i class="fas fa-bell text-danger"></i> Smart Notifications</h6>
+                        <p class="small">Sends alerts when patterns deviate significantly from normal, reducing false positives from expected variations.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function updateSensitivityValue(value) {
+    document.getElementById('sensitivity-value').textContent = Math.round(value * 100) + '%';
+}
+</script>
+{% endblock %}

@@ -43,6 +43,21 @@
                         </a>
                     </li>
                     {% endif %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="helpDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-question-circle"></i> Help
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('help_overview') }}"><i class="fas fa-home"></i> Overview</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('help_getting_started') }}"><i class="fas fa-rocket"></i> Getting Started</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('help_examples') }}"><i class="fas fa-lightbulb"></i> Real-World Examples</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('help_smart_alerts') }}"><i class="fas fa-brain"></i> Smart Alerts</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('help_api') }}"><i class="fas fa-code"></i> API Documentation</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('help_troubleshooting') }}"><i class="fas fa-wrench"></i> Troubleshooting</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('help_faq') }}"><i class="fas fa-question"></i> FAQ</a></li>
+                        </ul>
+                    </li>
                     {% endif %}
                 </ul>
                 

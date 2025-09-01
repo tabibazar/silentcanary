@@ -1,0 +1,454 @@
+{% extends "base.html" %}
+
+{% block title %}FAQ - Help - SilentCanary{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-3">
+            <div class="list-group">
+                <a href="{{ url_for('help_overview') }}" class="list-group-item list-group-item-action">Overview</a>
+                <a href="{{ url_for('help_getting_started') }}" class="list-group-item list-group-item-action">Getting Started</a>
+                <a href="{{ url_for('help_examples') }}" class="list-group-item list-group-item-action">Examples</a>
+                <a href="{{ url_for('help_smart_alerts') }}" class="list-group-item list-group-item-action">Smart Alerts</a>
+                <a href="{{ url_for('help_api') }}" class="list-group-item list-group-item-action">API Documentation</a>
+                <a href="{{ url_for('help_troubleshooting') }}" class="list-group-item list-group-item-action">Troubleshooting</a>
+                <a href="{{ url_for('help_faq') }}" class="list-group-item list-group-item-action active">FAQ</a>
+            </div>
+        </div>
+        <div class="col-md-9">
+            <h1>Frequently Asked Questions</h1>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>General Questions</h3>
+                </div>
+                <div class="card-body">
+                    <div class="accordion" id="generalAccordion">
+                        
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#general1">
+                                    What is a "dead man's switch"?
+                                </button>
+                            </h2>
+                            <div id="general1" class="accordion-collapse collapse show" data-bs-parent="#generalAccordion">
+                                <div class="accordion-body">
+                                    <p>A dead man's switch is a safety mechanism that activates when someone (or something) stops operating normally. In monitoring, it means your process regularly "checks in" to prove it's still working. If check-ins stop, you get alerted that something may be wrong.</p>
+                                    <p>This is different from traditional monitoring where you monitor from the outside. With SilentCanary, your process actively reports its health.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#general2">
+                                    How is this different from other monitoring services?
+                                </button>
+                            </h2>
+                            <div id="general2" class="accordion-collapse collapse" data-bs-parent="#generalAccordion">
+                                <div class="accordion-body">
+                                    <ul>
+                                        <li><strong>Inside-out monitoring:</strong> Your process reports its own health rather than being monitored externally</li>
+                                        <li><strong>Simple API:</strong> Just make an HTTP request when your task completes</li>
+                                        <li><strong>Smart Alerts:</strong> Machine learning detects pattern changes, not just failures</li>
+                                        <li><strong>Zero infrastructure:</strong> No agents to install or configure</li>
+                                        <li><strong>Custom messages:</strong> Include context about what your process actually did</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#general3">
+                                    Is my data secure?
+                                </button>
+                            </h2>
+                            <div id="general3" class="accordion-collapse collapse" data-bs-parent="#generalAccordion">
+                                <div class="accordion-body">
+                                    <p><strong>Yes.</strong> SilentCanary is designed with security in mind:</p>
+                                    <ul>
+                                        <li>All API calls use HTTPS encryption</li>
+                                        <li>Canary tokens act as secure API keys</li>
+                                        <li>No sensitive data is required - only timing and optional messages</li>
+                                        <li>Data is isolated per user account</li>
+                                        <li>Regular security audits and updates</li>
+                                    </ul>
+                                    <p><strong>Best practices:</strong> Keep your canary tokens secure, don't include sensitive information in messages, and use environment variables for tokens in scripts.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Setup & Configuration</h3>
+                </div>
+                <div class="card-body">
+                    <div class="accordion" id="setupAccordion">
+                        
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#setup1">
+                                    How do I choose the right interval and grace period?
+                                </button>
+                            </h2>
+                            <div id="setup1" class="accordion-collapse collapse" data-bs-parent="#setupAccordion">
+                                <div class="accordion-body">
+                                    <p><strong>Interval:</strong> How often your process normally runs or should check in.</p>
+                                    <p><strong>Grace Period:</strong> Extra time to allow for normal variation.</p>
+                                    
+                                    <h6>Examples:</h6>
+                                    <ul>
+                                        <li><strong>Hourly cron job:</strong> 60 minutes interval, 10-15 minutes grace</li>
+                                        <li><strong>Daily backup:</strong> 1440 minutes (24 hours) interval, 30-60 minutes grace</li>
+                                        <li><strong>Continuous service:</strong> 5-10 minutes interval, 2-5 minutes grace</li>
+                                        <li><strong>Weekly report:</strong> 10080 minutes (7 days) interval, 120 minutes grace</li>
+                                    </ul>
+                                    
+                                    <p><strong>Tip:</strong> Start with generous grace periods and tighten them based on actual performance.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#setup2">
+                                    Can I monitor multiple services with one account?
+                                </button>
+                            </h2>
+                            <div id="setup2" class="accordion-collapse collapse" data-bs-parent="#setupAccordion">
+                                <div class="accordion-body">
+                                    <p><strong>Yes!</strong> You can create multiple canaries for different services, processes, or environments.</p>
+                                    
+                                    <h6>Organization strategies:</h6>
+                                    <ul>
+                                        <li><strong>By service:</strong> "Database Backup", "API Health Check", "Report Generation"</li>
+                                        <li><strong>By environment:</strong> "Production DB Backup", "Staging DB Backup"</li>
+                                        <li><strong>By frequency:</strong> "Hourly Process", "Daily Cleanup", "Weekly Reports"</li>
+                                        <li><strong>By criticality:</strong> "Critical - Payment Processing", "Non-Critical - Log Rotation"</li>
+                                    </ul>
+                                    
+                                    <p>Use tags to organize and filter your canaries in the dashboard.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#setup3">
+                                    Should I use email, Slack, or both for alerts?
+                                </button>
+                            </h2>
+                            <div id="setup3" class="accordion-collapse collapse" data-bs-parent="#setupAccordion">
+                                <div class="accordion-body">
+                                    <p><strong>It depends on your workflow:</strong></p>
+                                    
+                                    <h6>Email Only:</h6>
+                                    <ul>
+                                        <li>Personal projects or small teams</li>
+                                        <li>Non-urgent monitoring</li>
+                                        <li>When you want a permanent record</li>
+                                    </ul>
+                                    
+                                    <h6>Slack Only:</h6>
+                                    <ul>
+                                        <li>Team-based workflows</li>
+                                        <li>Need immediate visibility</li>
+                                        <li>Integration with existing ChatOps</li>
+                                    </ul>
+                                    
+                                    <h6>Both:</h6>
+                                    <ul>
+                                        <li>Critical systems (redundancy)</li>
+                                        <li>Mixed team preferences</li>
+                                        <li>24/7 operations (email for off-hours, Slack during work)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Technical Questions</h3>
+                </div>
+                <div class="card-body">
+                    <div class="accordion" id="technicalAccordion">
+                        
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#tech1">
+                                    What happens if my check-in fails due to network issues?
+                                </button>
+                            </h2>
+                            <div id="tech1" class="accordion-collapse collapse" data-bs-parent="#technicalAccordion">
+                                <div class="accordion-body">
+                                    <p>If a check-in fails to reach SilentCanary, the canary will eventually be marked as failed when it exceeds the interval + grace period.</p>
+                                    
+                                    <h6>To handle this:</h6>
+                                    <ul>
+                                        <li><strong>Implement retries:</strong> Try the check-in multiple times with delays</li>
+                                        <li><strong>Set appropriate grace periods:</strong> Account for occasional network delays</li>
+                                        <li><strong>Use timeouts:</strong> Don't let check-in attempts hang indefinitely</li>
+                                        <li><strong>Log failures:</strong> Track when check-ins fail in your process logs</li>
+                                    </ul>
+                                    
+                                    <p>Example retry logic is available in our <a href="{{ url_for('help_troubleshooting') }}">troubleshooting guide</a>.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#tech2">
+                                    Can I check in from multiple locations for the same process?
+                                </button>
+                            </h2>
+                            <div id="tech2" class="accordion-collapse collapse" data-bs-parent="#technicalAccordion">
+                                <div class="accordion-body">
+                                    <p><strong>Yes,</strong> but be careful with timing expectations.</p>
+                                    
+                                    <h6>Common scenarios:</h6>
+                                    <ul>
+                                        <li><strong>Load balancer:</strong> Multiple instances of the same service</li>
+                                        <li><strong>Redundancy:</strong> Backup systems that can take over</li>
+                                        <li><strong>Multi-stage process:</strong> Different steps checking in</li>
+                                    </ul>
+                                    
+                                    <h6>Considerations:</h6>
+                                    <ul>
+                                        <li>Any successful check-in resets the timer</li>
+                                        <li>Configure intervals based on the expected frequency of ANY check-in</li>
+                                        <li>Use messages to identify which instance checked in</li>
+                                        <li>Consider separate canaries for truly independent processes</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#tech3">
+                                    How much data can I include in messages?
+                                </button>
+                            </h2>
+                            <div id="tech3" class="accordion-collapse collapse" data-bs-parent="#technicalAccordion">
+                                <div class="accordion-body">
+                                    <p><strong>Messages are limited to 500 characters</strong> to keep the system responsive and logs readable.</p>
+                                    
+                                    <h6>Best practices for messages:</h6>
+                                    <ul>
+                                        <li><strong>Include key metrics:</strong> "Processed 1,234 records in 5.2 seconds"</li>
+                                        <li><strong>Status indicators:</strong> "Backup completed successfully - 2.3GB"</li>
+                                        <li><strong>Error summaries:</strong> "3 warnings, 0 errors"</li>
+                                        <li><strong>Resource usage:</strong> "Memory: 45%, CPU: 12%"</li>
+                                    </ul>
+                                    
+                                    <p><strong>Don't include:</strong></p>
+                                    <ul>
+                                        <li>Sensitive data (passwords, API keys, personal information)</li>
+                                        <li>Very long stack traces (summarize instead)</li>
+                                        <li>Binary data or encoded content</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#tech4">
+                                    Does SilentCanary have rate limits?
+                                </button>
+                            </h2>
+                            <div id="tech4" class="accordion-collapse collapse" data-bs-parent="#technicalAccordion">
+                                <div class="accordion-body">
+                                    <p>Currently, there are no strict rate limits, but the system may throttle excessive requests to maintain performance for all users.</p>
+                                    
+                                    <h6>Best practices:</h6>
+                                    <ul>
+                                        <li>Don't check in more frequently than your configured interval</li>
+                                        <li>Use reasonable timeouts (5-10 seconds) in your client code</li>
+                                        <li>Implement exponential backoff for retries</li>
+                                        <li>Consider the actual needs of your monitoring</li>
+                                    </ul>
+                                    
+                                    <p><strong>Typical usage patterns:</strong></p>
+                                    <ul>
+                                        <li>Cron jobs: Once per interval (hourly, daily, etc.)</li>
+                                        <li>Services: Every few minutes to every hour</li>
+                                        <li>Batch processes: Once per run completion</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Smart Alerts Questions</h3>
+                </div>
+                <div class="card-body">
+                    <div class="accordion" id="smartAccordion">
+                        
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#smart1">
+                                    When should I use Smart Alerts vs regular monitoring?
+                                </button>
+                            </h2>
+                            <div id="smart1" class="accordion-collapse collapse" data-bs-parent="#smartAccordion">
+                                <div class="accordion-body">
+                                    <p><strong>Use Smart Alerts when:</strong></p>
+                                    <ul>
+                                        <li>Your process doesn't run at exact intervals</li>
+                                        <li>Execution time varies significantly</li>
+                                        <li>You need early warning of performance degradation</li>
+                                        <li>Your process has time-of-day or day-of-week patterns</li>
+                                        <li>You want to detect subtle changes in behavior</li>
+                                    </ul>
+                                    
+                                    <p><strong>Stick with regular monitoring when:</strong></p>
+                                    <ul>
+                                        <li>Your process runs very consistently</li>
+                                        <li>You only need to know about complete failures</li>
+                                        <li>Your process is new (< 1 week of data)</li>
+                                        <li>Simple timeout-based alerts are sufficient</li>
+                                    </ul>
+                                    
+                                    <p><strong>Best approach:</strong> Use both! Regular alerts catch failures, Smart Alerts provide early warning.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#smart2">
+                                    How does pattern learning work?
+                                </button>
+                            </h2>
+                            <div id="smart2" class="accordion-collapse collapse" data-bs-parent="#smartAccordion">
+                                <div class="accordion-body">
+                                    <p>Smart Alerts analyze your historical check-in data to understand normal patterns:</p>
+                                    
+                                    <h6>What it learns:</h6>
+                                    <ul>
+                                        <li><strong>Timing patterns:</strong> Average intervals and normal variation</li>
+                                        <li><strong>Hourly patterns:</strong> Different behavior by time of day</li>
+                                        <li><strong>Daily patterns:</strong> Weekday vs weekend differences</li>
+                                        <li><strong>Consistency:</strong> How much timing varies normally</li>
+                                    </ul>
+                                    
+                                    <h6>How it detects anomalies:</h6>
+                                    <ul>
+                                        <li>Statistical analysis of timing deviations</li>
+                                        <li>Comparison against learned hourly/daily patterns</li>
+                                        <li>Sensitivity-based thresholds</li>
+                                        <li>Multiple factors combined for accurate detection</li>
+                                    </ul>
+                                    
+                                    <p><strong>Requirements:</strong> Minimum 3 successful check-ins in the learning period, some consistency in patterns.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Account & Billing</h3>
+                </div>
+                <div class="card-body">
+                    <div class="accordion" id="accountAccordion">
+                        
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#account1">
+                                    How many canaries can I create?
+                                </button>
+                            </h2>
+                            <div id="account1" class="accordion-collapse collapse" data-bs-parent="#accountAccordion">
+                                <div class="accordion-body">
+                                    <p>There are currently no strict limits on the number of canaries you can create. However, consider organizing your monitoring logically:</p>
+                                    
+                                    <ul>
+                                        <li>One canary per distinct process or service</li>
+                                        <li>Separate canaries for different environments (prod, staging)</li>
+                                        <li>Group related checks using tags for better organization</li>
+                                        <li>Consider the maintenance overhead of many canaries</li>
+                                    </ul>
+                                    
+                                    <p>If you need to monitor a very large number of processes, consider whether some could be grouped together or monitored at a higher level.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#account2">
+                                    Can I change my email address?
+                                </button>
+                            </h2>
+                            <div id="account2" class="accordion-collapse collapse" data-bs-parent="#accountAccordion">
+                                <div class="accordion-body">
+                                    <p><strong>Yes,</strong> you can update your email address in your account settings.</p>
+                                    
+                                    <h6>Steps:</h6>
+                                    <ol>
+                                        <li>Go to your account Settings page</li>
+                                        <li>Contact support to change your email address (this requires admin assistance for security)</li>
+                                        <li>Verify the new email address</li>
+                                    </ol>
+                                    
+                                    <p><strong>Note:</strong> Email verification is required for the new address before alerts will be sent there.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#account3">
+                                    How do I delete my account?
+                                </button>
+                            </h2>
+                            <div id="account3" class="accordion-collapse collapse" data-bs-parent="#accountAccordion">
+                                <div class="accordion-body">
+                                    <p>You can delete your account from the Settings page.</p>
+                                    
+                                    <h6>What gets deleted:</h6>
+                                    <ul>
+                                        <li>Your user account</li>
+                                        <li>All your canaries</li>
+                                        <li>All check-in logs and history</li>
+                                        <li>Smart Alert configurations</li>
+                                    </ul>
+                                    
+                                    <p><strong>⚠️ Warning:</strong> This action is permanent and cannot be undone. Make sure to disable any scripts or processes that are still trying to check in to avoid errors.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="alert alert-info">
+                <i class="fas fa-question-circle"></i>
+                <strong>Still have questions?</strong> Check our other help sections or contact support for personalized assistance.
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

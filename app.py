@@ -6,6 +6,7 @@ from flask_mail import Mail, Message
 from wtforms import StringField, PasswordField, SubmitField, IntegerField, TextAreaField, SelectField, FloatField
 from wtforms.validators import DataRequired, Email, Length, EqualTo, Optional, NumberRange, ValidationError
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal
 from apscheduler.schedulers.background import BackgroundScheduler
 from itsdangerous import URLSafeTimedSerializer
 from dotenv import load_dotenv
@@ -15,13 +16,18 @@ import pytz
 import requests
 
 # Import our DynamoDB models
-from models import User, Canary, CanaryLog, get_dynamodb_resource
+from models import User, Canary, CanaryLog, SmartAlert, get_dynamodb_resource
 
 # Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'asdfkjahc rha384y92834yc cx832b48234918xb487214jhasf')
+app.config['PREFERRED_URL_SCHEME'] = 'https'
+
+# Handle proxy headers for HTTPS detection
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 # SendGrid Email Configuration
 app.config['MAIL_SERVER'] = 'smtp.sendgrid.net'
@@ -105,6 +111,8 @@ class CanaryForm(FlaskForm):
         DataRequired(),
         NumberRange(min=0.0, max=100.0, message='SLA threshold must be between 0 and 100')
     ], default=99.9)
+    tags = StringField('Tags', validators=[Optional()], 
+                      render_kw={'placeholder': 'database, prod, api (comma-separated)'})
     submit = SubmitField('Create Canary')
 
 class SettingsForm(FlaskForm):
@@ -510,6 +518,11 @@ def admin_update_email(user_id):
 def create_canary():
     form = CanaryForm()
     if form.validate_on_submit():
+        # Process tags - split by comma and clean up whitespace
+        tags = []
+        if form.tags.data:
+            tags = [tag.strip() for tag in form.tags.data.split(',') if tag.strip()]
+        
         canary = Canary(
             name=form.name.data,
             user_id=current_user.user_id,
@@ -518,7 +531,8 @@ def create_canary():
             alert_type=form.alert_type.data,
             alert_email=form.alert_email.data if form.alert_email.data else None,
             slack_webhook=form.slack_webhook.data if form.slack_webhook.data else None,
-            sla_threshold=form.sla_threshold.data
+            sla_threshold=form.sla_threshold.data,
+            tags=tags
         )
         
         if canary.save():
@@ -539,8 +553,34 @@ def checkin(token):
     source_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
     user_agent = request.headers.get('User-Agent', 'Unknown')
     
-    canary.checkin(source_ip=source_ip, user_agent=user_agent)
-    return jsonify({'status': 'success', 'message': 'Check-in received'})
+    # Get custom message from POST data, JSON data, or query parameters
+    custom_message = None
+    if request.method == 'POST':
+        # Try to get message from JSON data first
+        if request.is_json:
+            custom_message = request.get_json().get('message')
+        # Then try form data
+        elif request.form:
+            custom_message = request.form.get('message')
+    
+    # Also check query parameters for both GET and POST
+    if not custom_message:
+        custom_message = request.args.get('message')
+    
+    # Sanitize message (limit length and remove potentially harmful content)
+    if custom_message:
+        custom_message = str(custom_message)[:500]  # Limit to 500 characters
+        custom_message = custom_message.strip()
+        if not custom_message:
+            custom_message = None
+    
+    canary.checkin(source_ip=source_ip, user_agent=user_agent, custom_message=custom_message)
+    
+    response_data = {'status': 'success', 'message': 'Check-in received'}
+    if custom_message:
+        response_data['received_message'] = custom_message
+    
+    return jsonify(response_data)
 
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
@@ -667,7 +707,13 @@ def edit_canary(canary_id):
         canary.alert_type = form.alert_type.data
         canary.alert_email = form.alert_email.data if form.alert_email.data else None
         canary.slack_webhook = form.slack_webhook.data if form.slack_webhook.data else None
-        canary.sla_threshold = form.sla_threshold.data
+        canary.sla_threshold = Decimal(str(form.sla_threshold.data))
+        
+        # Process tags - split by comma and clean up whitespace
+        tags = []
+        if form.tags.data:
+            tags = [tag.strip() for tag in form.tags.data.split(',') if tag.strip()]
+        canary.tags = tags
         
         # Recalculate next expected check-in if interval changed
         if canary.last_checkin:
@@ -692,6 +738,7 @@ def edit_canary(canary_id):
         form.alert_email.data = canary.alert_email
         form.slack_webhook.data = canary.slack_webhook
         form.sla_threshold.data = canary.sla_threshold
+        form.tags.data = ', '.join(canary.tags) if canary.tags else ''
     
     return render_template('edit_canary.html', form=form, canary=canary)
 
@@ -784,6 +831,40 @@ def canary_analytics(canary_id):
                          incidents=incidents,
                          trends=trends,
                          sla_status=sla_status)
+
+@app.route('/test_failure_data/<canary_id>')
+@login_required
+def test_failure_data(canary_id):
+    """Generate test failure data for analytics (development only)"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        flash('Canary not found or access denied')
+        return redirect(url_for('dashboard'))
+    
+    # Generate some test failure logs across different hours and days
+    import random
+    from datetime import timedelta
+    
+    base_time = datetime.now(timezone.utc) - timedelta(days=7)
+    
+    for i in range(10):  # Create 10 test failures
+        # Random hour between 0-23 and random day within the past week
+        random_hours = random.randint(0, 23)
+        random_days = random.randint(0, 6)
+        test_time = base_time + timedelta(days=random_days, hours=random_hours)
+        
+        # Create a test log entry with the specific timestamp
+        test_log = CanaryLog(
+            canary_id=canary_id,
+            event_type='miss',
+            status='failed',
+            message=f'Test failure at {test_time}',
+            timestamp=test_time.isoformat()
+        )
+        test_log.save()
+    
+    flash(f'Generated 10 test failure entries for {canary.name}', 'success')
+    return redirect(url_for('canary_analytics', canary_id=canary_id))
 
 @app.route('/export_canary_data/<canary_id>/<format>')
 @login_required
@@ -900,6 +981,141 @@ def export_canary_data(canary_id, format):
     else:
         flash('Invalid export format. Use CSV or JSON.')
         return redirect(url_for('canary_analytics', canary_id=canary_id))
+
+@app.route('/smart_alert/<canary_id>')
+@login_required
+def smart_alert_config(canary_id):
+    """Configure smart alerting for a canary"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        flash('Canary not found or access denied')
+        return redirect(url_for('dashboard'))
+    
+    # Get existing smart alert configuration
+    smart_alert = SmartAlert.get_by_canary_id(canary_id)
+    
+    return render_template('smart_alert_config.html', canary=canary, smart_alert=smart_alert)
+
+@app.route('/enable_smart_alert/<canary_id>', methods=['POST'])
+@login_required
+def enable_smart_alert(canary_id):
+    """Enable smart alerting for a canary"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        flash('Access denied')
+        return redirect(url_for('dashboard'))
+    
+    # Get form data
+    sensitivity = request.form.get('sensitivity', 0.8)
+    learning_period = request.form.get('learning_period', 7)
+    
+    try:
+        sensitivity = max(0.5, min(1.0, float(sensitivity)))
+        learning_period = max(1, min(30, int(learning_period)))
+    except (ValueError, TypeError):
+        flash('Invalid configuration values')
+        return redirect(url_for('smart_alert_config', canary_id=canary_id))
+    
+    # Create or update smart alert
+    smart_alert = SmartAlert.get_by_canary_id(canary_id)
+    if smart_alert:
+        smart_alert.is_enabled = True
+        smart_alert.sensitivity = Decimal(str(sensitivity))
+        smart_alert.learning_period_days = learning_period
+    else:
+        smart_alert = SmartAlert(
+            canary_id=canary_id,
+            user_id=current_user.user_id,
+            sensitivity=Decimal(str(sensitivity)),
+            learning_period_days=learning_period
+        )
+    
+    if smart_alert.save():
+        # Start learning patterns
+        if smart_alert.learn_patterns():
+            flash(f'Smart alerting enabled for "{canary.name}" and patterns learned successfully!', 'success')
+        else:
+            flash(f'Smart alerting enabled for "{canary.name}", but insufficient data for pattern learning. Patterns will be learned as more check-ins occur.', 'warning')
+    else:
+        flash('Failed to enable smart alerting')
+    
+    return redirect(url_for('smart_alert_config', canary_id=canary_id))
+
+@app.route('/disable_smart_alert/<canary_id>', methods=['POST'])
+@login_required
+def disable_smart_alert(canary_id):
+    """Disable smart alerting for a canary"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        flash('Access denied')
+        return redirect(url_for('dashboard'))
+    
+    smart_alert = SmartAlert.get_by_canary_id(canary_id)
+    if smart_alert:
+        smart_alert.is_enabled = False
+        if smart_alert.save():
+            flash(f'Smart alerting disabled for "{canary.name}"')
+        else:
+            flash('Failed to disable smart alerting')
+    
+    return redirect(url_for('smart_alert_config', canary_id=canary_id))
+
+@app.route('/relearn_patterns/<canary_id>', methods=['POST'])
+@login_required
+def relearn_patterns(canary_id):
+    """Re-learn patterns for smart alerting"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        flash('Access denied')
+        return redirect(url_for('dashboard'))
+    
+    smart_alert = SmartAlert.get_by_canary_id(canary_id)
+    if smart_alert and smart_alert.is_enabled:
+        if smart_alert.learn_patterns():
+            flash(f'Patterns re-learned successfully for "{canary.name}"!', 'success')
+        else:
+            flash('Insufficient data to learn patterns. More check-ins are needed.', 'warning')
+    else:
+        flash('Smart alerting is not enabled for this canary')
+    
+    return redirect(url_for('smart_alert_config', canary_id=canary_id))
+
+# Help Documentation Routes
+@app.route('/help')
+@app.route('/help/overview')
+def help_overview():
+    """Help overview page"""
+    return render_template('help/overview.html')
+
+@app.route('/help/getting-started')
+def help_getting_started():
+    """Getting started guide"""
+    return render_template('help/getting_started.html')
+
+@app.route('/help/examples')
+def help_examples():
+    """Real-world examples"""
+    return render_template('help/examples.html')
+
+@app.route('/help/smart-alerts')
+def help_smart_alerts():
+    """Smart alerts documentation"""
+    return render_template('help/smart_alerts.html')
+
+@app.route('/help/api')
+def help_api():
+    """API documentation"""
+    return render_template('help/api.html')
+
+@app.route('/help/troubleshooting')
+def help_troubleshooting():
+    """Troubleshooting guide"""
+    return render_template('help/troubleshooting.html')
+
+@app.route('/help/faq')
+def help_faq():
+    """Frequently asked questions"""
+    return render_template('help/faq.html')
 
 def send_notifications(canary, log_entry=None):
     """Send notifications based on canary alert type and log timestamps."""
@@ -1043,13 +1259,147 @@ def api_canaries_status():
             'message': str(e)
         }), 500
 
+def send_smart_alert_notifications(canary, log_entry, smart_alert):
+    """Send smart alert notifications with ML context"""
+    subject = f'SilentCanary Smart Alert: {canary.name} pattern anomaly detected'
+    
+    # Get user for email fallback
+    user = User.get_by_id(canary.user_id)
+    
+    # Create enhanced message for smart alerts
+    pattern_info = ""
+    if smart_alert.pattern_data:
+        avg_interval = smart_alert.pattern_data.get('avg_interval', canary.interval_minutes)
+        expected_interval = smart_alert.pattern_data.get('expected_interval', canary.interval_minutes)
+        pattern_info = f"""
+        <h3>🧠 Smart Alert Details:</h3>
+        <ul>
+            <li><strong>Expected average interval:</strong> {avg_interval:.1f} minutes</li>
+            <li><strong>Configured interval:</strong> {expected_interval} minutes</li>
+            <li><strong>Sensitivity:</strong> {float(smart_alert.sensitivity) * 100:.1f}%</li>
+            <li><strong>Analysis period:</strong> {smart_alert.learning_period_days} days</li>
+        </ul>
+        <p><em>This alert was triggered by machine learning analysis of your check-in patterns, indicating behavior that deviates from your normal schedule.</em></p>
+        """
+    
+    # Email message with ML context
+    html_message = f'''
+    <h2>🧠 SilentCanary Smart Alert</h2>
+    <p>Our machine learning system detected an anomaly in your canary "<strong>{canary.name}</strong>" check-in patterns!</p>
+    
+    <h3>Current Status:</h3>
+    <ul>
+        <li><strong>Last check-in:</strong> {canary.last_checkin or 'Never'}</li>
+        <li><strong>Next expected:</strong> {canary.next_expected or 'N/A'}</li>
+        <li><strong>Current status:</strong> {canary.status}</li>
+    </ul>
+    
+    {pattern_info}
+    
+    <h3>🔧 What to do:</h3>
+    <ol>
+        <li>Check if your process is running normally</li>
+        <li>Verify if this timing change is expected</li>
+        <li>If this is normal behavior, you can adjust sensitivity in Smart Alert settings</li>
+        <li>Consider if external factors might be affecting your schedule</li>
+    </ol>
+    
+    <p><strong>Dashboard:</strong> <a href="{request.url_root}dashboard">View Dashboard</a></p>
+    <p><strong>Smart Alerts:</strong> <a href="{request.url_root}smart_alert/{canary.canary_id}">Configure Smart Alerts</a></p>
+    
+    <hr>
+    <small>This is a smart alert - meaning it was triggered by pattern analysis, not just a simple timeout.</small>
+    '''
+    
+    # Send notifications based on alert type
+    try:
+        # Send email notification
+        if canary.alert_type in ['email', 'both']:
+            recipient = canary.alert_email or (user.email if user else None)
+            if recipient:
+                try:
+                    msg = Message(
+                        subject=subject,
+                        sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
+                        recipients=[recipient],
+                        html=html_message
+                    )
+                    mail.send(msg)
+                    print(f"📧 Smart alert email sent to {recipient}")
+                    
+                    if log_entry:
+                        log_entry.update_email_notification('sent')
+                        
+                except Exception as e:
+                    print(f"❌ Smart alert email failed: {e}")
+                    if log_entry:
+                        log_entry.update_email_notification('failed', str(e))
+        
+        # Send Slack notification with ML context
+        if canary.alert_type in ['slack', 'both'] and canary.slack_webhook:
+            try:
+                slack_message = {
+                    "text": f"🧠 SilentCanary Smart Alert: Pattern anomaly detected",
+                    "attachments": [
+                        {
+                            "color": "warning",
+                            "title": f"Smart Alert: {canary.name}",
+                            "fields": [
+                                {
+                                    "title": "Anomaly Detected",
+                                    "value": f"ML analysis detected unusual check-in patterns",
+                                    "short": True
+                                },
+                                {
+                                    "title": "Last Check-in",
+                                    "value": canary.last_checkin or 'Never',
+                                    "short": True
+                                },
+                                {
+                                    "title": "Sensitivity",
+                                    "value": f"{float(smart_alert.sensitivity) * 100:.1f}%",
+                                    "short": True
+                                },
+                                {
+                                    "title": "Learning Period",
+                                    "value": f"{smart_alert.learning_period_days} days",
+                                    "short": True
+                                }
+                            ],
+                            "footer": "SilentCanary Smart Alerts",
+                            "footer_icon": "🧠"
+                        }
+                    ]
+                }
+                
+                response = requests.post(canary.slack_webhook, json=slack_message, timeout=10)
+                if response.status_code == 200:
+                    print(f"💬 Smart alert Slack notification sent")
+                    if log_entry:
+                        log_entry.update_slack_notification('sent')
+                else:
+                    print(f"❌ Smart alert Slack notification failed: {response.status_code}")
+                    if log_entry:
+                        log_entry.update_slack_notification('failed', f'HTTP {response.status_code}')
+                        
+            except Exception as e:
+                print(f"❌ Smart alert Slack notification failed: {e}")
+                if log_entry:
+                    log_entry.update_slack_notification('failed', str(e))
+                    
+    except Exception as e:
+        print(f"❌ Smart alert notification system error: {e}")
+
 def check_failed_canaries():
     with app.app_context():
         print(f"🔍 Checking for failed canaries at {datetime.now(timezone.utc)}")
         active_canaries = Canary.get_active_canaries()
         
         failed_count = 0
+        smart_anomaly_count = 0
+        
         for canary in active_canaries:
+            # Check for regular failures (overdue based on interval + grace)
             if canary.status != 'failed' and canary.is_overdue():
                 print(f"⚠️ Canary '{canary.name}' is overdue - sending notifications")
                 canary.status = 'failed'
@@ -1061,9 +1411,22 @@ def check_failed_canaries():
                 # Send notifications and log timestamps
                 send_notifications(canary, miss_log)
                 failed_count += 1
+            
+            # Check for smart alert anomalies (even if not technically overdue)
+            elif canary.status != 'failed':
+                smart_alert = SmartAlert.get_by_canary_id(canary.canary_id)
+                if smart_alert and smart_alert.is_anomaly():
+                    print(f"🧠 Smart alert detected anomaly for '{canary.name}' - sending notifications")
+                    
+                    # Log the smart anomaly event
+                    smart_log = CanaryLog.log_miss(canary.canary_id, f"Smart alert detected anomaly: '{canary.name}' pattern deviation")
+                    
+                    # Send notifications with smart alert context
+                    send_smart_alert_notifications(canary, smart_log, smart_alert)
+                    smart_anomaly_count += 1
         
-        if failed_count > 0:
-            print(f"📧 Processed {failed_count} failed canaries")
+        if failed_count > 0 or smart_anomaly_count > 0:
+            print(f"📧 Processed {failed_count} failed canaries and {smart_anomaly_count} smart anomalies")
         else:
             print("✅ All canaries are healthy")
 

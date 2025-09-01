@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}Examples - Help - SilentCanary{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-3">
+            <div class="list-group">
+                <a href="{{ url_for('help_overview') }}" class="list-group-item list-group-item-action">Overview</a>
+                <a href="{{ url_for('help_getting_started') }}" class="list-group-item list-group-item-action">Getting Started</a>
+                <a href="{{ url_for('help_examples') }}" class="list-group-item list-group-item-action active">Examples</a>
+                <a href="{{ url_for('help_smart_alerts') }}" class="list-group-item list-group-item-action">Smart Alerts</a>
+                <a href="{{ url_for('help_api') }}" class="list-group-item list-group-item-action">API Documentation</a>
+                <a href="{{ url_for('help_troubleshooting') }}" class="list-group-item list-group-item-action">Troubleshooting</a>
+                <a href="{{ url_for('help_faq') }}" class="list-group-item list-group-item-action">FAQ</a>
+            </div>
+        </div>
+        <div class="col-md-9">
+            <h1>Real-World Examples</h1>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Example 1: Cron Job Monitoring</h3>
+                </div>
+                <div class="card-body">
+                    <p><strong>Scenario:</strong> You have a daily backup script that runs at 2 AM and should complete within 30 minutes.</p>
+                    
+                    <h5>Setup:</h5>
+                    <ul>
+                        <li>Interval: 1440 minutes (24 hours)</li>
+                        <li>Grace Period: 30 minutes</li>
+                        <li>Expected check-in: Around 2:30 AM daily</li>
+                    </ul>
+                    
+                    <h5>Implementation:</h5>
+                    <pre><code>#!/bin/bash
+# backup_script.sh
+rsync -av /data/ /backup/
+if [ $? -eq 0 ]; then
+    curl -X POST "https://yourapp.com/checkin/YOUR_TOKEN" \
+         -d "message=Backup completed successfully - $(du -sh /backup/ | cut -f1) backed up"
+else
+    # Backup failed - don't check in, let SilentCanary alert
+    echo "Backup failed"
+    exit 1
+fi</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Example 2: Web Service Health Check</h3>
+                </div>
+                <div class="card-body">
+                    <p><strong>Scenario:</strong> Monitor a critical web service that should be checked every 5 minutes.</p>
+                    
+                    <h5>Setup:</h5>
+                    <ul>
+                        <li>Interval: 5 minutes</li>
+                        <li>Grace Period: 2 minutes</li>
+                        <li>Smart Alerts: Enabled with high sensitivity</li>
+                    </ul>
+                    
+                    <h5>Implementation (Python):</h5>
+                    <pre><code>import requests
+import time
+import json
+
+def health_check():
+    try:
+        # Check your service
+        response = requests.get('https://your-service.com/health', timeout=10)
+        if response.status_code == 200:
+            # Service is healthy, check in with status
+            check_in_data = {
+                "message": f"Service healthy - Response time: {response.elapsed.total_seconds():.2f}s"
+            }
+            requests.post('https://yourapp.com/checkin/YOUR_TOKEN', 
+                         json=check_in_data)
+        else:
+            # Service returned error - don't check in
+            print(f"Service unhealthy: {response.status_code}")
+    except Exception as e:
+        print(f"Health check failed: {e}")
+
+# Run every 5 minutes
+while True:
+    health_check()
+    time.sleep(300)  # 5 minutes</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Example 3: Database Maintenance Task</h3>
+                </div>
+                <div class="card-body">
+                    <p><strong>Scenario:</strong> Weekly database cleanup that runs every Sunday at 3 AM.</p>
+                    
+                    <h5>Setup:</h5>
+                    <ul>
+                        <li>Interval: 10080 minutes (7 days)</li>
+                        <li>Grace Period: 60 minutes</li>
+                        <li>Alert Type: Email + Slack</li>
+                    </ul>
+                    
+                    <h5>Implementation (SQL + curl):</h5>
+                    <pre><code>-- db_cleanup.sql
+DELETE FROM logs WHERE created_at < DATE_SUB(NOW(), INTERVAL 90 DAY);
+DELETE FROM temp_files WHERE created_at < DATE_SUB(NOW(), INTERVAL 7 DAY);
+OPTIMIZE TABLE logs, temp_files;
+
+-- Shell script
+#!/bin/bash
+ROWS_DELETED=$(mysql -u user -p database < db_cleanup.sql 2>&1 | grep -o '[0-9]* rows affected' | head -1)
+
+curl -X POST "https://yourapp.com/checkin/YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d "{\"message\": \"DB cleanup completed - $ROWS_DELETED\"}"</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Example 4: IoT Device Monitoring</h3>
+                </div>
+                <div class="card-body">
+                    <p><strong>Scenario:</strong> Monitor IoT sensors that should report data every 10 minutes.</p>
+                    
+                    <h5>Setup:</h5>
+                    <ul>
+                        <li>Interval: 10 minutes</li>
+                        <li>Grace Period: 5 minutes</li>
+                        <li>Smart Alerts: Enabled to detect irregular patterns</li>
+                    </ul>
+                    
+                    <h5>Implementation (Arduino/ESP32):</h5>
+                    <pre><code>#include &lt;WiFi.h&gt;
+#include &lt;HTTPClient.h&gt;
+
+void sendSensorData() {
+  float temperature = readTemperature();
+  float humidity = readHumidity();
+  
+  HTTPClient http;
+  http.begin("https://yourapp.com/checkin/YOUR_TOKEN");
+  http.addHeader("Content-Type", "application/json");
+  
+  String message = "Temp: " + String(temperature) + "°C, Humidity: " + String(humidity) + "%";
+  String payload = "{\"message\":\"" + message + "\"}";
+  
+  int httpResponseCode = http.POST(payload);
+  
+  if (httpResponseCode > 0) {
+    Serial.println("Check-in successful");
+  } else {
+    Serial.println("Check-in failed");
+  }
+  
+  http.end();
+}
+
+void loop() {
+  sendSensorData();
+  delay(600000); // 10 minutes
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Example 5: API Integration Patterns</h3>
+                </div>
+                <div class="card-body">
+                    <h5>Different ways to send messages:</h5>
+                    
+                    <h6>1. Simple GET request with message:</h6>
+                    <pre><code>curl "https://yourapp.com/checkin/YOUR_TOKEN?message=Task completed successfully"</code></pre>
+                    
+                    <h6>2. POST with form data:</h6>
+                    <pre><code>curl -X POST https://yourapp.com/checkin/YOUR_TOKEN \
+     -d "message=Processed 1,234 records in 5.2 seconds"</code></pre>
+                    
+                    <h6>3. POST with JSON:</h6>
+                    <pre><code>curl -X POST https://yourapp.com/checkin/YOUR_TOKEN \
+     -H "Content-Type: application/json" \
+     -d '{"message": "System status: All services operational"}'</code></pre>
+                    
+                    <h6>4. From JavaScript/Node.js:</h6>
+                    <pre><code>fetch('https://yourapp.com/checkin/YOUR_TOKEN', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    message: `Processed ${recordCount} records, ${errorCount} errors`
+  })
+});</code></pre>
+                </div>
+            </div>
+
+            <div class="alert alert-info">
+                <i class="fas fa-lightbulb"></i>
+                <strong>Pro Tips:</strong>
+                <ul class="mb-0 mt-2">
+                    <li>Include meaningful information in your messages (processing time, record counts, error status)</li>
+                    <li>Use Smart Alerts for processes with variable timing</li>
+                    <li>Set appropriate grace periods based on normal execution time variance</li>
+                    <li>Consider using different canaries for different criticality levels</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

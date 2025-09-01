@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+
+{% block title %}Troubleshooting - Help - SilentCanary{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-3">
+            <div class="list-group">
+                <a href="{{ url_for('help_overview') }}" class="list-group-item list-group-item-action">Overview</a>
+                <a href="{{ url_for('help_getting_started') }}" class="list-group-item list-group-item-action">Getting Started</a>
+                <a href="{{ url_for('help_examples') }}" class="list-group-item list-group-item-action">Examples</a>
+                <a href="{{ url_for('help_smart_alerts') }}" class="list-group-item list-group-item-action">Smart Alerts</a>
+                <a href="{{ url_for('help_api') }}" class="list-group-item list-group-item-action">API Documentation</a>
+                <a href="{{ url_for('help_troubleshooting') }}" class="list-group-item list-group-item-action active">Troubleshooting</a>
+                <a href="{{ url_for('help_faq') }}" class="list-group-item list-group-item-action">FAQ</a>
+            </div>
+        </div>
+        <div class="col-md-9">
+            <h1>Troubleshooting Guide</h1>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Common Issues</h3>
+                </div>
+                <div class="card-body">
+                    <div class="accordion" id="troubleshootingAccordion">
+                        
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#issue1">
+                                    My check-ins aren't being received
+                                </button>
+                            </h2>
+                            <div id="issue1" class="accordion-collapse collapse show" data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <h6>Possible Causes:</h6>
+                                    <ul>
+                                        <li>Incorrect token in the URL</li>
+                                        <li>Network connectivity issues</li>
+                                        <li>Firewall blocking outbound connections</li>
+                                        <li>SSL/TLS certificate issues</li>
+                                    </ul>
+                                    
+                                    <h6>Solutions:</h6>
+                                    <ol>
+                                        <li><strong>Verify the token:</strong> Copy the exact token from your dashboard</li>
+                                        <li><strong>Test manually:</strong> Try the check-in URL in your browser</li>
+                                        <li><strong>Check connectivity:</strong>
+                                            <pre><code>curl -v "https://yourapp.com/checkin/YOUR_TOKEN"</code></pre>
+                                        </li>
+                                        <li><strong>Verify SSL:</strong> Use <code>-k</code> flag to bypass SSL validation temporarily</li>
+                                        <li><strong>Check logs:</strong> Look at your application/script logs for HTTP errors</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue2">
+                                    I'm getting too many false alerts
+                                </button>
+                            </h2>
+                            <div id="issue2" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <h6>Common Reasons:</h6>
+                                    <ul>
+                                        <li>Grace period is too short</li>
+                                        <li>Check-in interval doesn't match actual process timing</li>
+                                        <li>Process has variable execution time</li>
+                                        <li>Smart Alerts sensitivity is too high</li>
+                                    </ul>
+                                    
+                                    <h6>Solutions:</h6>
+                                    <ol>
+                                        <li><strong>Increase grace period:</strong> Add buffer for normal timing variation</li>
+                                        <li><strong>Adjust interval:</strong> Match your actual process frequency</li>
+                                        <li><strong>For variable timing:</strong> Enable Smart Alerts to learn patterns</li>
+                                        <li><strong>Monitor timing:</strong> Check canary logs to understand actual patterns</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue3">
+                                    Email notifications aren't being sent
+                                </button>
+                            </h2>
+                            <div id="issue3" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <h6>Check These Items:</h6>
+                                    <ol>
+                                        <li><strong>Email address:</strong> Verify it's correct in canary settings</li>
+                                        <li><strong>Spam folder:</strong> Check your spam/junk mail folder</li>
+                                        <li><strong>Email verification:</strong> Ensure your account email is verified</li>
+                                        <li><strong>Alert type:</strong> Confirm alert type includes 'email' or 'both'</li>
+                                    </ol>
+                                    
+                                    <h6>If Still Not Working:</h6>
+                                    <ul>
+                                        <li>Try a different email address</li>
+                                        <li>Check canary logs for notification status</li>
+                                        <li>Contact support if the issue persists</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue4">
+                                    Slack notifications aren't working
+                                </button>
+                            </h2>
+                            <div id="issue4" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <h6>Webhook Issues:</h6>
+                                    <ol>
+                                        <li><strong>Verify webhook URL:</strong> Test it manually:
+                                            <pre><code>curl -X POST YOUR_WEBHOOK_URL -H 'Content-type: application/json' -d '{"text":"Test message"}'</code></pre>
+                                        </li>
+                                        <li><strong>Check Slack app:</strong> Ensure the webhook is still active in your Slack workspace</li>
+                                        <li><strong>Channel permissions:</strong> Verify the webhook can post to the target channel</li>
+                                        <li><strong>Alert configuration:</strong> Confirm alert type includes 'slack' or 'both'</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue5">
+                                    Smart Alerts not detecting issues
+                                </button>
+                            </h2>
+                            <div id="issue5" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <h6>Requirements:</h6>
+                                    <ul>
+                                        <li>At least 3 successful check-ins in learning period</li>
+                                        <li>Some consistency in check-in patterns</li>
+                                        <li>Smart Alerts must be enabled</li>
+                                    </ul>
+                                    
+                                    <h6>Solutions:</h6>
+                                    <ol>
+                                        <li><strong>Check data:</strong> Verify you have enough check-in history</li>
+                                        <li><strong>Increase sensitivity:</strong> Try 80-90% for more detection</li>
+                                        <li><strong>Re-learn patterns:</strong> Use the "Re-learn Patterns" button</li>
+                                        <li><strong>Review patterns:</strong> Check if your process has learnable patterns</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue6">
+                                    Canary shows as "failed" but process is running
+                                </button>
+                            </h2>
+                            <div id="issue6" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <h6>Common Causes:</h6>
+                                    <ul>
+                                        <li>Check-in code not being executed</li>
+                                        <li>HTTP request failing silently</li>
+                                        <li>Process running but not completing successfully</li>
+                                        <li>Network issues preventing check-ins</li>
+                                    </ul>
+                                    
+                                    <h6>Debugging Steps:</h6>
+                                    <ol>
+                                        <li><strong>Add logging:</strong> Log before and after check-in attempts</li>
+                                        <li><strong>Test check-in URL:</strong> Manually verify it works</li>
+                                        <li><strong>Check error handling:</strong> Ensure failures don't prevent check-ins</li>
+                                        <li><strong>Review timing:</strong> Verify process completes within expected timeframe</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Diagnostic Commands</h3>
+                </div>
+                <div class="card-body">
+                    <h5>Test Check-in Manually</h5>
+                    <pre><code># Simple GET test
+curl "https://yourapp.com/checkin/YOUR_TOKEN"
+
+# POST with message
+curl -X POST "https://yourapp.com/checkin/YOUR_TOKEN" \
+     -d "message=Manual test check-in"
+
+# With verbose output for debugging
+curl -v "https://yourapp.com/checkin/YOUR_TOKEN"</code></pre>
+
+                    <h5>Test Network Connectivity</h5>
+                    <pre><code># Test DNS resolution
+nslookup yourapp.com
+
+# Test basic connectivity
+ping yourapp.com
+
+# Test HTTPS connection
+openssl s_client -connect yourapp.com:443</code></pre>
+
+                    <h5>Debug Script Issues</h5>
+                    <pre><code># Add debugging to your scripts
+set -x  # In bash scripts
+curl -v ... # For verbose HTTP output
+python -u script.py  # Unbuffered Python output</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Performance Optimization</h3>
+                </div>
+                <div class="card-body">
+                    <h5>Reduce Check-in Latency</h5>
+                    <ul>
+                        <li>Use connection keep-alive in HTTP clients</li>
+                        <li>Set appropriate timeouts (5-10 seconds recommended)</li>
+                        <li>Consider using fire-and-forget patterns for non-critical check-ins</li>
+                    </ul>
+
+                    <h5>Handle Network Failures</h5>
+                    <pre><code># Example retry logic in bash
+for i in {1..3}; do
+    if curl -m 10 "https://yourapp.com/checkin/YOUR_TOKEN"; then
+        break
+    else
+        echo "Check-in attempt $i failed, retrying..."
+        sleep 5
+    fi
+done</code></pre>
+
+                    <h5>Optimize for High-Frequency Monitoring</h5>
+                    <ul>
+                        <li>Use connection pooling</li>
+                        <li>Consider HTTP/2 if available</li>
+                        <li>Batch multiple status updates if possible</li>
+                        <li>Use async HTTP clients where appropriate</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Getting Help</h3>
+                </div>
+                <div class="card-body">
+                    <h5>Before Contacting Support</h5>
+                    <ol>
+                        <li>Check this troubleshooting guide</li>
+                        <li>Review your canary logs in the dashboard</li>
+                        <li>Test your check-in URL manually</li>
+                        <li>Verify your configuration settings</li>
+                    </ol>
+
+                    <h5>Information to Include</h5>
+                    <ul>
+                        <li>Canary name and approximate creation date</li>
+                        <li>Error messages or unexpected behavior description</li>
+                        <li>Steps you've already tried</li>
+                        <li>Your environment (OS, programming language, etc.)</li>
+                        <li>Sample code that's not working (remove sensitive data)</li>
+                    </ul>
+
+                    <div class="alert alert-info">
+                        <i class="fas fa-envelope"></i>
+                        <strong>Support:</strong> For issues not covered here, please contact support with the above information for faster resolution.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

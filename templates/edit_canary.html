@@ -116,6 +116,19 @@
                         <div class="form-text">Service Level Agreement target (e.g., 99.9% for "three nines")</div>
                     </div>
                     
+                    <div class="mb-3">
+                        {{ form.tags.label(class="form-label") }}
+                        {{ form.tags(class="form-control") }}
+                        {% if form.tags.errors %}
+                            <div class="text-danger">
+                                {% for error in form.tags.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-text">Add tags to organize and filter your canaries (optional)</div>
+                    </div>
+                    
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                         <a href="{{ url_for('dashboard') }}" class="btn btn-secondary me-md-2">Cancel</a>
                         {{ form.submit(class="btn btn-primary", value="Update Canary") }}

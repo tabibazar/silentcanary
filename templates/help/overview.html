@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block title %}Help - SilentCanary{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-3">
+            <!-- Help Navigation Sidebar -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-book"></i> Documentation</h5>
+                </div>
+                <div class="list-group list-group-flush">
+                    <a href="{{ url_for('help_overview') }}" class="list-group-item list-group-item-action active">
+                        <i class="fas fa-home"></i> Overview
+                    </a>
+                    <a href="{{ url_for('help_getting_started') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-rocket"></i> Getting Started
+                    </a>
+                    <a href="{{ url_for('help_examples') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-lightbulb"></i> Real-World Examples
+                    </a>
+                    <a href="{{ url_for('help_smart_alerts') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-brain"></i> Smart Alerts
+                    </a>
+                    <a href="{{ url_for('help_api') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-code"></i> API Documentation
+                    </a>
+                    <a href="{{ url_for('help_troubleshooting') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-wrench"></i> Troubleshooting
+                    </a>
+                    <a href="{{ url_for('help_faq') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-question"></i> FAQ
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-9">
+            <!-- Main Content -->
+            <div class="card">
+                <div class="card-header">
+                    <h1 class="h3 mb-0"><i class="fas fa-home text-primary"></i> SilentCanary Overview</h1>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i>
+                                <strong>Welcome to SilentCanary!</strong> A modern, intelligent monitoring solution that keeps track of your critical processes, scheduled jobs, and services through simple HTTP check-ins.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- What is SilentCanary -->
+                    <section class="mb-5">
+                        <h2 class="h4 mb-3"><i class="fas fa-question-circle text-primary"></i> What is SilentCanary?</h2>
+                        <p>SilentCanary is a <strong>dead man's switch</strong> monitoring system that ensures your critical processes are running by expecting regular "check-ins" from them. If a process fails to check in within its expected timeframe, SilentCanary immediately alerts you.</p>
+                        
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="card border-primary">
+                                    <div class="card-body text-center">
+                                        <i class="fas fa-heartbeat fa-3x text-primary mb-3"></i>
+                                        <h5>Process Monitoring</h5>
+                                        <p class="small">Monitor cron jobs, background processes, scheduled tasks, and services.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-success">
+                                    <div class="card-body text-center">
+                                        <i class="fas fa-brain fa-3x text-success mb-3"></i>
+                                        <h5>Smart Alerts</h5>
+                                        <p class="small">ML-powered anomaly detection that learns your patterns and reduces false alarms.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-warning">
+                                    <div class="card-body text-center">
+                                        <i class="fas fa-bell fa-3x text-warning mb-3"></i>
+                                        <h5>Multi-Channel Alerts</h5>
+                                        <p class="small">Email and Slack notifications with rich context and actionable information.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- How It Works -->
+                    <section class="mb-5">
+                        <h2 class="h4 mb-3"><i class="fas fa-cogs text-primary"></i> How It Works</h2>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <ol class="list-group list-group-numbered">
+                                    <li class="list-group-item d-flex justify-content-between align-items-start">
+                                        <div class="ms-2 me-auto">
+                                            <div class="fw-bold">Create a Canary</div>
+                                            Set up a monitoring endpoint for your process
+                                        </div>
+                                        <span class="badge bg-primary rounded-pill">1</span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-start">
+                                        <div class="ms-2 me-auto">
+                                            <div class="fw-bold">Configure Check-in Interval</div>
+                                            Define how often your process should report
+                                        </div>
+                                        <span class="badge bg-primary rounded-pill">2</span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-start">
+                                        <div class="ms-2 me-auto">
+                                            <div class="fw-bold">Add Check-in to Your Process</div>
+                                            Simple HTTP GET/POST to the unique URL
+                                        </div>
+                                        <span class="badge bg-primary rounded-pill">3</span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-start">
+                                        <div class="ms-2 me-auto">
+                                            <div class="fw-bold">Get Alerted</div>
+                                            Receive notifications if check-ins stop
+                                        </div>
+                                        <span class="badge bg-primary rounded-pill">4</span>
+                                    </li>
+                                </ol>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card bg-light">
+                                    <div class="card-body">
+                                        <h6>Quick Example:</h6>
+                                        <pre><code># In your backup script
+#!/bin/bash
+# ... your backup logic ...
+
+# Notify SilentCanary that backup completed
+curl -X POST "https://your-domain.com/checkin/abc123def456"</code></pre>
+                                        <p class="small mt-2 mb-0">If your backup script fails or doesn't run, SilentCanary will alert you within the specified grace period.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Key Features -->
+                    <section class="mb-5">
+                        <h2 class="h4 mb-3"><i class="fas fa-star text-primary"></i> Key Features</h2>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <ul class="list-unstyled">
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Simple HTTP Check-ins:</strong> Just GET/POST to a URL</li>
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Flexible Intervals:</strong> Minutes to days</li>
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Grace Periods:</strong> Account for expected variations</li>
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Tags:</strong> Organize your canaries</li>
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>SLA Monitoring:</strong> Track uptime percentages</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <ul class="list-unstyled">
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Smart Alerts:</strong> ML-based anomaly detection</li>
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Multi-Channel Notifications:</strong> Email + Slack</li>
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Analytics:</strong> Detailed uptime reports</li>
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Export Data:</strong> CSV/JSON exports</li>
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>API Access:</strong> Programmatic management</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Getting Started -->
+                    <section class="mb-4">
+                        <h2 class="h4 mb-3"><i class="fas fa-rocket text-primary"></i> Ready to Get Started?</h2>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <h5><i class="fas fa-play-circle text-primary"></i> Quick Start</h5>
+                                        <p>Jump right in with our step-by-step getting started guide.</p>
+                                        <a href="{{ url_for('help_getting_started') }}" class="btn btn-primary btn-sm">Get Started</a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <h5><i class="fas fa-lightbulb text-success"></i> See Examples</h5>
+                                        <p>Explore real-world use cases and implementation examples.</p>
+                                        <a href="{{ url_for('help_examples') }}" class="btn btn-success btn-sm">View Examples</a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <h5><i class="fas fa-code text-info"></i> API Docs</h5>
+                                        <p>Integrate SilentCanary with your applications and tools.</p>
+                                        <a href="{{ url_for('help_api') }}" class="btn btn-info btn-sm">API Reference</a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Quick Links -->
+                    <section class="border-top pt-4">
+                        <h3 class="h5 mb-3">Quick Actions</h3>
+                        <div class="btn-group" role="group">
+                            {% if current_user.is_authenticated %}
+                                <a href="{{ url_for('create_canary') }}" class="btn btn-primary">
+                                    <i class="fas fa-plus"></i> Create Your First Canary
+                                </a>
+                                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-primary">
+                                    <i class="fas fa-tachometer-alt"></i> Go to Dashboard
+                                </a>
+                            {% else %}
+                                <a href="{{ url_for('register') }}" class="btn btn-primary">
+                                    <i class="fas fa-user-plus"></i> Sign Up Now
+                                </a>
+                                <a href="{{ url_for('login') }}" class="btn btn-outline-primary">
+                                    <i class="fas fa-sign-in-alt"></i> Login
+                                </a>
+                            {% endif %}
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

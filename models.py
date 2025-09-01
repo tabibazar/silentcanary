@@ -33,6 +33,7 @@ dynamodb = get_dynamodb_resource()
 users_table = dynamodb.Table('SilentCanary_Users')
 canaries_table = dynamodb.Table('SilentCanary_Canaries')
 canary_logs_table = dynamodb.Table('SilentCanary_CanaryLogs')
+smart_alerts_table = dynamodb.Table('SilentCanary_SmartAlerts')
 
 class User:
     def __init__(self, user_id=None, username=None, email=None, password_hash=None, 
@@ -195,7 +196,8 @@ class Canary:
     def __init__(self, canary_id=None, name=None, user_id=None, interval_minutes=60, 
                  grace_minutes=5, token=None, status='waiting', is_active=True, 
                  alert_type='email', alert_email=None, slack_webhook=None, 
-                 created_at=None, last_checkin=None, next_expected=None, sla_threshold=99.9):
+                 created_at=None, last_checkin=None, next_expected=None, sla_threshold=99.9, 
+                 tags=None):
         self.canary_id = canary_id or str(uuid.uuid4())
         self.name = name
         self.user_id = user_id
@@ -225,8 +227,9 @@ class Canary:
         self.last_checkin = last_checkin
         self.next_expected = next_expected
         self.sla_threshold = Decimal(str(sla_threshold)) if sla_threshold is not None else Decimal('99.9')
+        self.tags = tags or []
     
-    def checkin(self, source_ip=None, user_agent=None):
+    def checkin(self, source_ip=None, user_agent=None, custom_message=None):
         """Record a check-in"""
         now = datetime.now(timezone.utc)
         was_failed = self.status == 'failed'
@@ -237,11 +240,12 @@ class Canary:
         self.save()
         
         # Log the check-in event
-        CanaryLog.log_ping(self.canary_id, 'success', source_ip, user_agent)
+        CanaryLog.log_ping(self.canary_id, 'success', source_ip, user_agent, custom_message)
         
         # Log recovery if canary was previously failed
         if was_failed:
-            CanaryLog.log_recovery(self.canary_id)
+            recovery_msg = f"Canary recovered after missing check-ins{': ' + custom_message if custom_message else ''}"
+            CanaryLog.log_recovery(self.canary_id, recovery_msg)
     
     def is_overdue(self):
         """Check if canary is overdue"""
@@ -279,7 +283,8 @@ class Canary:
                     'created_at': self.created_at,
                     'last_checkin': self.last_checkin,
                     'next_expected': self.next_expected,
-                    'sla_threshold': self.sla_threshold
+                    'sla_threshold': self.sla_threshold,
+                    'tags': self.tags
                 }
             )
             return True
@@ -507,7 +512,8 @@ class Canary:
                     created_at=item['created_at'],
                     last_checkin=item.get('last_checkin'),
                     next_expected=item.get('next_expected'),
-                    sla_threshold=item.get('sla_threshold', Decimal('99.9'))
+                    sla_threshold=item.get('sla_threshold', Decimal('99.9')),
+                    tags=item.get('tags', [])
                 )
             return None
         except ClientError as e:
@@ -571,7 +577,8 @@ class Canary:
                     created_at=item['created_at'],
                     last_checkin=item.get('last_checkin'),
                     next_expected=item.get('next_expected'),
-                    sla_threshold=item.get('sla_threshold', Decimal('99.9'))
+                    sla_threshold=item.get('sla_threshold', Decimal('99.9')),
+                    tags=item.get('tags', [])
                 ))
             return canaries
         except ClientError as e:
@@ -602,7 +609,8 @@ class Canary:
                     created_at=item['created_at'],
                     last_checkin=item.get('last_checkin'),
                     next_expected=item.get('next_expected'),
-                    sla_threshold=item.get('sla_threshold', Decimal('99.9'))
+                    sla_threshold=item.get('sla_threshold', Decimal('99.9')),
+                    tags=item.get('tags', [])
                 ))
             return canaries
         except ClientError as e:
@@ -701,9 +709,13 @@ class CanaryLog:
             return {'logs': [], 'last_evaluated_key': None, 'has_more': False}
     
     @staticmethod
-    def log_ping(canary_id, status='success', source_ip=None, user_agent=None):
+    def log_ping(canary_id, status='success', source_ip=None, user_agent=None, custom_message=None):
         """Log a ping event"""
-        message = 'Successful check-in' if status == 'success' else 'Failed check-in'
+        if custom_message:
+            message = f"Successful check-in: {custom_message}" if status == 'success' else f"Failed check-in: {custom_message}"
+        else:
+            message = 'Successful check-in' if status == 'success' else 'Failed check-in'
+        
         log = CanaryLog(
             canary_id=canary_id,
             event_type='ping',
@@ -775,3 +787,215 @@ class CanaryLog:
         except ClientError as e:
             print(f"Error getting canary log: {e}")
             return None
+
+
+class SmartAlert:
+    """Smart alerting with ML-based anomaly detection for irregular check-in patterns"""
+    
+    def __init__(self, smart_alert_id=None, canary_id=None, user_id=None, is_enabled=True,
+                 learning_period_days=7, sensitivity=0.8, created_at=None, 
+                 pattern_data=None, last_analysis=None):
+        self.smart_alert_id = smart_alert_id or str(uuid.uuid4())
+        self.canary_id = canary_id
+        self.user_id = user_id
+        self.is_enabled = is_enabled
+        self.learning_period_days = learning_period_days  # How many days to learn patterns
+        self.sensitivity = Decimal(str(sensitivity))  # 0.5-1.0, higher = more sensitive
+        self.created_at = created_at or datetime.now(timezone.utc).isoformat()
+        self.pattern_data = pattern_data or {}  # Stores learned patterns
+        self.last_analysis = last_analysis
+    
+    def save(self):
+        """Save smart alert configuration to DynamoDB"""
+        try:
+            smart_alerts_table.put_item(
+                Item={
+                    'smart_alert_id': self.smart_alert_id,
+                    'canary_id': self.canary_id,
+                    'user_id': self.user_id,
+                    'is_enabled': self.is_enabled,
+                    'learning_period_days': self.learning_period_days,
+                    'sensitivity': self.sensitivity,
+                    'created_at': self.created_at,
+                    'pattern_data': self.pattern_data,
+                    'last_analysis': self.last_analysis
+                }
+            )
+            return True
+        except ClientError as e:
+            print(f"Error saving smart alert: {e}")
+            return False
+    
+    def delete(self):
+        """Delete smart alert from DynamoDB"""
+        try:
+            smart_alerts_table.delete_item(Key={'smart_alert_id': self.smart_alert_id})
+            return True
+        except ClientError as e:
+            print(f"Error deleting smart alert: {e}")
+            return False
+    
+    @staticmethod
+    def get_by_canary_id(canary_id):
+        """Get smart alert configuration for a canary"""
+        try:
+            response = smart_alerts_table.query(
+                IndexName='canary-id-index',
+                KeyConditionExpression=Key('canary_id').eq(canary_id)
+            )
+            if response['Items']:
+                item = response['Items'][0]  # Should only be one per canary
+                return SmartAlert(
+                    smart_alert_id=item['smart_alert_id'],
+                    canary_id=item['canary_id'],
+                    user_id=item['user_id'],
+                    is_enabled=item.get('is_enabled', True),
+                    learning_period_days=int(item.get('learning_period_days', 7)),
+                    sensitivity=item.get('sensitivity', Decimal('0.8')),
+                    created_at=item['created_at'],
+                    pattern_data=item.get('pattern_data', {}),
+                    last_analysis=item.get('last_analysis')
+                )
+            return None
+        except ClientError as e:
+            print(f"Error getting smart alert: {e}")
+            return None
+    
+    def learn_patterns(self):
+        """Analyze check-in patterns and build ML model for anomaly detection"""
+        import statistics
+        from collections import defaultdict
+        
+        try:
+            # Get canary to analyze
+            canary = Canary.get_by_id(self.canary_id)
+            if not canary:
+                return False
+            
+            # Get check-in logs for learning period
+            end_time = datetime.now(timezone.utc)
+            start_time = end_time - timedelta(days=self.learning_period_days)
+            
+            logs_result = CanaryLog.get_by_canary_id(self.canary_id, limit=1000)
+            logs = logs_result['logs']
+            
+            # Filter to successful check-ins within learning period
+            checkin_times = []
+            for log in logs:
+                if log.event_type == 'ping' and log.status == 'success':
+                    log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                    if start_time <= log_time <= end_time:
+                        checkin_times.append(log_time)
+            
+            if len(checkin_times) < 3:  # Need minimum data
+                return False
+            
+            # Analyze patterns by day of week and hour
+            hourly_patterns = defaultdict(list)
+            daily_patterns = defaultdict(list)
+            interval_patterns = []
+            
+            checkin_times.sort()
+            
+            for i, checkin_time in enumerate(checkin_times):
+                hour = checkin_time.hour
+                day = checkin_time.weekday()
+                
+                hourly_patterns[hour].append(1)
+                daily_patterns[day].append(1)
+                
+                # Calculate intervals between check-ins
+                if i > 0:
+                    interval = (checkin_time - checkin_times[i-1]).total_seconds() / 60
+                    interval_patterns.append(interval)
+            
+            # Calculate statistics for patterns
+            pattern_data = {
+                'hourly_distribution': {str(h): len(hourly_patterns[h]) for h in range(24)},
+                'daily_distribution': {str(d): len(daily_patterns[d]) for d in range(7)},
+                'avg_interval': statistics.mean(interval_patterns) if interval_patterns else canary.interval_minutes,
+                'interval_std': statistics.stdev(interval_patterns) if len(interval_patterns) > 1 else 0,
+                'total_checkins': len(checkin_times),
+                'learning_start': start_time.isoformat(),
+                'learning_end': end_time.isoformat(),
+                'expected_interval': canary.interval_minutes
+            }
+            
+            self.pattern_data = pattern_data
+            self.last_analysis = datetime.now(timezone.utc).isoformat()
+            
+            return self.save()
+            
+        except Exception as e:
+            print(f"Error learning patterns: {e}")
+            return False
+    
+    def is_anomaly(self, current_time=None):
+        """Check if current timing represents an anomaly based on learned patterns"""
+        if not self.pattern_data or not self.is_enabled:
+            return False
+        
+        current_time = current_time or datetime.now(timezone.utc)
+        
+        # Get canary and its last check-in
+        canary = Canary.get_by_id(self.canary_id)
+        if not canary or not canary.last_checkin:
+            return False
+        
+        last_checkin = datetime.fromisoformat(canary.last_checkin.replace('Z', '+00:00'))
+        time_since_last = (current_time - last_checkin).total_seconds() / 60
+        
+        # Check if interval is significantly different from learned pattern
+        expected_interval = self.pattern_data.get('avg_interval', canary.interval_minutes)
+        interval_std = self.pattern_data.get('interval_std', 0)
+        
+        # Define anomaly threshold based on sensitivity
+        # Higher sensitivity = lower threshold for detecting anomalies
+        sensitivity_factor = float(self.sensitivity)
+        threshold_multiplier = 2.0 - sensitivity_factor  # 1.0 to 1.5 range
+        
+        if interval_std > 0:
+            threshold = expected_interval + (interval_std * threshold_multiplier)
+        else:
+            # If no variance in historical data, use a percentage-based threshold
+            threshold = expected_interval * (1 + (0.5 * threshold_multiplier))
+        
+        # Check hour/day patterns for additional context
+        hour_anomaly = self._check_hour_anomaly(current_time)
+        day_anomaly = self._check_day_anomaly(current_time)
+        
+        # Combine different anomaly indicators
+        time_anomaly = time_since_last > threshold
+        pattern_anomaly = hour_anomaly or day_anomaly
+        
+        return time_anomaly or (pattern_anomaly and sensitivity_factor > 0.7)
+    
+    def _check_hour_anomaly(self, current_time):
+        """Check if the current hour is unusual for check-ins"""
+        if 'hourly_distribution' not in self.pattern_data:
+            return False
+        
+        current_hour = str(current_time.hour)
+        hour_counts = self.pattern_data['hourly_distribution']
+        total_checkins = self.pattern_data.get('total_checkins', 1)
+        
+        # Calculate expected frequency for this hour
+        hour_frequency = hour_counts.get(current_hour, 0) / total_checkins
+        
+        # Consider it anomalous if this hour has < 10% of normal activity
+        return hour_frequency < 0.1
+    
+    def _check_day_anomaly(self, current_time):
+        """Check if the current day is unusual for check-ins"""
+        if 'daily_distribution' not in self.pattern_data:
+            return False
+        
+        current_day = str(current_time.weekday())
+        day_counts = self.pattern_data['daily_distribution']
+        total_checkins = self.pattern_data.get('total_checkins', 1)
+        
+        # Calculate expected frequency for this day
+        day_frequency = day_counts.get(current_day, 0) / total_checkins
+        
+        # Consider it anomalous if this day has < 5% of normal activity
+        return day_frequency < 0.05

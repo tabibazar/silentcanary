@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}Smart Alerts - Help - SilentCanary{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-3">
+            <div class="list-group">
+                <a href="{{ url_for('help_overview') }}" class="list-group-item list-group-item-action">Overview</a>
+                <a href="{{ url_for('help_getting_started') }}" class="list-group-item list-group-item-action">Getting Started</a>
+                <a href="{{ url_for('help_examples') }}" class="list-group-item list-group-item-action">Examples</a>
+                <a href="{{ url_for('help_smart_alerts') }}" class="list-group-item list-group-item-action active">Smart Alerts</a>
+                <a href="{{ url_for('help_api') }}" class="list-group-item list-group-item-action">API Documentation</a>
+                <a href="{{ url_for('help_troubleshooting') }}" class="list-group-item list-group-item-action">Troubleshooting</a>
+                <a href="{{ url_for('help_faq') }}" class="list-group-item list-group-item-action">FAQ</a>
+            </div>
+        </div>
+        <div class="col-md-9">
+            <h1><i class="fas fa-brain text-primary"></i> Smart Alerts</h1>
+            <p class="lead">Advanced machine learning-based anomaly detection for your canary monitoring.</p>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>What are Smart Alerts?</h3>
+                </div>
+                <div class="card-body">
+                    <p>Smart Alerts use machine learning to analyze your check-in patterns and detect anomalies that might indicate issues, even when your canary hasn't technically "failed" yet.</p>
+                    
+                    <h5>Key Benefits:</h5>
+                    <ul>
+                        <li><strong>Early Warning:</strong> Detect issues before they cause complete failures</li>
+                        <li><strong>Pattern Recognition:</strong> Learn your unique check-in patterns</li>
+                        <li><strong>Reduced False Positives:</strong> Understand normal variations in timing</li>
+                        <li><strong>Contextual Alerting:</strong> Consider time of day and day of week patterns</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>How Smart Alerts Work</h3>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="text-center mb-3">
+                                <i class="fas fa-chart-line fa-3x text-primary"></i>
+                                <h5 class="mt-2">1. Pattern Learning</h5>
+                            </div>
+                            <p>Analyzes your check-in history to understand:</p>
+                            <ul>
+                                <li>Average intervals between check-ins</li>
+                                <li>Common check-in times by hour</li>
+                                <li>Day-of-week patterns</li>
+                                <li>Normal variation ranges</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center mb-3">
+                                <i class="fas fa-search fa-3x text-warning"></i>
+                                <h5 class="mt-2">2. Anomaly Detection</h5>
+                            </div>
+                            <p>Continuously monitors for:</p>
+                            <ul>
+                                <li>Unusual intervals</li>
+                                <li>Check-ins at unexpected times</li>
+                                <li>Changes in pattern consistency</li>
+                                <li>Statistical deviations</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center mb-3">
+                                <i class="fas fa-bell fa-3x text-danger"></i>
+                                <h5 class="mt-2">3. Smart Notifications</h5>
+                            </div>
+                            <p>Sends alerts when:</p>
+                            <ul>
+                                <li>Patterns deviate significantly</li>
+                                <li>Timing becomes irregular</li>
+                                <li>Behavior changes unexpectedly</li>
+                                <li>Multiple anomalies occur</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Configuration Options</h3>
+                </div>
+                <div class="card-body">
+                    <h5>Sensitivity (50% - 100%)</h5>
+                    <p>Controls how sensitive the anomaly detection is:</p>
+                    <ul>
+                        <li><strong>50-60%:</strong> Less sensitive - only major deviations trigger alerts</li>
+                        <li><strong>70-80%:</strong> Balanced - good for most use cases</li>
+                        <li><strong>90-100%:</strong> Highly sensitive - detects small pattern changes</li>
+                    </ul>
+
+                    <h5>Learning Period (3-30 days)</h5>
+                    <p>How much historical data to use for pattern learning:</p>
+                    <ul>
+                        <li><strong>3-7 days:</strong> Quick learning, good for new canaries</li>
+                        <li><strong>7-14 days:</strong> Recommended for most scenarios</li>
+                        <li><strong>14-30 days:</strong> Long-term patterns, stable processes</li>
+                    </ul>
+
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Minimum Requirements:</strong> Smart Alerts need at least 3 successful check-ins within the learning period to establish patterns.
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Best Practices</h3>
+                </div>
+                <div class="card-body">
+                    <h5>When to Use Smart Alerts</h5>
+                    <ul>
+                        <li><strong>Irregular Schedules:</strong> Processes that don't run at exact intervals</li>
+                        <li><strong>Business Hour Dependencies:</strong> Services that behave differently during work hours</li>
+                        <li><strong>Load-Dependent Processes:</strong> Tasks that take varying amounts of time</li>
+                        <li><strong>Critical Systems:</strong> When you need early warning of issues</li>
+                    </ul>
+
+                    <h5>Configuration Tips</h5>
+                    <ul>
+                        <li>Start with medium sensitivity (70-80%) and adjust based on results</li>
+                        <li>Use longer learning periods for stable, established processes</li>
+                        <li>Consider seasonal patterns - re-learn patterns periodically</li>
+                        <li>Monitor alert frequency and tune sensitivity to reduce noise</li>
+                    </ul>
+
+                    <h5>Combining with Regular Alerts</h5>
+                    <p>Smart Alerts work alongside your regular canary monitoring:</p>
+                    <ul>
+                        <li>Regular alerts catch complete failures (missed check-ins)</li>
+                        <li>Smart alerts catch early warning signs and pattern changes</li>
+                        <li>Both use the same notification channels (email, Slack)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Understanding Smart Alert Messages</h3>
+                </div>
+                <div class="card-body">
+                    <h5>Email Alerts</h5>
+                    <p>Smart alert emails include additional context:</p>
+                    <ul>
+                        <li>Expected average interval vs. actual timing</li>
+                        <li>Sensitivity setting that triggered the alert</li>
+                        <li>Analysis period used for pattern learning</li>
+                        <li>Suggested next steps for investigation</li>
+                    </ul>
+
+                    <h5>Slack Notifications</h5>
+                    <p>Slack alerts use structured format with:</p>
+                    <ul>
+                        <li>Visual indicators (🧠 icon for smart alerts)</li>
+                        <li>Key metrics in easily readable fields</li>
+                        <li>Color coding (warning for anomalies)</li>
+                    </ul>
+
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Note:</strong> Smart alerts are marked as "anomaly detected" rather than "failure" to distinguish them from regular timeout-based alerts.
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Troubleshooting Smart Alerts</h3>
+                </div>
+                <div class="card-body">
+                    <h5>Common Issues</h5>
+                    
+                    <h6>Too Many Alerts</h6>
+                    <ul>
+                        <li>Reduce sensitivity (try 60-70%)</li>
+                        <li>Increase learning period to capture more variation</li>
+                        <li>Re-learn patterns after process changes</li>
+                    </ul>
+
+                    <h6>Missing Important Anomalies</h6>
+                    <ul>
+                        <li>Increase sensitivity (try 80-90%)</li>
+                        <li>Ensure sufficient learning data (7+ days recommended)</li>
+                        <li>Check if patterns have fundamentally changed</li>
+                    </ul>
+
+                    <h6>"Insufficient Data" Message</h6>
+                    <ul>
+                        <li>Wait for more check-ins (need minimum 3 in learning period)</li>
+                        <li>Reduce learning period for new canaries</li>
+                        <li>Ensure your process is checking in regularly</li>
+                    </ul>
+
+                    <h6>Pattern Learning Not Working</h6>
+                    <ul>
+                        <li>Verify check-ins are successful (not just attempts)</li>
+                        <li>Check for consistent timing in your process</li>
+                        <li>Consider if your process has enough regularity for pattern detection</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3>Example Scenarios</h3>
+                </div>
+                <div class="card-body">
+                    <h5>Scenario 1: Database Backup</h5>
+                    <p><strong>Problem:</strong> Nightly backups usually take 30-45 minutes but occasionally take 2+ hours due to database size.</p>
+                    <p><strong>Solution:</strong> Smart Alerts with 7-day learning period and 75% sensitivity. Detects when backups are taking unusually long before they miss the deadline.</p>
+
+                    <h5>Scenario 2: API Health Checks</h5>
+                    <p><strong>Problem:</strong> API monitoring runs every 5 minutes but response times vary significantly during business hours.</p>
+                    <p><strong>Solution:</strong> Smart Alerts learn the hourly patterns and only alert when response times are anomalous for the specific time of day.</p>
+
+                    <h5>Scenario 3: Batch Processing</h5>
+                    <p><strong>Problem:</strong> Data processing jobs run at different intervals depending on data availability.</p>
+                    <p><strong>Solution:</strong> Smart Alerts with high sensitivity (85%) detect when the irregular but consistent patterns change, indicating potential issues.</p>
+                </div>
+            </div>
+
+            <div class="alert alert-success">
+                <i class="fas fa-lightbulb"></i>
+                <strong>Pro Tip:</strong> Use Smart Alerts for proactive monitoring and regular alerts as your safety net. This combination provides both early warning and guaranteed failure detection.
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
