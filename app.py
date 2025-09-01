@@ -1896,7 +1896,7 @@ def create_canary_from_template(user_id, service_name, environment, template_nam
         smart_alert = SmartAlert(
             canary_id=canary.canary_id,
             user_id=user_id,
-            sensitivity=Decimal('0.8'),
+            sensitivity=Decimal('0.6'),  # More conservative default
             learning_period_days=7,
             is_enabled=True
         )
@@ -1933,7 +1933,7 @@ def create_canary_from_data(user_id, data):
         smart_alert = SmartAlert(
             canary_id=canary.canary_id,
             user_id=user_id,
-            sensitivity=Decimal(str(data.get('smart_alert_sensitivity', 0.8))),
+            sensitivity=Decimal(str(data.get('smart_alert_sensitivity', 0.6))),  # More conservative default
             learning_period_days=data.get('smart_alert_learning_period', 7),
             is_enabled=True
         )

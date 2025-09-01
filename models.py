@@ -876,7 +876,7 @@ class SmartAlert:
     
     def __init__(self, smart_alert_id=None, canary_id=None, user_id=None, is_enabled=True,
                  learning_period_days=7, sensitivity=0.8, created_at=None, 
-                 pattern_data=None, last_analysis=None):
+                 pattern_data=None, last_analysis=None, last_alert_sent=None):
         self.smart_alert_id = smart_alert_id or str(uuid.uuid4())
         self.canary_id = canary_id
         self.user_id = user_id
@@ -886,6 +886,7 @@ class SmartAlert:
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
         self.pattern_data = pattern_data or {}  # Stores learned patterns
         self.last_analysis = last_analysis
+        self.last_alert_sent = last_alert_sent  # Track when last alert was sent
     
     def save(self):
         """Save smart alert configuration to DynamoDB"""
@@ -900,7 +901,8 @@ class SmartAlert:
                     'sensitivity': self.sensitivity,
                     'created_at': self.created_at,
                     'pattern_data': self.pattern_data,
-                    'last_analysis': self.last_analysis
+                    'last_analysis': self.last_analysis,
+                    'last_alert_sent': self.last_alert_sent
                 }
             )
             return True
@@ -936,7 +938,8 @@ class SmartAlert:
                     sensitivity=item.get('sensitivity', Decimal('0.8')),
                     created_at=item['created_at'],
                     pattern_data=item.get('pattern_data', {}),
-                    last_analysis=item.get('last_analysis')
+                    last_analysis=item.get('last_analysis'),
+                    last_alert_sent=item.get('last_alert_sent')
                 )
             return None
         except ClientError as e:
@@ -1019,6 +1022,16 @@ class SmartAlert:
         
         current_time = current_time or datetime.now(timezone.utc)
         
+        # Cooldown period: don't send alerts too frequently (minimum 30 minutes between alerts)
+        if self.last_alert_sent:
+            try:
+                last_alert_time = datetime.fromisoformat(self.last_alert_sent.replace('Z', '+00:00'))
+                time_since_last_alert = (current_time - last_alert_time).total_seconds() / 60
+                if time_since_last_alert < 30:  # 30-minute cooldown
+                    return False
+            except:
+                pass  # If we can't parse the time, continue with analysis
+        
         # Get canary and its last check-in
         canary = Canary.get_by_id(self.canary_id)
         if not canary or not canary.last_checkin:
@@ -1031,26 +1044,44 @@ class SmartAlert:
         expected_interval = self.pattern_data.get('avg_interval', canary.interval_minutes)
         interval_std = self.pattern_data.get('interval_std', 0)
         
-        # Define anomaly threshold based on sensitivity
-        # Higher sensitivity = lower threshold for detecting anomalies
+        # Define anomaly threshold based on sensitivity (more conservative)
+        # Higher sensitivity = lower threshold, but with reasonable minimums
         sensitivity_factor = float(self.sensitivity)
-        threshold_multiplier = 2.0 - sensitivity_factor  # 1.0 to 1.5 range
         
         if interval_std > 0:
+            # Use standard deviations but with minimum buffer
+            # Even at max sensitivity (1.0), allow at least 1.5 std deviations
+            threshold_multiplier = max(1.5, 3.0 - sensitivity_factor)  # 1.5 to 2.0 range
             threshold = expected_interval + (interval_std * threshold_multiplier)
         else:
-            # If no variance in historical data, use a percentage-based threshold
-            threshold = expected_interval * (1 + (0.5 * threshold_multiplier))
+            # More conservative percentage-based threshold
+            # Even at max sensitivity, allow at least 30% variance
+            threshold_percentage = max(0.3, 1.0 - (sensitivity_factor * 0.4))  # 0.3 to 0.6 range
+            threshold = expected_interval * (1 + threshold_percentage)
         
         # Check hour/day patterns for additional context
         hour_anomaly = self._check_hour_anomaly(current_time)
         day_anomaly = self._check_day_anomaly(current_time)
         
-        # Combine different anomaly indicators
+        # Combine different anomaly indicators with conservative logic
         time_anomaly = time_since_last > threshold
-        pattern_anomaly = hour_anomaly or day_anomaly
         
-        return time_anomaly or (pattern_anomaly and sensitivity_factor > 0.7)
+        # Only trigger on pattern anomalies if they're extreme AND sensitivity is very high
+        # AND we have sufficient confidence in our patterns
+        pattern_confidence = self.pattern_data.get('total_checkins', 0) >= 10
+        extreme_sensitivity = sensitivity_factor >= 0.9
+        pattern_anomaly = (hour_anomaly or day_anomaly) and pattern_confidence and extreme_sensitivity
+        
+        # Primary trigger should be time-based anomaly
+        # Pattern anomalies are secondary and require high confidence
+        is_anomalous = time_anomaly or pattern_anomaly
+        
+        # If we detect an anomaly, record the alert timestamp
+        if is_anomalous:
+            self.last_alert_sent = current_time.isoformat()
+            self.save()  # Save to persist the alert timestamp
+        
+        return is_anomalous
     
     def _check_hour_anomaly(self, current_time):
         """Check if the current hour is unusual for check-ins"""
@@ -1093,8 +1124,9 @@ class SmartAlert:
                 last_analysis_time = datetime.fromisoformat(self.last_analysis.replace('Z', '+00:00'))
                 time_since_analysis = datetime.now(timezone.utc) - last_analysis_time
                 
-                # Update every 5 minutes if patterns exist, or every 2 minutes if no patterns yet
-                update_interval = timedelta(minutes=5) if self.pattern_data else timedelta(minutes=2)
+                # Update less frequently to avoid over-analysis
+                # Update every 30 minutes if patterns exist, or every 10 minutes if no patterns yet
+                update_interval = timedelta(minutes=30) if self.pattern_data else timedelta(minutes=10)
                 
                 return time_since_analysis > update_interval
             except:
