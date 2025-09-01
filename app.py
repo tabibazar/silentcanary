@@ -604,11 +604,7 @@ def settings():
     if request.method == 'POST':
         # Handle API key actions (these are not form fields, so handle them first)
         if request.form.get('generate_api_key'):
-            print(f"DEBUG: Generate API key requested for user {current_user.user_id}")
-            result = current_user.generate_api_key()
-            print(f"DEBUG: generate_api_key returned: {result}")
-            print(f"DEBUG: User API key after generation: {current_user.api_key}")
-            if result:
+            if current_user.generate_api_key():
                 flash('API key generated successfully!', 'success')
             else:
                 flash('Failed to generate API key. Please try again.', 'error')

@@ -85,15 +85,11 @@ class User:
     
     def generate_api_key(self):
         """Generate a new API key for this user"""
-        print(f"DEBUG: Generating API key for user {self.user_id}")
         import base64
         secret = f"secret_{self.user_id[:8]}"
         credentials = f"{self.user_id}:{secret}"
         self.api_key = base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
-        print(f"DEBUG: Generated API key: {self.api_key}")
-        result = self.save()
-        print(f"DEBUG: Save result: {result}")
-        return result
+        return self.save()
     
     def regenerate_api_key(self):
         """Regenerate the API key"""
