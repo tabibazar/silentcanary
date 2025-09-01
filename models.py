@@ -21,12 +21,12 @@ def get_dynamodb_resource():
         return boto3.resource(
             'dynamodb',
             endpoint_url='http://localhost:8000',
-            region_name='us-east-1',
+            region_name='ca-central-1',
             aws_access_key_id='dummy',
             aws_secret_access_key='dummy'
         )
     else:
-        return boto3.resource('dynamodb', region_name=os.getenv('AWS_REGION', 'us-east-1'))
+        return boto3.resource('dynamodb', region_name=os.getenv('AWS_REGION', 'ca-central-1'))
 
 # Get DynamoDB tables
 dynamodb = get_dynamodb_resource()
