@@ -47,7 +47,7 @@
                                         <li><strong>Verify the token:</strong> Copy the exact token from your dashboard</li>
                                         <li><strong>Test manually:</strong> Try the check-in URL in your browser</li>
                                         <li><strong>Check connectivity:</strong>
-                                            <pre><code>curl -v "https://yourapp.com/checkin/YOUR_TOKEN"</code></pre>
+                                            <pre><code>curl -v "https://silentcanary.com/checkin/YOUR_TOKEN"</code></pre>
                                         </li>
                                         <li><strong>Verify SSL:</strong> Use <code>-k</code> flag to bypass SSL validation temporarily</li>
                                         <li><strong>Check logs:</strong> Look at your application/script logs for HTTP errors</li>
@@ -194,24 +194,24 @@
                 <div class="card-body">
                     <h5>Test Check-in Manually</h5>
                     <pre><code># Simple GET test
-curl "https://yourapp.com/checkin/YOUR_TOKEN"
+curl "https://silentcanary.com/checkin/YOUR_TOKEN"
 
 # POST with message
-curl -X POST "https://yourapp.com/checkin/YOUR_TOKEN" \
+curl -X POST "https://silentcanary.com/checkin/YOUR_TOKEN" \
      -d "message=Manual test check-in"
 
 # With verbose output for debugging
-curl -v "https://yourapp.com/checkin/YOUR_TOKEN"</code></pre>
+curl -v "https://silentcanary.com/checkin/YOUR_TOKEN"</code></pre>
 
                     <h5>Test Network Connectivity</h5>
                     <pre><code># Test DNS resolution
-nslookup yourapp.com
+nslookup silentcanary.com
 
 # Test basic connectivity
-ping yourapp.com
+ping silentcanary.com
 
 # Test HTTPS connection
-openssl s_client -connect yourapp.com:443</code></pre>
+openssl s_client -connect silentcanary.com:443</code></pre>
 
                     <h5>Debug Script Issues</h5>
                     <pre><code># Add debugging to your scripts
@@ -236,7 +236,7 @@ python -u script.py  # Unbuffered Python output</code></pre>
                     <h5>Handle Network Failures</h5>
                     <pre><code># Example retry logic in bash
 for i in {1..3}; do
-    if curl -m 10 "https://yourapp.com/checkin/YOUR_TOKEN"; then
+    if curl -m 10 "https://silentcanary.com/checkin/YOUR_TOKEN"; then
         break
     else
         echo "Check-in attempt $i failed, retrying..."

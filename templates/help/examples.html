@@ -38,7 +38,7 @@
 # backup_script.sh
 rsync -av /data/ /backup/
 if [ $? -eq 0 ]; then
-    curl -X POST "https://yourapp.com/checkin/YOUR_TOKEN" \
+    curl -X POST "https://silentcanary.com/checkin/YOUR_TOKEN" \
          -d "message=Backup completed successfully - $(du -sh /backup/ | cut -f1) backed up"
 else
     # Backup failed - don't check in, let SilentCanary alert
@@ -76,7 +76,7 @@ def health_check():
             check_in_data = {
                 "message": f"Service healthy - Response time: {response.elapsed.total_seconds():.2f}s"
             }
-            requests.post('https://yourapp.com/checkin/YOUR_TOKEN', 
+            requests.post('https://silentcanary.com/checkin/YOUR_TOKEN', 
                          json=check_in_data)
         else:
             # Service returned error - don't check in
@@ -115,7 +115,7 @@ OPTIMIZE TABLE logs, temp_files;
 #!/bin/bash
 ROWS_DELETED=$(mysql -u user -p database < db_cleanup.sql 2>&1 | grep -o '[0-9]* rows affected' | head -1)
 
-curl -X POST "https://yourapp.com/checkin/YOUR_TOKEN" \
+curl -X POST "https://silentcanary.com/checkin/YOUR_TOKEN" \
      -H "Content-Type: application/json" \
      -d "{\"message\": \"DB cleanup completed - $ROWS_DELETED\"}"</code></pre>
                 </div>
@@ -144,7 +144,7 @@ void sendSensorData() {
   float humidity = readHumidity();
   
   HTTPClient http;
-  http.begin("https://yourapp.com/checkin/YOUR_TOKEN");
+  http.begin("https://silentcanary.com/checkin/YOUR_TOKEN");
   http.addHeader("Content-Type", "application/json");
   
   String message = "Temp: " + String(temperature) + "°C, Humidity: " + String(humidity) + "%";
@@ -176,19 +176,19 @@ void loop() {
                     <h5>Different ways to send messages:</h5>
                     
                     <h6>1. Simple GET request with message:</h6>
-                    <pre><code>curl "https://yourapp.com/checkin/YOUR_TOKEN?message=Task completed successfully"</code></pre>
+                    <pre><code>curl "https://silentcanary.com/checkin/YOUR_TOKEN?message=Task completed successfully"</code></pre>
                     
                     <h6>2. POST with form data:</h6>
-                    <pre><code>curl -X POST https://yourapp.com/checkin/YOUR_TOKEN \
+                    <pre><code>curl -X POST https://silentcanary.com/checkin/YOUR_TOKEN \
      -d "message=Processed 1,234 records in 5.2 seconds"</code></pre>
                     
                     <h6>3. POST with JSON:</h6>
-                    <pre><code>curl -X POST https://yourapp.com/checkin/YOUR_TOKEN \
+                    <pre><code>curl -X POST https://silentcanary.com/checkin/YOUR_TOKEN \
      -H "Content-Type: application/json" \
      -d '{"message": "System status: All services operational"}'</code></pre>
                     
                     <h6>4. From JavaScript/Node.js:</h6>
-                    <pre><code>fetch('https://yourapp.com/checkin/YOUR_TOKEN', {
+                    <pre><code>fetch('https://silentcanary.com/checkin/YOUR_TOKEN', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
