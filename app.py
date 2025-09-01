@@ -226,7 +226,11 @@ def register():
                     sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
                     recipients=[user.email],
                     html=f'''
-                    <h2>Welcome to SilentCanary!</h2>
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            <img src="https://silentcanary.com/static/favicon.ico" alt="SilentCanary" style="width: 32px; height: 32px; vertical-align: middle;">
+                            <h2 style="display: inline-block; margin-left: 10px; color: #28a745;">Welcome to SilentCanary!</h2>
+                        </div>
                     <p>Hello {user.username},</p>
                     <p>Thank you for registering with SilentCanary!</p>
                     <p>Please verify your email address to complete your account setup:</p>
@@ -234,7 +238,8 @@ def register():
                     <p>This link will expire in 1 hour.</p>
                     <p>If you didn't create this account, please ignore this email.</p>
                     <hr>
-                    <p><small>SilentCanary - Dead Man's Switch Monitoring</small></p>
+                    <p><small>SilentCanary - Dead Man's Snitch Monitoring</small></p>
+                    </div>
                     '''
                 )
                 mail.send(msg)
@@ -1178,7 +1183,11 @@ def settings():
                     sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
                     recipients=[current_user.email],
                     html=f'''
-                    <h2>Email Verification</h2>
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            <img src="https://silentcanary.com/static/favicon.ico" alt="SilentCanary" style="width: 32px; height: 32px; vertical-align: middle;">
+                            <h2 style="display: inline-block; margin-left: 10px; color: #007bff;">Email Verification</h2>
+                        </div>
                     <p>Hello {current_user.username},</p>
                     <p>Please verify your email address to complete your SilentCanary account setup.</p>
                     <p>Click the link below to verify your email:</p>
@@ -1187,6 +1196,7 @@ def settings():
                     <p>If you didn't request this verification, please ignore this email.</p>
                     <hr>
                     <p><small>SilentCanary</small></p>
+                    </div>
                     '''
                 )
                 mail.send(msg)
@@ -2140,7 +2150,11 @@ def send_notifications(canary, log_entry=None):
     
     # Email message with HTML formatting
     html_message = f'''
-    <h2>🚨 SilentCanary Alert</h2>
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="text-align: center; margin-bottom: 20px;">
+            <img src="https://silentcanary.com/static/favicon.ico" alt="SilentCanary" style="width: 32px; height: 32px; vertical-align: middle;">
+            <h2 style="display: inline-block; margin-left: 10px; color: #dc3545;">🚨 SilentCanary Alert</h2>
+        </div>
     <p>Your canary "<strong>{canary.name}</strong>" has failed to check in!</p>
     
     <h3>Details:</h3>
@@ -2157,6 +2171,7 @@ def send_notifications(canary, log_entry=None):
     
     <hr>
     <p><small>This alert was sent by <a href="https://silentcanary.com">SilentCanary</a></small></p>
+    </div>
     '''
     
     # Slack message with markdown formatting
@@ -2482,7 +2497,11 @@ def send_smart_alert_notifications(canary, log_entry, smart_alert):
     
     # Email message with ML context
     html_message = f'''
-    <h2>🧠 SilentCanary Smart Alert</h2>
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="text-align: center; margin-bottom: 20px;">
+            <img src="https://silentcanary.com/static/favicon.ico" alt="SilentCanary" style="width: 32px; height: 32px; vertical-align: middle;">
+            <h2 style="display: inline-block; margin-left: 10px; color: #ffc107;">🧠 SilentCanary Smart Alert</h2>
+        </div>
     <p>Our machine learning system detected an anomaly in your canary "<strong>{canary.name}</strong>" check-in patterns!</p>
     
     <h3>Current Status:</h3>
@@ -2507,6 +2526,7 @@ def send_smart_alert_notifications(canary, log_entry, smart_alert):
     
     <hr>
     <small>This is a smart alert - meaning it was triggered by pattern analysis, not just a simple timeout. Learn more at <a href="https://silentcanary.com">SilentCanary.com</a></small>
+    </div>
     '''
     
     # Send notifications based on alert type
