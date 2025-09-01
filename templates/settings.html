@@ -227,22 +227,6 @@
                 </div>
                 {% endif %}
                 
-                <!-- DEBUG: Simple API Key Creation Form (non-modal) -->
-                <div class="mt-4 p-3 border rounded bg-light">
-                    <h6>Quick Test: Create API Key</h6>
-                    <form method="POST" class="d-flex gap-2 align-items-end">
-                        {{ form.hidden_tag() }}
-                        <div class="flex-grow-1">
-                            <label for="test_api_key_name" class="form-label small">API Key Name</label>
-                            <input type="text" class="form-control form-control-sm" id="test_api_key_name" name="api_key_name" 
-                                   placeholder="Test API Key" value="Test API Key">
-                        </div>
-                        <button type="submit" name="create_api_key" class="btn btn-primary btn-sm">
-                            <i class="fas fa-plus"></i> Create Test Key
-                        </button>
-                    </form>
-                </div>
-                
                 <div class="mt-4">
                     <div class="form-text">
                         <i class="fas fa-shield-alt text-warning"></i>
@@ -277,6 +261,7 @@
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
+                            <input type="hidden" name="create_api_key" value="1">
                             <div class="mb-3">
                                 <label for="api_key_name" class="form-label">API Key Name</label>
                                 <input type="text" class="form-control" id="api_key_name" name="api_key_name" 
@@ -286,7 +271,7 @@
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" name="create_api_key" class="btn btn-success">
+                            <button type="submit" class="btn btn-success">
                                 <i class="fas fa-plus"></i> Create API Key
                             </button>
                         </div>

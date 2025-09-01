@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: silentcanary
-        image: 251132308531.dkr.ecr.ca-central-1.amazonaws.com/silentcanary:multi-api-keys-2bcdc6e
+        image: 251132308531.dkr.ecr.ca-central-1.amazonaws.com/silentcanary:debug-api-key-e0ec610
         ports:
         - containerPort: 5000
           name: http
