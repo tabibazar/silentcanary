@@ -616,22 +616,15 @@ def settings():
         form.timezone.choices = [(tz, tz) for tz in common_timezones]
     
     if request.method == 'POST':
-        print(f"DEBUG: Settings POST request received")
-        print(f"DEBUG: Form data keys: {list(request.form.keys())}")
-        print(f"DEBUG: create_api_key value: {request.form.get('create_api_key')}")
         # Handle API key actions (these are not form fields, so handle them first)
         if request.form.get('create_api_key'):
-            print(f"DEBUG: Creating API key...")
             from models import APIKey
             api_key_name = request.form.get('api_key_name', 'API Key').strip()
-            print(f"DEBUG: API key name: {api_key_name}")
             if not api_key_name:
                 api_key_name = f"API Key {len(APIKey.get_by_user_id(current_user.user_id)) + 1}"
-                print(f"DEBUG: Generated default name: {api_key_name}")
             
             # Generate new API key
             key_value = APIKey.generate_key_value(current_user.user_id)
-            print(f"DEBUG: Generated key value: {key_value[:20]}...")
             api_key = APIKey(
                 user_id=current_user.user_id,
                 name=api_key_name,
@@ -639,14 +632,9 @@ def settings():
                 is_active=True
             )
             
-            print(f"DEBUG: Saving API key...")
-            save_result = api_key.save()
-            print(f"DEBUG: Save result: {save_result}")
-            if save_result:
-                print(f"DEBUG: API key created successfully!")
+            if api_key.save():
                 flash(f'API key "{api_key_name}" created successfully!', 'success')
             else:
-                print(f"DEBUG: Failed to save API key!")
                 flash('Failed to create API key. Please try again.', 'error')
             return redirect(url_for('settings'))
             

@@ -51,7 +51,7 @@
                         <div class="col-md-12">
                             <div class="alert alert-info">
                                 <i class="fas fa-info-circle"></i>
-                                <strong>Welcome to SilentCanary!</strong> A modern, intelligent monitoring solution that keeps track of your critical processes, scheduled jobs, and services through simple HTTP check-ins.
+                                <strong>Welcome to SilentCanary!</strong> A modern, intelligent monitoring solution available at <a href="https://silentcanary.com" class="alert-link" target="_blank"><strong>https://silentcanary.com</strong></a> that keeps track of your critical processes, scheduled jobs, and services through simple HTTP check-ins.
                             </div>
                         </div>
                     </div>
@@ -102,7 +102,8 @@
                                             </div>
                                             <div class="col-md-8">
                                                 <h5 class="mb-2">CI/CD Integration</h5>
-                                                <p class="small mb-0">Automatically create and manage canaries during deployments. Supports GitHub Actions, GitLab CI/CD, Jenkins, and more.</p>
+                                                <p class="small mb-2">Automatically create and manage canaries during deployments using <a href="https://silentcanary.com" target="_blank">https://silentcanary.com</a> APIs. Supports GitHub Actions, GitLab CI/CD, Jenkins, and more.</p>
+                                                <p class="small mb-0 text-muted">Use multiple API keys for different environments and track usage in your account settings.</p>
                                             </div>
                                             <div class="col-md-2 text-center">
                                                 <a href="{{ url_for('help_cicd_integration') }}" class="btn btn-info btn-sm">
@@ -161,7 +162,7 @@
 # ... your backup logic ...
 
 # Notify SilentCanary that backup completed
-curl -X POST "https://your-domain.com/checkin/abc123def456"</code></pre>
+curl -X POST "https://silentcanary.com/checkin/abc123def456"</code></pre>
                                         <p class="small mt-2 mb-0">If your backup script fails or doesn't run, SilentCanary will alert you within the specified grace period.</p>
                                     </div>
                                 </div>
@@ -185,10 +186,11 @@ curl -X POST "https://your-domain.com/checkin/abc123def456"</code></pre>
                             <div class="col-md-6">
                                 <ul class="list-unstyled">
                                     <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Smart Alerts:</strong> ML-based anomaly detection</li>
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>CI/CD Integration:</strong> GitHub Actions, GitLab, Jenkins support</li>
                                     <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Multi-Channel Notifications:</strong> Email + Slack</li>
                                     <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Analytics:</strong> Detailed uptime reports</li>
                                     <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>Export Data:</strong> CSV/JSON exports</li>
-                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>API Access:</strong> Programmatic management</li>
+                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i><strong>API Access:</strong> Multiple API keys & usage tracking</li>
                                 </ul>
                             </div>
                         </div>
