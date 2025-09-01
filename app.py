@@ -804,6 +804,51 @@ def contact():
     
     return render_template('contact.html', form=form)
 
+@app.route('/terms-of-service')
+def terms_of_service():
+    """Terms of Service page"""
+    return render_template('terms_of_service.html')
+
+@app.route('/privacy-policy')
+def privacy_policy():
+    """Privacy Policy page"""
+    return render_template('privacy_policy.html')
+
+@app.route('/cookie-policy')
+def cookie_policy():
+    """Cookie Policy page"""
+    return render_template('cookie_policy.html')
+
+@app.route('/sla')
+def sla():
+    """Service Level Agreement page"""
+    return render_template('sla.html')
+
+@app.route('/status')
+def status():
+    """Status page for all services"""
+    return render_template('status.html')
+
+@app.route('/resources/smart-alerts')
+def resources_smart_alerts():
+    """Resources: Smart Alerts page"""
+    return render_template('help/smart_alerts.html')
+
+@app.route('/resources/integrations')
+def resources_integrations():
+    """Resources: Integrations page"""
+    return render_template('help/cicd_integration.html')
+
+@app.route('/resources/api')
+def resources_api():
+    """Resources: API Reference page"""
+    return render_template('help/api.html')
+
+@app.route('/resources/examples')
+def resources_examples():
+    """Resources: Examples page"""
+    return render_template('help/examples.html')
+
 @app.route('/webhook/stripe', methods=['POST'])
 def stripe_webhook():
     """Handle Stripe webhooks"""
