@@ -242,30 +242,6 @@
             </div>
         </div>
         
-        <!-- Email Support -->
-        <div class="mb-4">
-            <div class="contact-method">
-                <i class="fas fa-envelope"></i>
-                <h5>Email Support</h5>
-                <p class="text-muted">For detailed questions or issues that require investigation.</p>
-                <a href="mailto:support@silentcanary.com" class="btn btn-outline-primary">
-                    <i class="fas fa-envelope me-1"></i> support@silentcanary.com
-                </a>
-            </div>
-        </div>
-        
-        <!-- Enterprise -->
-        <div class="mb-4">
-            <div class="contact-method">
-                <i class="fas fa-building"></i>
-                <h5>Enterprise Sales</h5>
-                <p class="text-muted">Custom solutions, volume discounts, and dedicated support for teams.</p>
-                <a href="mailto:enterprise@silentcanary.com" class="btn btn-outline-primary">
-                    <i class="fas fa-handshake me-1"></i> Contact Sales
-                </a>
-            </div>
-        </div>
-        
         <!-- Response Time -->
         <div class="alert alert-info">
             <i class="fas fa-clock me-2"></i>
@@ -348,7 +324,7 @@
                     <div id="faq5" class="collapse" data-bs-parent="#faqAccordion">
                         <div class="faq-body">
                             Yes! We offer a 30-day money-back guarantee on all paid plans. If you're not completely satisfied, 
-                            contact our support team within 30 days of your purchase for a full refund.
+                            contact us within 30 days of your purchase for a full refund.
                         </div>
                     </div>
                 </div>
@@ -360,16 +336,13 @@
 <!-- Still have questions CTA -->
 <div class="bg-light p-5 rounded text-center mt-5">
     <h4 class="mb-3">Still have questions?</h4>
-    <p class="text-muted mb-4">Our support team is here to help you get the most out of SilentCanary.</p>
-    <a href="mailto:support@silentcanary.com" class="btn btn-primary me-3">
-        <i class="fas fa-envelope me-2"></i>Email Support
-    </a>
+    <p class="text-muted mb-4">We're here to help you get the most out of SilentCanary.</p>
     {% if current_user.is_authenticated %}
-    <a href="{{ url_for('help_overview') }}" class="btn btn-outline-secondary">
+    <a href="{{ url_for('help_overview') }}" class="btn btn-primary">
         <i class="fas fa-book me-2"></i>Browse Documentation
     </a>
     {% else %}
-    <a href="{{ url_for('register') }}" class="btn btn-outline-secondary">
+    <a href="{{ url_for('register') }}" class="btn btn-primary">
         <i class="fas fa-rocket me-2"></i>Start Free Trial
     </a>
     {% endif %}
