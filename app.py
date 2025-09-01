@@ -616,6 +616,9 @@ def settings():
         form.timezone.choices = [(tz, tz) for tz in common_timezones]
     
     if request.method == 'POST':
+        print(f"DEBUG: Settings POST request received")
+        print(f"DEBUG: Form data keys: {list(request.form.keys())}")
+        print(f"DEBUG: create_api_key value: {request.form.get('create_api_key')}")
         # Handle API key actions (these are not form fields, so handle them first)
         if request.form.get('create_api_key'):
             from models import APIKey
