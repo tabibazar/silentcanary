@@ -8,11 +8,117 @@
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1>
                 <i class="fas fa-tachometer-alt"></i> Dashboard
+                {% if current_tag_filter %}
+                    <small class="text-muted">- Tag: <span class="badge bg-primary">{{ current_tag_filter }}</span></small>
+                {% endif %}
+                {% if current_status_filter %}
+                    <small class="text-muted">- Status: <span class="badge bg-secondary">{{ current_status_filter.title() }}</span></small>
+                {% endif %}
             </h1>
             <a href="{{ url_for('create_canary') }}" class="btn btn-primary">
                 <i class="fas fa-plus"></i> New Canary
             </a>
         </div>
+
+        <!-- Active Filter Breadcrumb -->
+        {% if current_tag_filter or current_status_filter %}
+        <div class="mb-3">
+            <nav aria-label="Filter breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item">
+                        <a href="{{ url_for('dashboard') }}" class="text-decoration-none">
+                            <i class="fas fa-home"></i> All Canaries
+                        </a>
+                    </li>
+                    {% if current_tag_filter %}
+                    <li class="breadcrumb-item active" aria-current="page">
+                        <i class="fas fa-tag"></i> {{ current_tag_filter }}
+                        {% if current_status_filter %}
+                        <span class="text-muted"> + {{ current_status_filter.title() }} Status</span>
+                        {% endif %}
+                    </li>
+                    {% elif current_status_filter %}
+                    <li class="breadcrumb-item active" aria-current="page">
+                        <i class="fas fa-circle"></i> {{ current_status_filter.title() }} Status
+                    </li>
+                    {% endif %}
+                </ol>
+            </nav>
+        </div>
+        {% endif %}
+
+        <!-- Filters Section -->
+        {% if all_canaries %}
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h6 class="mb-3">
+                            <i class="fas fa-filter"></i> Filter Canaries
+                            {% if current_tag_filter or current_status_filter %}
+                                <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary ms-2">
+                                    <i class="fas fa-times"></i> Clear Filters
+                                </a>
+                            {% endif %}
+                        </h6>
+                        
+                        <!-- Tag Filter -->
+                        {% if all_tags %}
+                        <div class="mb-2">
+                            <strong class="me-2">Tags:</strong>
+                            {% for tag in all_tags %}
+                                <a href="{{ url_for('dashboard', tag=tag) }}" 
+                                   class="badge tag-filter me-1 mb-1 text-decoration-none
+                                          {% if current_tag_filter == tag %}bg-primary{% else %}bg-secondary{% endif %}">
+                                    {{ tag }} ({{ tag_counts[tag] }})
+                                </a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Status Filter -->
+                        <div>
+                            <strong class="me-2">Status:</strong>
+                            {% for status, count in status_counts.items() %}
+                                <a href="{{ url_for('dashboard', status=status, tag=current_tag_filter) }}" 
+                                   class="badge status-filter me-1 mb-1 text-decoration-none
+                                          {% if current_status_filter == status %}
+                                              {% if status == 'healthy' %}bg-success{% endif %}
+                                              {% if status == 'failed' %}bg-danger{% endif %}
+                                              {% if status == 'waiting' %}bg-warning{% endif %}
+                                          {% else %}bg-secondary{% endif %}">
+                                    {{ status.title() }} ({{ count }})
+                                </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <!-- Quick Search -->
+                        <div class="mb-2">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">
+                                    <i class="fas fa-search"></i>
+                                </span>
+                                <input type="text" class="form-control" id="canarySearch" 
+                                       placeholder="Search canaries..." 
+                                       onkeyup="filterCanaries()">
+                                <button class="btn btn-outline-secondary" type="button" 
+                                        onclick="clearSearch()" id="clearSearchBtn" style="display: none;">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="text-muted text-end">
+                            <strong>Showing:</strong> 
+                            <span id="visibleCount">{{ canaries|length }}</span> of {{ all_canaries|length }} canaries
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
 
         {% if canaries %}
             <div class="row">
@@ -48,7 +154,12 @@
                                     {% if canary.tags %}
                                     <strong>Tags:</strong>
                                     {% for tag in canary.tags %}
-                                        <span class="badge bg-secondary me-1">{{ tag }}</span>
+                                        <a href="{{ url_for('dashboard', tag=tag) }}" 
+                                           class="badge bg-secondary me-1 text-decoration-none canary-tag
+                                                  {% if current_tag_filter == tag %}bg-primary{% endif %}" 
+                                           title="Filter by tag: {{ tag }}">
+                                            {{ tag }}
+                                        </a>
                                     {% endfor %}<br>
                                     {% endif %}
                                     <strong>Last Check-in:</strong> 
@@ -117,17 +228,91 @@
                 {% endfor %}
             </div>
         {% else %}
-            <div class="text-center py-5">
-                <i class="fas fa-dove fa-5x text-muted mb-3"></i>
-                <h3 class="text-muted">No Canaries Yet</h3>
-                <p class="text-muted">Create your first canary to start monitoring your services.</p>
-                <a href="{{ url_for('create_canary') }}" class="btn btn-primary">
-                    <i class="fas fa-plus"></i> Create Your First Canary
-                </a>
-            </div>
+            {% if all_canaries %}
+                <!-- No canaries match the current filter -->
+                <div class="text-center py-5">
+                    <i class="fas fa-filter fa-5x text-muted mb-3"></i>
+                    <h3 class="text-muted">No Canaries Match Your Filter</h3>
+                    <p class="text-muted">
+                        {% if current_tag_filter %}
+                            No canaries found with tag <strong>"{{ current_tag_filter }}"</strong>.
+                        {% elif current_status_filter %}
+                            No canaries found with status <strong>"{{ current_status_filter }}"</strong>.
+                        {% else %}
+                            Try adjusting your filter criteria.
+                        {% endif %}
+                    </p>
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-primary">
+                        <i class="fas fa-times"></i> Clear Filters
+                    </a>
+                </div>
+            {% else %}
+                <!-- No canaries at all -->
+                <div class="text-center py-5">
+                    <i class="fas fa-dove fa-5x text-muted mb-3"></i>
+                    <h3 class="text-muted">No Canaries Yet</h3>
+                    <p class="text-muted">Create your first canary to start monitoring your services.</p>
+                    <a href="{{ url_for('create_canary') }}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Create Your First Canary
+                    </a>
+                </div>
+            {% endif %}
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block head %}
+<style>
+/* Tag filter styling */
+.tag-filter:hover, .canary-tag:hover {
+    opacity: 0.8;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: all 0.2s ease;
+}
+
+.status-filter:hover {
+    opacity: 0.8;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: all 0.2s ease;
+}
+
+/* Active tag styling */
+.tag-filter.bg-primary, .canary-tag.bg-primary {
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0.7); }
+    70% { box-shadow: 0 0 0 5px rgba(13, 110, 253, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0); }
+}
+
+/* Filter section styling */
+.card {
+    border: none;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+/* Smooth transitions for all badges */
+.badge {
+    transition: all 0.2s ease;
+}
+
+.badge:hover {
+    text-decoration: none !important;
+}
+
+/* Responsive design for filter section */
+@media (max-width: 768px) {
+    .col-md-4.text-md-end {
+        text-align: left !important;
+        margin-top: 1rem;
+    }
+}
+</style>
 {% endblock %}
 
 {% block scripts %}
@@ -149,6 +334,142 @@ function copyToClipboard(elementId) {
         btn.classList.remove('btn-success');
         btn.classList.add('btn-outline-secondary');
     }, 2000);
+}
+
+// Tag filtering enhancements
+document.addEventListener('DOMContentLoaded', function() {
+    // Add click animation to tag filters
+    document.querySelectorAll('.tag-filter, .canary-tag, .status-filter').forEach(function(element) {
+        element.addEventListener('click', function(e) {
+            // Add visual feedback
+            this.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                this.style.transform = '';
+            }, 150);
+        });
+    });
+    
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Escape key clears filters
+        if (e.key === 'Escape' && (window.location.search.includes('tag=') || window.location.search.includes('status='))) {
+            window.location.href = '/dashboard';
+        }
+    });
+    
+    // Add tooltips to filter badges
+    const filterBadges = document.querySelectorAll('.tag-filter, .status-filter');
+    filterBadges.forEach(function(badge) {
+        badge.addEventListener('mouseenter', function() {
+            const isActive = this.classList.contains('bg-primary') || 
+                           this.classList.contains('bg-success') || 
+                           this.classList.contains('bg-danger') || 
+                           this.classList.contains('bg-warning');
+            if (!isActive) {
+                this.style.opacity = '0.7';
+            }
+        });
+        
+        badge.addEventListener('mouseleave', function() {
+            this.style.opacity = '1';
+        });
+    });
+});
+
+// Search functionality
+function filterCanaries() {
+    const searchTerm = document.getElementById('canarySearch').value.toLowerCase();
+    const canaryCards = document.querySelectorAll('[data-canary-id]');
+    const clearBtn = document.getElementById('clearSearchBtn');
+    const visibleCountSpan = document.getElementById('visibleCount');
+    
+    let visibleCount = 0;
+    
+    canaryCards.forEach(function(card) {
+        const canaryName = card.querySelector('.card-title').textContent.toLowerCase();
+        const canaryDescription = card.querySelector('small.text-muted') ? 
+                                 card.querySelector('small.text-muted').textContent.toLowerCase() : '';
+        const canaryTags = Array.from(card.querySelectorAll('.canary-tag')).map(tag => tag.textContent.toLowerCase());
+        
+        const isVisible = canaryName.includes(searchTerm) || 
+                         canaryDescription.includes(searchTerm) ||
+                         canaryTags.some(tag => tag.includes(searchTerm));
+        
+        const cardCol = card.closest('.col-md-6');
+        if (cardCol) {
+            cardCol.style.display = isVisible ? 'block' : 'none';
+            if (isVisible) visibleCount++;
+        }
+    });
+    
+    // Update visible count
+    if (visibleCountSpan) {
+        visibleCountSpan.textContent = visibleCount;
+    }
+    
+    // Show/hide clear button
+    if (clearBtn) {
+        clearBtn.style.display = searchTerm ? 'block' : 'none';
+    }
+    
+    // Show "no results" message if no canaries are visible
+    showNoResultsMessage(visibleCount === 0 && searchTerm);
+}
+
+function clearSearch() {
+    const searchInput = document.getElementById('canarySearch');
+    const clearBtn = document.getElementById('clearSearchBtn');
+    const visibleCountSpan = document.getElementById('visibleCount');
+    
+    if (searchInput) {
+        searchInput.value = '';
+    }
+    
+    if (clearBtn) {
+        clearBtn.style.display = 'none';
+    }
+    
+    // Show all canary cards
+    const canaryCards = document.querySelectorAll('[data-canary-id]');
+    canaryCards.forEach(function(card) {
+        const cardCol = card.closest('.col-md-6');
+        if (cardCol) {
+            cardCol.style.display = 'block';
+        }
+    });
+    
+    // Update visible count
+    if (visibleCountSpan) {
+        visibleCountSpan.textContent = canaryCards.length;
+    }
+    
+    // Hide no results message
+    showNoResultsMessage(false);
+}
+
+function showNoResultsMessage(show) {
+    let noResultsDiv = document.getElementById('noSearchResults');
+    
+    if (show && !noResultsDiv) {
+        // Create no results message
+        const canariesRow = document.querySelector('.row:has([data-canary-id])');
+        if (canariesRow) {
+            noResultsDiv = document.createElement('div');
+            noResultsDiv.id = 'noSearchResults';
+            noResultsDiv.className = 'col-12 text-center py-4';
+            noResultsDiv.innerHTML = `
+                <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No canaries match your search</h5>
+                <p class="text-muted">Try a different search term or clear the search to see all canaries.</p>
+                <button class="btn btn-outline-primary btn-sm" onclick="clearSearch()">
+                    <i class="fas fa-times"></i> Clear Search
+                </button>
+            `;
+            canariesRow.appendChild(noResultsDiv);
+        }
+    } else if (!show && noResultsDiv) {
+        noResultsDiv.remove();
+    }
 }
 
 // Real-time canary status updates

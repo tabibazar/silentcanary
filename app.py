@@ -349,8 +349,45 @@ def verify_email(token):
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    # Get filter parameters
+    tag_filter = request.args.get('tag')
+    status_filter = request.args.get('status')
+    
+    # Get all user's canaries
     canaries = Canary.get_by_user_id(current_user.user_id)
-    return render_template('dashboard.html', canaries=canaries)
+    
+    # Apply filters
+    filtered_canaries = canaries
+    if tag_filter:
+        filtered_canaries = [c for c in canaries if c.tags and tag_filter in c.tags]
+    if status_filter:
+        filtered_canaries = [c for c in filtered_canaries if c.status == status_filter]
+    
+    # Get all unique tags for filter dropdown
+    all_tags = set()
+    for canary in canaries:
+        if canary.tags:
+            all_tags.update(canary.tags)
+    
+    # Count canaries by tag
+    tag_counts = {}
+    for tag in all_tags:
+        tag_counts[tag] = len([c for c in canaries if c.tags and tag in c.tags])
+    
+    # Count canaries by status
+    status_counts = {}
+    for canary in canaries:
+        status = canary.status
+        status_counts[status] = status_counts.get(status, 0) + 1
+    
+    return render_template('dashboard.html', 
+                         canaries=filtered_canaries,
+                         all_canaries=canaries,
+                         all_tags=sorted(all_tags),
+                         tag_counts=tag_counts,
+                         status_counts=status_counts,
+                         current_tag_filter=tag_filter,
+                         current_status_filter=status_filter)
 
 @app.route('/admin')
 @login_required
