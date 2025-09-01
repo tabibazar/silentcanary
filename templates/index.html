@@ -2,53 +2,346 @@
 
 {% block title %}Welcome - SilentCanary{% endblock %}
 
+{% block extra_css %}
+<style>
+    .hero-section {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .hero-section::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="white" opacity="0.1"/><circle cx="75" cy="75" r="1" fill="white" opacity="0.1"/><circle cx="50" cy="10" r="0.5" fill="white" opacity="0.1"/></pattern></defs><rect width="100%" height="100%" fill="url(%23grain)"/></svg>');
+        opacity: 0.3;
+    }
+    
+    .hero-content {
+        position: relative;
+        z-index: 1;
+    }
+    
+    .feature-card {
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        border: none;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .feature-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    }
+    
+    .pricing-card {
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        border: 2px solid #e9ecef;
+    }
+    
+    .pricing-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        border-color: #007bff;
+    }
+    
+    .pricing-card.featured {
+        border-color: #007bff;
+        position: relative;
+        background: linear-gradient(135deg, #f8fbff, #e3f2fd);
+    }
+    
+    .pricing-card.featured::before {
+        content: "Most Popular";
+        position: absolute;
+        top: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #007bff;
+        color: white;
+        padding: 5px 15px;
+        border-radius: 15px;
+        font-size: 12px;
+        font-weight: bold;
+    }
+    
+    .section-title {
+        position: relative;
+        margin-bottom: 3rem;
+    }
+    
+    .section-title::after {
+        content: '';
+        position: absolute;
+        bottom: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 50px;
+        height: 3px;
+        background: #007bff;
+        border-radius: 2px;
+    }
+    
+    .stats-section {
+        background: #f8f9fa;
+        border-radius: 15px;
+        padding: 3rem 0;
+    }
+    
+    .stat-number {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #007bff;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="row">
-    <div class="col-lg-8 mx-auto">
-        <div class="jumbotron bg-light p-5 rounded">
-            <h1 class="display-4">
-                <i class="fas fa-dove text-primary"></i> SilentCanary
-            </h1>
-            <p class="lead">A modern dead man's switch monitoring service to keep your critical systems under watch.</p>
-            <hr class="my-4">
-            <p>Create canaries to monitor your cron jobs, scripts, and services. Get alerted when they stop checking in.</p>
-            <div class="d-grid gap-2 d-md-flex justify-content-md-start">
-                <a class="btn btn-primary btn-lg" href="{{ url_for('register') }}" role="button">Get Started</a>
-                <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('login') }}" role="button">Sign In</a>
+<!-- Hero Section -->
+<div class="hero-section p-5 mb-5">
+    <div class="hero-content text-center">
+        <h1 class="display-3 mb-4">
+            <i class="fas fa-dove"></i> SilentCanary
+        </h1>
+        <p class="lead mb-4">The modern dead man's switch monitoring service that keeps your critical systems under watch 24/7</p>
+        <p class="mb-5">Monitor cron jobs, scripts, services, and applications. Get intelligent alerts when they stop checking in.</p>
+        <div class="d-flex flex-column flex-md-row justify-content-center gap-3">
+            <a class="btn btn-light btn-lg px-4" href="{{ url_for('register') }}">
+                <i class="fas fa-rocket me-2"></i>Start Free Trial
+            </a>
+            <a class="btn btn-outline-light btn-lg px-4" href="#pricing">
+                <i class="fas fa-eye me-2"></i>View Pricing
+            </a>
+        </div>
+        <p class="mt-3 small opacity-75">
+            <i class="fas fa-check-circle me-1"></i> No credit card required • 
+            <i class="fas fa-check-circle me-1"></i> Setup in 2 minutes •
+            <i class="fas fa-check-circle me-1"></i> Cancel anytime
+        </p>
+    </div>
+</div>
+
+<!-- Stats Section -->
+<div class="stats-section mb-5">
+    <div class="container">
+        <div class="row text-center">
+            <div class="col-md-3 mb-3">
+                <div class="stat-number">99.9%</div>
+                <div class="text-muted">Uptime SLA</div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="stat-number">&lt;30s</div>
+                <div class="text-muted">Alert Response</div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="stat-number">24/7</div>
+                <div class="text-muted">Monitoring</div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="stat-number">∞</div>
+                <div class="text-muted">Integrations</div>
             </div>
         </div>
+    </div>
+</div>
 
-        <div class="row mt-5">
-            <div class="col-md-4">
-                <div class="card h-100">
-                    <div class="card-body text-center">
-                        <i class="fas fa-heartbeat fa-3x text-primary mb-3"></i>
-                        <h5 class="card-title">Health Monitoring</h5>
-                        <p class="card-text">Monitor your critical processes and get alerts when they fail to check in.</p>
-                    </div>
+<!-- Features Section -->
+<div class="row mb-5">
+    <div class="col-12">
+        <h2 class="section-title text-center">Powerful Features</h2>
+    </div>
+</div>
+
+<div class="row mb-5">
+    <div class="col-lg-4 mb-4">
+        <div class="card feature-card h-100">
+            <div class="card-body text-center p-4">
+                <i class="fas fa-heartbeat fa-4x text-primary mb-4"></i>
+                <h5 class="card-title">Smart Health Monitoring</h5>
+                <p class="card-text">AI-powered anomaly detection learns your patterns and reduces false alerts by up to 90%.</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4 mb-4">
+        <div class="card feature-card h-100">
+            <div class="card-body text-center p-4">
+                <i class="fas fa-bell fa-4x text-warning mb-4"></i>
+                <h5 class="card-title">Multi-Channel Alerts</h5>
+                <p class="card-text">Email, Slack, webhooks, and SMS notifications ensure you never miss a critical failure.</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4 mb-4">
+        <div class="card feature-card h-100">
+            <div class="card-body text-center p-4">
+                <i class="fas fa-code-branch fa-4x text-success mb-4"></i>
+                <h5 class="card-title">CI/CD Integration</h5>
+                <p class="card-text">Built-in webhooks for GitHub, GitLab, and Jenkins. Monitor deployments automatically.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-5">
+    <div class="col-lg-4 mb-4">
+        <div class="card feature-card h-100">
+            <div class="card-body text-center p-4">
+                <i class="fas fa-chart-line fa-4x text-info mb-4"></i>
+                <h5 class="card-title">Advanced Analytics</h5>
+                <p class="card-text">Detailed uptime reports, SLA tracking, and trend analysis to optimize your systems.</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4 mb-4">
+        <div class="card feature-card h-100">
+            <div class="card-body text-center p-4">
+                <i class="fas fa-shield-alt fa-4x text-danger mb-4"></i>
+                <h5 class="card-title">Enterprise Security</h5>
+                <p class="card-text">End-to-end encryption, API key management, and SOC 2 compliance.</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4 mb-4">
+        <div class="card feature-card h-100">
+            <div class="card-body text-center p-4">
+                <i class="fas fa-rocket fa-4x text-purple mb-4"></i>
+                <h5 class="card-title">Lightning Fast Setup</h5>
+                <p class="card-text">Simple HTTP endpoints work with any language or platform. Get monitoring in minutes.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pricing Section -->
+<div id="pricing" class="mb-5">
+    <div class="row">
+        <div class="col-12">
+            <h2 class="section-title text-center">Simple, Transparent Pricing</h2>
+            <p class="text-center text-muted mb-5">Choose the plan that fits your monitoring needs. Upgrade or downgrade anytime.</p>
+        </div>
+    </div>
+    
+    <div class="row">
+        <!-- Free Plan -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card pricing-card h-100">
+                <div class="card-body text-center p-4">
+                    <h4 class="card-title">Free</h4>
+                    <div class="display-4 text-primary mb-3">$0</div>
+                    <p class="text-muted mb-4">per month</p>
+                    
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>1 Canary</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Email Alerts</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Basic Analytics</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>API Access</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Community Support</li>
+                    </ul>
+                    
+                    <a href="{{ url_for('register') }}" class="btn btn-outline-primary btn-block">
+                        Get Started Free
+                    </a>
                 </div>
             </div>
-            
-            <div class="col-md-4">
-                <div class="card h-100">
-                    <div class="card-body text-center">
-                        <i class="fas fa-envelope fa-3x text-primary mb-3"></i>
-                        <h5 class="card-title">Email Alerts</h5>
-                        <p class="card-text">Receive instant email notifications when your canaries stop responding.</p>
-                    </div>
+        </div>
+        
+        <!-- Starter Plan -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card pricing-card h-100">
+                <div class="card-body text-center p-4">
+                    <h4 class="card-title">Starter</h4>
+                    <div class="display-4 text-primary mb-3">$5</div>
+                    <p class="text-muted mb-4">per month</p>
+                    
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>3 Canaries</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>All Free Features</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Slack Integration</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>SMS Alerts</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Email Support</li>
+                    </ul>
+                    
+                    <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
+                        Start Free Trial
+                    </a>
                 </div>
             </div>
-            
-            <div class="col-md-4">
-                <div class="card h-100">
-                    <div class="card-body text-center">
-                        <i class="fas fa-cogs fa-3x text-primary mb-3"></i>
-                        <h5 class="card-title">Easy Setup</h5>
-                        <p class="card-text">Simple HTTP endpoints make it easy to integrate with any system or script.</p>
-                    </div>
+        </div>
+        
+        <!-- Pro Plan (Featured) -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card pricing-card featured h-100">
+                <div class="card-body text-center p-4">
+                    <h4 class="card-title">Pro</h4>
+                    <div class="display-4 text-primary mb-3">$15</div>
+                    <p class="text-muted mb-4">per month</p>
+                    
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>10 Canaries</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>All Starter Features</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Smart Alerts (AI)</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Advanced Analytics</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Priority Support</li>
+                    </ul>
+                    
+                    <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
+                        Start Free Trial
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Business Plan -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card pricing-card h-100">
+                <div class="card-body text-center p-4">
+                    <h4 class="card-title">Business</h4>
+                    <div class="display-4 text-primary mb-3">$50</div>
+                    <p class="text-muted mb-4">per month</p>
+                    
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>50 Canaries</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>All Pro Features</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Team Management</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>SLA Guarantees</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Phone Support</li>
+                    </ul>
+                    
+                    <a href="{{ url_for('register') }}" class="btn btn-outline-primary btn-block">
+                        Start Free Trial
+                    </a>
                 </div>
             </div>
         </div>
     </div>
+    
+    <div class="text-center mt-4">
+        <p class="text-muted">
+            <i class="fas fa-shield-alt me-2"></i>14-day free trial on all paid plans •
+            <i class="fas fa-credit-card me-2"></i>No setup fees •
+            <i class="fas fa-times-circle me-2"></i>Cancel anytime
+        </p>
+    </div>
+</div>
+
+<!-- CTA Section -->
+<div class="bg-light p-5 rounded text-center mb-5">
+    <h3 class="mb-3">Ready to monitor your critical systems?</h3>
+    <p class="mb-4">Join thousands of developers who trust SilentCanary to keep their applications running smoothly.</p>
+    <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg me-3">
+        <i class="fas fa-rocket me-2"></i>Get Started Free
+    </a>
+    <a href="{{ url_for('help_overview') }}" class="btn btn-outline-secondary btn-lg">
+        <i class="fas fa-book me-2"></i>View Documentation
+    </a>
 </div>
 {% endblock %}

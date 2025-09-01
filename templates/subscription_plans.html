@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+
+{% block title %}Subscription Plans - SilentCanary{% endblock %}
+
+{% block extra_css %}
+<style>
+    .plan-card {
+        border: 2px solid #dee2e6;
+        border-radius: 15px;
+        transition: all 0.3s ease;
+        height: 100%;
+    }
+    
+    .plan-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+    }
+    
+    .plan-card.current {
+        border-color: #28a745;
+        background: linear-gradient(135deg, #f8fff9, #e8f5e8);
+    }
+    
+    .plan-card.popular {
+        border-color: #007bff;
+        background: linear-gradient(135deg, #f8fbff, #e3f2fd);
+        position: relative;
+    }
+    
+    .plan-card.popular::before {
+        content: "Most Popular";
+        position: absolute;
+        top: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #007bff;
+        color: white;
+        padding: 5px 15px;
+        border-radius: 15px;
+        font-size: 12px;
+        font-weight: bold;
+    }
+    
+    .plan-price {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #2c3e50;
+    }
+    
+    .plan-period {
+        color: #6c757d;
+        font-size: 1rem;
+    }
+    
+    .feature-list {
+        list-style: none;
+        padding: 0;
+    }
+    
+    .feature-list li {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #f8f9fa;
+        display: flex;
+        align-items: center;
+    }
+    
+    .feature-list li:last-child {
+        border-bottom: none;
+    }
+    
+    .feature-check {
+        color: #28a745;
+        margin-right: 10px;
+        font-weight: bold;
+    }
+    
+    .usage-bar {
+        background: #e9ecef;
+        border-radius: 10px;
+        overflow: hidden;
+        height: 20px;
+        margin-bottom: 10px;
+    }
+    
+    .usage-progress {
+        height: 100%;
+        background: linear-gradient(90deg, #28a745, #20c997);
+        border-radius: 10px;
+        transition: width 0.3s ease;
+    }
+    
+    .usage-progress.warning {
+        background: linear-gradient(90deg, #ffc107, #fd7e14);
+    }
+    
+    .usage-progress.danger {
+        background: linear-gradient(90deg, #dc3545, #e74c3c);
+    }
+    
+    .current-plan-badge {
+        background: #28a745;
+        color: white;
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: bold;
+        margin-bottom: 15px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">
+                <i class="fas fa-credit-card text-primary"></i>
+                Subscription Plans
+            </h1>
+            
+            {% if current_user.is_authenticated and usage %}
+            <div class="alert alert-info mb-4">
+                <h5><i class="fas fa-info-circle"></i> Current Usage</h5>
+                <p><strong>Plan:</strong> {{ subscription.plan_name|title }} 
+                   <span class="badge badge-success">{{ subscription.status|title }}</span></p>
+                <p><strong>Canaries:</strong> {{ usage.canaries_used }} / {{ usage.canary_limit }}</p>
+                <div class="usage-bar">
+                    <div class="usage-progress {% if usage.usage_percentage >= 90 %}danger{% elif usage.usage_percentage >= 75 %}warning{% endif %}"
+                         style="width: {{ usage.usage_percentage }}%"></div>
+                </div>
+                <small class="text-muted">{{ "%.1f"|format(usage.usage_percentage) }}% of canary limit used</small>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="row">
+        <!-- Free Plan -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card plan-card {% if current_user.is_authenticated and subscription and subscription.plan_name == 'free' %}current{% endif %}">
+                <div class="card-body text-center p-4">
+                    {% if current_user.is_authenticated and subscription and subscription.plan_name == 'free' %}
+                        <div class="current-plan-badge">Current Plan</div>
+                    {% endif %}
+                    
+                    <h4 class="card-title">Free</h4>
+                    <div class="plan-price">$0</div>
+                    <div class="plan-period">per month</div>
+                    
+                    <hr class="my-4">
+                    
+                    <ul class="feature-list text-left">
+                        <li><span class="feature-check">✓</span> 1 Canary</li>
+                        <li><span class="feature-check">✓</span> Basic Monitoring</li>
+                        <li><span class="feature-check">✓</span> Email Alerts</li>
+                        <li><span class="feature-check">✓</span> Web Dashboard</li>
+                        <li><span class="feature-check">✓</span> API Access</li>
+                    </ul>
+                    
+                    <div class="mt-4">
+                        {% if current_user.is_authenticated and subscription and subscription.plan_name == 'free' %}
+                            <button class="btn btn-success btn-block" disabled>
+                                <i class="fas fa-check"></i> Current Plan
+                            </button>
+                        {% elif current_user.is_authenticated %}
+                            <button class="btn btn-outline-primary btn-block" disabled>
+                                Contact Support to Downgrade
+                            </button>
+                        {% else %}
+                            <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
+                                Get Started Free
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Starter Plan -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card plan-card {% if current_user.is_authenticated and subscription and subscription.plan_name == 'starter' %}current{% endif %}">
+                <div class="card-body text-center p-4">
+                    {% if current_user.is_authenticated and subscription and subscription.plan_name == 'starter' %}
+                        <div class="current-plan-badge">Current Plan</div>
+                    {% endif %}
+                    
+                    <h4 class="card-title">Starter</h4>
+                    <div class="plan-price">$5</div>
+                    <div class="plan-period">per month</div>
+                    
+                    <hr class="my-4">
+                    
+                    <ul class="feature-list text-left">
+                        <li><span class="feature-check">✓</span> 3 Canaries</li>
+                        <li><span class="feature-check">✓</span> All Free Features</li>
+                        <li><span class="feature-check">✓</span> Slack Integration</li>
+                        <li><span class="feature-check">✓</span> SMS Alerts</li>
+                        <li><span class="feature-check">✓</span> Priority Support</li>
+                    </ul>
+                    
+                    <div class="mt-4">
+                        {% if current_user.is_authenticated and subscription and subscription.plan_name == 'starter' %}
+                            <button class="btn btn-success btn-block" disabled>
+                                <i class="fas fa-check"></i> Current Plan
+                            </button>
+                        {% elif current_user.is_authenticated %}
+                            <a href="{{ url_for('upgrade_plan', plan='starter') }}" class="btn btn-primary btn-block">
+                                Upgrade to Starter
+                            </a>
+                        {% else %}
+                            <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
+                                Start 14-Day Free Trial
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Pro Plan -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card plan-card popular {% if current_user.is_authenticated and subscription and subscription.plan_name == 'pro' %}current{% endif %}">
+                <div class="card-body text-center p-4">
+                    {% if current_user.is_authenticated and subscription and subscription.plan_name == 'pro' %}
+                        <div class="current-plan-badge">Current Plan</div>
+                    {% endif %}
+                    
+                    <h4 class="card-title">Pro</h4>
+                    <div class="plan-price">$15</div>
+                    <div class="plan-period">per month</div>
+                    
+                    <hr class="my-4">
+                    
+                    <ul class="feature-list text-left">
+                        <li><span class="feature-check">✓</span> 10 Canaries</li>
+                        <li><span class="feature-check">✓</span> All Starter Features</li>
+                        <li><span class="feature-check">✓</span> Smart Alerts (AI)</li>
+                        <li><span class="feature-check">✓</span> Advanced Analytics</li>
+                        <li><span class="feature-check">✓</span> Custom Webhooks</li>
+                    </ul>
+                    
+                    <div class="mt-4">
+                        {% if current_user.is_authenticated and subscription and subscription.plan_name == 'pro' %}
+                            <button class="btn btn-success btn-block" disabled>
+                                <i class="fas fa-check"></i> Current Plan
+                            </button>
+                        {% elif current_user.is_authenticated %}
+                            <a href="{{ url_for('upgrade_plan', plan='pro') }}" class="btn btn-primary btn-block">
+                                Upgrade to Pro
+                            </a>
+                        {% else %}
+                            <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
+                                Start 14-Day Free Trial
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Business Plan -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card plan-card {% if current_user.is_authenticated and subscription and subscription.plan_name == 'business' %}current{% endif %}">
+                <div class="card-body text-center p-4">
+                    {% if current_user.is_authenticated and subscription and subscription.plan_name == 'business' %}
+                        <div class="current-plan-badge">Current Plan</div>
+                    {% endif %}
+                    
+                    <h4 class="card-title">Business</h4>
+                    <div class="plan-price">$50</div>
+                    <div class="plan-period">per month</div>
+                    
+                    <hr class="my-4">
+                    
+                    <ul class="feature-list text-left">
+                        <li><span class="feature-check">✓</span> 50 Canaries</li>
+                        <li><span class="feature-check">✓</span> All Pro Features</li>
+                        <li><span class="feature-check">✓</span> Team Management</li>
+                        <li><span class="feature-check">✓</span> SLA Monitoring</li>
+                        <li><span class="feature-check">✓</span> Priority Support</li>
+                    </ul>
+                    
+                    <div class="mt-4">
+                        {% if current_user.is_authenticated and subscription and subscription.plan_name == 'business' %}
+                            <button class="btn btn-success btn-block" disabled>
+                                <i class="fas fa-check"></i> Current Plan
+                            </button>
+                        {% elif current_user.is_authenticated %}
+                            <a href="{{ url_for('upgrade_plan', plan='business') }}" class="btn btn-primary btn-block">
+                                Upgrade to Business
+                            </a>
+                        {% else %}
+                            <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
+                                Start 14-Day Free Trial
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- FAQ Section -->
+    <div class="row mt-5">
+        <div class="col-12">
+            <h3>Frequently Asked Questions</h3>
+            <div class="accordion" id="faqAccordion">
+                <div class="card">
+                    <div class="card-header" id="faq1">
+                        <h5 class="mb-0">
+                            <button class="btn btn-link" type="button" data-toggle="collapse" data-target="#collapse1">
+                                Can I change my plan at any time?
+                            </button>
+                        </h5>
+                    </div>
+                    <div id="collapse1" class="collapse" data-parent="#faqAccordion">
+                        <div class="card-body">
+                            Yes! You can upgrade or downgrade your plan at any time. Changes take effect immediately for upgrades, 
+                            and at the end of your billing cycle for downgrades.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header" id="faq2">
+                        <h5 class="mb-0">
+                            <button class="btn btn-link" type="button" data-toggle="collapse" data-target="#collapse2">
+                                What happens if I exceed my canary limit?
+                            </button>
+                        </h5>
+                    </div>
+                    <div id="collapse2" class="collapse" data-parent="#faqAccordion">
+                        <div class="card-body">
+                            You won't be able to create new canaries once you reach your limit. Your existing canaries 
+                            will continue to work normally. You can upgrade your plan to increase your limit.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header" id="faq3">
+                        <h5 class="mb-0">
+                            <button class="btn btn-link" type="button" data-toggle="collapse" data-target="#collapse3">
+                                Do you offer refunds?
+                            </button>
+                        </h5>
+                    </div>
+                    <div id="collapse3" class="collapse" data-parent="#faqAccordion">
+                        <div class="card-body">
+                            We offer a 30-day money-back guarantee for all paid plans. If you're not satisfied, 
+                            contact our support team for a full refund.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Add any additional JavaScript if needed
+</script>
+{% endblock %}

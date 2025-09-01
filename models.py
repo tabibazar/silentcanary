@@ -35,6 +35,7 @@ canaries_table = dynamodb.Table('SilentCanary_Canaries')
 canary_logs_table = dynamodb.Table('SilentCanary_CanaryLogs')
 smart_alerts_table = dynamodb.Table('SilentCanary_SmartAlerts')
 api_keys_table = dynamodb.Table('SilentCanary_APIKeys')
+subscriptions_table = dynamodb.Table('SilentCanary_Subscriptions')
 
 class User:
     def __init__(self, user_id=None, username=None, email=None, password_hash=None, 
@@ -1207,6 +1208,172 @@ class SmartAlert:
                 'confidence': 0
             }
 
+
+class Subscription:
+    """Model for managing user subscriptions with Stripe integration"""
+    
+    def __init__(self, subscription_id=None, user_id=None, stripe_subscription_id=None, 
+                 stripe_customer_id=None, status='active', plan_name='free', canary_limit=1,
+                 current_period_start=None, current_period_end=None, created_at=None):
+        self.subscription_id = subscription_id or str(uuid.uuid4())
+        self.user_id = user_id
+        self.stripe_subscription_id = stripe_subscription_id
+        self.stripe_customer_id = stripe_customer_id
+        self.status = status  # active, canceled, past_due, incomplete
+        self.plan_name = plan_name  # free, starter, pro, business
+        self.canary_limit = canary_limit
+        self.current_period_start = current_period_start
+        self.current_period_end = current_period_end
+        self.created_at = created_at or datetime.now(timezone.utc).isoformat()
+    
+    def save(self):
+        """Save subscription to DynamoDB"""
+        try:
+            item = {
+                'subscription_id': self.subscription_id,
+                'user_id': self.user_id,
+                'status': self.status,
+                'plan_name': self.plan_name,
+                'canary_limit': self.canary_limit,
+                'created_at': self.created_at
+            }
+            
+            if self.stripe_subscription_id:
+                item['stripe_subscription_id'] = self.stripe_subscription_id
+            if self.stripe_customer_id:
+                item['stripe_customer_id'] = self.stripe_customer_id
+            if self.current_period_start:
+                item['current_period_start'] = self.current_period_start
+            if self.current_period_end:
+                item['current_period_end'] = self.current_period_end
+                
+            subscriptions_table.put_item(Item=item)
+            return True
+        except ClientError as e:
+            print(f"Error saving subscription: {e}")
+            return False
+    
+    def delete(self):
+        """Delete subscription from DynamoDB"""
+        try:
+            subscriptions_table.delete_item(Key={'subscription_id': self.subscription_id})
+            return True
+        except ClientError as e:
+            print(f"Error deleting subscription: {e}")
+            return False
+    
+    def get_usage(self):
+        """Get current usage for this user"""
+        canaries = Canary.get_by_user_id(self.user_id)
+        active_canaries = [c for c in canaries if c.is_active]
+        return {
+            'canaries_used': len(active_canaries),
+            'canary_limit': self.canary_limit,
+            'usage_percentage': (len(active_canaries) / self.canary_limit) * 100 if self.canary_limit > 0 else 0
+        }
+    
+    def can_create_canary(self):
+        """Check if user can create another canary"""
+        usage = self.get_usage()
+        return usage['canaries_used'] < self.canary_limit
+    
+    @staticmethod
+    def get_by_user_id(user_id):
+        """Get subscription for a user"""
+        try:
+            response = subscriptions_table.query(
+                IndexName='user-id-index',
+                KeyConditionExpression=Key('user_id').eq(user_id)
+            )
+            
+            items = response.get('Items', [])
+            if items:
+                item = items[0]  # Should only be one active subscription per user
+                return Subscription(
+                    subscription_id=item['subscription_id'],
+                    user_id=item['user_id'],
+                    stripe_subscription_id=item.get('stripe_subscription_id'),
+                    stripe_customer_id=item.get('stripe_customer_id'),
+                    status=item['status'],
+                    plan_name=item['plan_name'],
+                    canary_limit=item['canary_limit'],
+                    current_period_start=item.get('current_period_start'),
+                    current_period_end=item.get('current_period_end'),
+                    created_at=item['created_at']
+                )
+            return None
+        except ClientError as e:
+            print(f"Error fetching subscription: {e}")
+            return None
+    
+    def create_stripe_customer(self):
+        """Create Stripe customer for this subscription"""
+        import stripe
+        from models import User
+        
+        try:
+            user = User.get_by_id(self.user_id)
+            if not user:
+                return False
+            
+            customer = stripe.Customer.create(
+                email=user.email,
+                name=user.username,
+                metadata={
+                    'user_id': self.user_id,
+                    'subscription_id': self.subscription_id
+                }
+            )
+            
+            self.stripe_customer_id = customer.id
+            return self.save()
+            
+        except Exception as e:
+            print(f"Error creating Stripe customer: {e}")
+            return False
+    
+    def create_stripe_subscription(self, price_id):
+        """Create Stripe subscription"""
+        import stripe
+        
+        try:
+            if not self.stripe_customer_id:
+                if not self.create_stripe_customer():
+                    return False
+            
+            # Create the subscription
+            stripe_subscription = stripe.Subscription.create(
+                customer=self.stripe_customer_id,
+                items=[{
+                    'price': price_id,
+                }],
+                metadata={
+                    'user_id': self.user_id,
+                    'subscription_id': self.subscription_id
+                }
+            )
+            
+            self.stripe_subscription_id = stripe_subscription.id
+            self.status = stripe_subscription.status
+            self.current_period_start = datetime.fromtimestamp(stripe_subscription.current_period_start).isoformat()
+            self.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end).isoformat()
+            
+            return self.save()
+            
+        except Exception as e:
+            print(f"Error creating Stripe subscription: {e}")
+            return False
+    
+    @staticmethod
+    def create_default_subscription(user_id):
+        """Create default free subscription for new user"""
+        subscription = Subscription(
+            user_id=user_id,
+            plan_name='free',
+            canary_limit=1,
+            status='active'
+        )
+        return subscription.save()
 
 class APIKey:
     """Model for managing user API keys with usage tracking"""

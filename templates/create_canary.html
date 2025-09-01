@@ -7,9 +7,28 @@
     <div class="col-md-8 col-lg-6">
         <div class="card">
             <div class="card-body">
-                <h2 class="card-title mb-4">
-                    <i class="fas fa-plus-circle text-primary"></i> Create New Canary
-                </h2>
+                <div class="d-flex justify-content-between align-items-start mb-4">
+                    <h2 class="card-title">
+                        <i class="fas fa-plus-circle text-primary"></i> Create New Canary
+                    </h2>
+                    {% if subscription and usage %}
+                    <div class="text-right">
+                        <div class="text-muted small">
+                            <span class="badge badge-{% if subscription.plan_name == 'free' %}secondary{% else %}primary{% endif %}">
+                                {{ subscription.plan_name|title }}
+                            </span>
+                        </div>
+                        <div class="text-muted small">
+                            {{ usage.canaries_used }}/{{ usage.canary_limit }} used
+                        </div>
+                        {% if usage.usage_percentage >= 75 %}
+                        <a href="{{ url_for('subscription') }}" class="btn btn-sm btn-outline-primary mt-1">
+                            <i class="fas fa-arrow-up"></i> Upgrade
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
                 
                 <form method="POST">
                     {{ form.hidden_tag() }}

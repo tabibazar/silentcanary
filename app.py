@@ -14,12 +14,16 @@ import os
 import uuid
 import pytz
 import requests
+import stripe
 
 # Import our DynamoDB models
-from models import User, Canary, CanaryLog, SmartAlert, get_dynamodb_resource
+from models import User, Canary, CanaryLog, SmartAlert, Subscription, get_dynamodb_resource
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Configure Stripe
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'asdfkjahc rha384y92834yc cx832b48234918xb487214jhasf')
@@ -149,6 +153,21 @@ class ResetPasswordForm(FlaskForm):
     password2 = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
     submit = SubmitField('Reset Password')
 
+class ContactForm(FlaskForm):
+    name = StringField('Name', validators=[DataRequired(), Length(min=1, max=100)])
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    subject = StringField('Subject', validators=[DataRequired(), Length(min=1, max=200)])
+    category = SelectField('Category', choices=[
+        ('general', 'General Question'),
+        ('technical', 'Technical Support'),
+        ('billing', 'Billing & Payments'),
+        ('feature', 'Feature Request'),
+        ('bug', 'Bug Report'),
+        ('enterprise', 'Enterprise Sales')
+    ], validators=[DataRequired()])
+    message = TextAreaField('Message', validators=[DataRequired(), Length(min=10, max=2000)])
+    submit = SubmitField('Send Message')
+
 # Routes
 @app.route('/health')
 def health():
@@ -193,6 +212,9 @@ def register():
         user.set_password(form.password.data)
         
         if user.save():
+            # Create default free subscription for new user
+            Subscription.create_default_subscription(user.user_id)
+            
             # Send verification email automatically
             try:
                 serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
@@ -349,6 +371,13 @@ def verify_email(token):
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    # Get or create subscription for user
+    subscription = Subscription.get_by_user_id(current_user.user_id)
+    if not subscription:
+        # Create default subscription if none exists (for existing users)
+        Subscription.create_default_subscription(current_user.user_id)
+        subscription = Subscription.get_by_user_id(current_user.user_id)
+    
     # Get filter parameters
     tag_filter = request.args.get('tag')
     status_filter = request.args.get('status')
@@ -380,9 +409,14 @@ def dashboard():
         status = canary.status
         status_counts[status] = status_counts.get(status, 0) + 1
     
+    # Get subscription usage information
+    usage = subscription.get_usage()
+    
     return render_template('dashboard.html', 
                          canaries=filtered_canaries,
                          all_canaries=canaries,
+                         subscription=subscription,
+                         usage=usage,
                          all_tags=sorted(all_tags),
                          tag_counts=tag_counts,
                          status_counts=status_counts,
@@ -564,9 +598,386 @@ def admin_update_email(user_id):
     
     return redirect(url_for('admin'))
 
+@app.route('/subscription')
+@login_required
+def subscription():
+    """View subscription details and plans"""
+    subscription = Subscription.get_by_user_id(current_user.user_id)
+    if not subscription:
+        Subscription.create_default_subscription(current_user.user_id)
+        subscription = Subscription.get_by_user_id(current_user.user_id)
+    
+    usage = subscription.get_usage()
+    return render_template('subscription_plans.html', subscription=subscription, usage=usage)
+
+@app.route('/upgrade/<plan>')
+@login_required
+def upgrade_plan(plan):
+    """Create Stripe checkout session for plan upgrade"""
+    # Define plan configuration with Stripe price IDs
+    plan_config = {
+        'starter': {
+            'limit': 3,
+            'price_id': 'price_1S2esLC1JljIJA9acmj2iber',  # $5/month
+            'amount': 500  # $5.00 in cents
+        },
+        'pro': {
+            'limit': 10,
+            'price_id': 'price_1S2esMC1JljIJA9alWy4bz60',  # $15/month  
+            'amount': 1500  # $15.00 in cents
+        },
+        'business': {
+            'limit': 50,
+            'price_id': 'price_1S2esMC1JljIJA9axdIKPJGI',  # $50/month
+            'amount': 5000  # $50.00 in cents
+        }
+    }
+    
+    if plan not in plan_config:
+        flash('Invalid subscription plan')
+        return redirect(url_for('subscription'))
+    
+    # Get or create subscription
+    subscription = Subscription.get_by_user_id(current_user.user_id)
+    if not subscription:
+        Subscription.create_default_subscription(current_user.user_id)
+        subscription = Subscription.get_by_user_id(current_user.user_id)
+    
+    try:
+        # Create Stripe customer if needed
+        if not subscription.stripe_customer_id:
+            if not subscription.create_stripe_customer():
+                flash('Failed to create payment profile. Please try again.')
+                return redirect(url_for('subscription'))
+        
+        # Create Stripe checkout session
+        checkout_session = stripe.checkout.Session.create(
+            customer=subscription.stripe_customer_id,
+            payment_method_types=['card'],
+            line_items=[{
+                'price': plan_config[plan]['price_id'],
+                'quantity': 1,
+            }],
+            mode='subscription',
+            success_url=url_for('subscription_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url=url_for('subscription', _external=True),
+            metadata={
+                'user_id': current_user.user_id,
+                'subscription_id': subscription.subscription_id,
+                'plan': plan
+            }
+        )
+        
+        # Redirect to Stripe Checkout
+        return redirect(checkout_session.url, code=303)
+        
+    except Exception as e:
+        print(f"Error creating checkout session: {e}")
+        flash('Failed to create checkout session. Please try again.')
+        return redirect(url_for('subscription'))
+
+@app.route('/subscription/success')
+@login_required 
+def subscription_success():
+    """Handle successful subscription payment"""
+    session_id = request.args.get('session_id')
+    
+    if not session_id:
+        flash('Invalid session')
+        return redirect(url_for('subscription'))
+    
+    try:
+        # Retrieve the checkout session
+        checkout_session = stripe.checkout.Session.retrieve(session_id)
+        
+        if checkout_session.payment_status == 'paid':
+            # Get subscription details from metadata
+            plan = checkout_session.metadata.get('plan')
+            
+            # Define plan limits
+            plan_limits = {
+                'starter': 3,
+                'pro': 10,
+                'business': 50
+            }
+            
+            # Update subscription
+            subscription = Subscription.get_by_user_id(current_user.user_id)
+            if subscription and plan in plan_limits:
+                subscription.plan_name = plan
+                subscription.canary_limit = plan_limits[plan]
+                subscription.status = 'active'
+                
+                # Get Stripe subscription details
+                if checkout_session.subscription:
+                    stripe_subscription = stripe.Subscription.retrieve(checkout_session.subscription)
+                    subscription.stripe_subscription_id = stripe_subscription.id
+                    subscription.current_period_start = datetime.fromtimestamp(stripe_subscription.current_period_start).isoformat()
+                    subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end).isoformat()
+                
+                if subscription.save():
+                    flash(f'🎉 Successfully upgraded to {plan.title()} plan! You can now create up to {plan_limits[plan]} canaries.')
+                else:
+                    flash('Subscription updated but failed to save locally. Please contact support.')
+            else:
+                flash('Failed to update subscription. Please contact support.')
+        else:
+            flash('Payment was not successful. Please try again.')
+            
+    except Exception as e:
+        print(f"Error processing successful subscription: {e}")
+        flash('Error processing subscription. Please contact support if you were charged.')
+    
+    return redirect(url_for('subscription'))
+
+@app.route('/contact', methods=['GET', 'POST'])
+def contact():
+    """Contact form"""
+    form = ContactForm()
+    
+    if form.validate_on_submit():
+        try:
+            # Send email notification to support team
+            msg = Message(
+                subject=f'[SilentCanary Contact] {form.category.data.title()}: {form.subject.data}',
+                sender=('SilentCanary Contact Form', app.config['MAIL_DEFAULT_SENDER']),
+                recipients=['support@silentcanary.com'],
+                reply_to=form.email.data,
+                html=f'''
+                <h2>New Contact Form Submission</h2>
+                <p><strong>From:</strong> {form.name.data} ({form.email.data})</p>
+                <p><strong>Category:</strong> {dict(form.category.choices)[form.category.data]}</p>
+                <p><strong>Subject:</strong> {form.subject.data}</p>
+                
+                <h3>Message:</h3>
+                <p>{form.message.data.replace(chr(10), '<br>')}</p>
+                
+                <hr>
+                <p><small>Submitted via SilentCanary contact form at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC</small></p>
+                '''
+            )
+            
+            mail.send(msg)
+            
+            # Send confirmation to user
+            confirmation_msg = Message(
+                subject='Your SilentCanary support request has been received',
+                sender=('SilentCanary Support', app.config['MAIL_DEFAULT_SENDER']),
+                recipients=[form.email.data],
+                html=f'''
+                <h2>Thanks for contacting SilentCanary!</h2>
+                <p>Hi {form.name.data},</p>
+                
+                <p>We've received your message and will get back to you soon. Here's what you submitted:</p>
+                
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                    <p><strong>Category:</strong> {dict(form.category.choices)[form.category.data]}</p>
+                    <p><strong>Subject:</strong> {form.subject.data}</p>
+                    <p><strong>Your message:</strong></p>
+                    <p style="white-space: pre-wrap;">{form.message.data}</p>
+                </div>
+                
+                <p><strong>Response Times:</strong></p>
+                <ul>
+                    <li>Critical issues: 2-4 hours</li>
+                    <li>General support: 24 hours</li>
+                    <li>Sales inquiries: 4 hours</li>
+                </ul>
+                
+                <p>In the meantime, you can check our <a href="https://silentcanary.com/help">documentation</a> for instant answers to common questions.</p>
+                
+                <p>Best regards,<br>The SilentCanary Team</p>
+                
+                <hr>
+                <p><small>© 2025 <a href="https://silentcanary.com">SilentCanary.com</a></small></p>
+                '''
+            )
+            
+            mail.send(confirmation_msg)
+            
+            flash('✅ Message sent successfully! We\'ll get back to you soon.', 'success')
+            return redirect(url_for('contact'))
+            
+        except Exception as e:
+            print(f"Error sending contact email: {e}")
+            flash('⚠️ There was an error sending your message. Please try again or email us directly at support@silentcanary.com', 'error')
+    
+    return render_template('contact.html', form=form)
+
+@app.route('/webhook/stripe', methods=['POST'])
+def stripe_webhook():
+    """Handle Stripe webhooks"""
+    payload = request.get_data()
+    sig_header = request.headers.get('Stripe-Signature')
+    endpoint_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
+    
+    if not endpoint_secret:
+        print('Webhook secret not configured')
+        return '', 400
+    
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, endpoint_secret
+        )
+    except ValueError:
+        print('Invalid payload')
+        return '', 400
+    except stripe.error.SignatureVerificationError:
+        print('Invalid signature')
+        return '', 400
+    
+    # Handle the event
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        print(f'Checkout session completed: {session["id"]}')
+        
+    elif event['type'] == 'invoice.payment_succeeded':
+        invoice = event['data']['object']
+        subscription_id = invoice['subscription']
+        customer_id = invoice['customer']
+        
+        # Update subscription status
+        try:
+            stripe_subscription = stripe.Subscription.retrieve(subscription_id)
+            
+            # Find our subscription by Stripe customer ID
+            from boto3.dynamodb.conditions import Key
+            dynamodb = get_dynamodb_resource()
+            subscriptions_table = dynamodb.Table('SilentCanary_Subscriptions')
+            
+            response = subscriptions_table.query(
+                IndexName='stripe-customer-index',
+                KeyConditionExpression=Key('stripe_customer_id').eq(customer_id)
+            )
+            
+            if response['Items']:
+                subscription_data = response['Items'][0]
+                subscription = Subscription(
+                    subscription_id=subscription_data['subscription_id'],
+                    user_id=subscription_data['user_id'],
+                    stripe_subscription_id=subscription_data.get('stripe_subscription_id'),
+                    stripe_customer_id=subscription_data.get('stripe_customer_id'),
+                    status=subscription_data['status'],
+                    plan_name=subscription_data['plan_name'],
+                    canary_limit=subscription_data['canary_limit'],
+                    current_period_start=subscription_data.get('current_period_start'),
+                    current_period_end=subscription_data.get('current_period_end'),
+                    created_at=subscription_data['created_at']
+                )
+                
+                # Update with current Stripe data
+                subscription.status = stripe_subscription.status
+                subscription.current_period_start = datetime.fromtimestamp(stripe_subscription.current_period_start).isoformat()
+                subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end).isoformat()
+                subscription.save()
+                
+                print(f'Updated subscription {subscription.subscription_id} status to {subscription.status}')
+                
+        except Exception as e:
+            print(f'Error handling payment succeeded webhook: {e}')
+    
+    elif event['type'] == 'invoice.payment_failed':
+        invoice = event['data']['object']
+        subscription_id = invoice['subscription']
+        customer_id = invoice['customer']
+        
+        # Handle failed payment - mark subscription as past_due
+        try:
+            # Find our subscription by Stripe customer ID  
+            dynamodb = get_dynamodb_resource()
+            subscriptions_table = dynamodb.Table('SilentCanary_Subscriptions')
+            
+            response = subscriptions_table.query(
+                IndexName='stripe-customer-index',
+                KeyConditionExpression=Key('stripe_customer_id').eq(customer_id)
+            )
+            
+            if response['Items']:
+                subscription_data = response['Items'][0]
+                subscription = Subscription(
+                    subscription_id=subscription_data['subscription_id'],
+                    user_id=subscription_data['user_id'],
+                    stripe_subscription_id=subscription_data.get('stripe_subscription_id'),
+                    stripe_customer_id=subscription_data.get('stripe_customer_id'),
+                    status=subscription_data['status'],
+                    plan_name=subscription_data['plan_name'],
+                    canary_limit=subscription_data['canary_limit'],
+                    current_period_start=subscription_data.get('current_period_start'),
+                    current_period_end=subscription_data.get('current_period_end'),
+                    created_at=subscription_data['created_at']
+                )
+                
+                subscription.status = 'past_due'
+                subscription.save()
+                
+                print(f'Marked subscription {subscription.subscription_id} as past_due')
+                
+        except Exception as e:
+            print(f'Error handling payment failed webhook: {e}')
+    
+    elif event['type'] == 'customer.subscription.deleted':
+        subscription_obj = event['data']['object']
+        subscription_id = subscription_obj['id']
+        customer_id = subscription_obj['customer']
+        
+        # Handle subscription cancellation
+        try:
+            # Find our subscription by Stripe customer ID
+            dynamodb = get_dynamodb_resource()
+            subscriptions_table = dynamodb.Table('SilentCanary_Subscriptions')
+            
+            response = subscriptions_table.query(
+                IndexName='stripe-customer-index', 
+                KeyConditionExpression=Key('stripe_customer_id').eq(customer_id)
+            )
+            
+            if response['Items']:
+                subscription_data = response['Items'][0]
+                subscription = Subscription(
+                    subscription_id=subscription_data['subscription_id'],
+                    user_id=subscription_data['user_id'],
+                    stripe_subscription_id=subscription_data.get('stripe_subscription_id'),
+                    stripe_customer_id=subscription_data.get('stripe_customer_id'),
+                    status=subscription_data['status'],
+                    plan_name=subscription_data['plan_name'],
+                    canary_limit=subscription_data['canary_limit'],
+                    current_period_start=subscription_data.get('current_period_start'),
+                    current_period_end=subscription_data.get('current_period_end'),
+                    created_at=subscription_data['created_at']
+                )
+                
+                # Downgrade to free plan
+                subscription.plan_name = 'free'
+                subscription.canary_limit = 1
+                subscription.status = 'canceled'
+                subscription.stripe_subscription_id = None
+                subscription.save()
+                
+                print(f'Downgraded subscription {subscription.subscription_id} to free plan')
+                
+        except Exception as e:
+            print(f'Error handling subscription deleted webhook: {e}')
+    
+    else:
+        print(f'Unhandled event type: {event["type"]}')
+    
+    return '', 200
+
 @app.route('/create_canary', methods=['GET', 'POST'])
 @login_required
 def create_canary():
+    # Check subscription limits
+    subscription = Subscription.get_by_user_id(current_user.user_id)
+    if not subscription:
+        # Create default subscription if none exists (for existing users)
+        Subscription.create_default_subscription(current_user.user_id)
+        subscription = Subscription.get_by_user_id(current_user.user_id)
+    
+    if not subscription.can_create_canary():
+        usage = subscription.get_usage()
+        flash(f'You have reached your canary limit ({usage["canary_limit"]}). Please upgrade your plan to create more canaries.')
+        return redirect(url_for('dashboard'))
+    
     form = CanaryForm()
     if form.validate_on_submit():
         # Process tags - split by comma and clean up whitespace
@@ -592,7 +1003,9 @@ def create_canary():
         else:
             flash('Failed to create canary. Please try again.')
     
-    return render_template('create_canary.html', form=form)
+    # Add subscription info to template context
+    usage = subscription.get_usage()
+    return render_template('create_canary.html', form=form, subscription=subscription, usage=usage)
 
 @app.route('/checkin/<token>', methods=['GET', 'POST'])
 def checkin(token):
