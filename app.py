@@ -71,6 +71,20 @@ def user_timezone_filter(dt):
         return dt
     return current_user.localize_datetime(dt)
 
+@app.template_filter('parse_iso')
+def parse_iso_filter(iso_string):
+    """Template filter to parse ISO datetime string to datetime object."""
+    if not iso_string:
+        return None
+    try:
+        from datetime import datetime
+        # Handle both with and without timezone info
+        if iso_string.endswith('Z'):
+            iso_string = iso_string[:-1] + '+00:00'
+        return datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
+    except:
+        return None
+
 # Custom validators
 def validate_integer_required(form, field):
     """Custom validator that treats 0 as valid but requires a value"""
@@ -603,25 +617,55 @@ def settings():
     
     if request.method == 'POST':
         # Handle API key actions (these are not form fields, so handle them first)
-        if request.form.get('generate_api_key'):
-            if current_user.generate_api_key():
-                flash('API key generated successfully!', 'success')
-            else:
-                flash('Failed to generate API key. Please try again.', 'error')
-            return redirect(url_for('settings'))
+        if request.form.get('create_api_key'):
+            from models import APIKey
+            api_key_name = request.form.get('api_key_name', 'API Key').strip()
+            if not api_key_name:
+                api_key_name = f"API Key {len(APIKey.get_by_user_id(current_user.user_id)) + 1}"
             
-        elif request.form.get('regenerate_api_key'):
-            if current_user.regenerate_api_key():
-                flash('API key regenerated successfully! Please update your CI/CD configurations.', 'success')
+            # Generate new API key
+            key_value = APIKey.generate_key_value(current_user.user_id)
+            api_key = APIKey(
+                user_id=current_user.user_id,
+                name=api_key_name,
+                key_value=key_value,
+                is_active=True
+            )
+            
+            if api_key.save():
+                flash(f'API key "{api_key_name}" created successfully!', 'success')
             else:
-                flash('Failed to regenerate API key. Please try again.', 'error')
+                flash('Failed to create API key. Please try again.', 'error')
             return redirect(url_for('settings'))
             
         elif request.form.get('delete_api_key'):
-            if current_user.delete_api_key():
-                flash('API key deleted successfully. CI/CD integrations will stop working.', 'warning')
-            else:
-                flash('Failed to delete API key. Please try again.', 'error')
+            from models import APIKey
+            api_key_id = request.form.get('api_key_id')
+            if api_key_id:
+                api_key = APIKey.get_by_id(api_key_id)
+                if api_key and api_key.user_id == current_user.user_id:
+                    if api_key.delete():
+                        flash(f'API key "{api_key.name}" deleted successfully.', 'warning')
+                    else:
+                        flash('Failed to delete API key. Please try again.', 'error')
+                else:
+                    flash('API key not found or access denied.', 'error')
+            return redirect(url_for('settings'))
+            
+        elif request.form.get('toggle_api_key'):
+            from models import APIKey
+            api_key_id = request.form.get('api_key_id')
+            if api_key_id:
+                api_key = APIKey.get_by_id(api_key_id)
+                if api_key and api_key.user_id == current_user.user_id:
+                    api_key.is_active = not api_key.is_active
+                    if api_key.save():
+                        status = 'activated' if api_key.is_active else 'deactivated'
+                        flash(f'API key "{api_key.name}" {status} successfully.', 'success')
+                    else:
+                        flash('Failed to update API key. Please try again.', 'error')
+                else:
+                    flash('API key not found or access denied.', 'error')
             return redirect(url_for('settings'))
     
     if form.validate_on_submit():
@@ -711,7 +755,11 @@ def settings():
     if not form.timezone.data:
         form.timezone.data = current_user.timezone or 'UTC'
     
-    return render_template('settings.html', form=form)
+    # Get user's API keys
+    from models import APIKey
+    api_keys = APIKey.get_by_user_id(current_user.user_id)
+    
+    return render_template('settings.html', form=form, api_keys=api_keys)
 
 @app.route('/edit_canary/<canary_id>', methods=['GET', 'POST'])
 @login_required
@@ -1731,21 +1779,58 @@ def api_canaries_status():
         }), 500
 
 def validate_api_key(api_key):
-    """Validate API key and return associated user_id"""
-    # Simple API key validation - in production, store API keys in database
-    # For now, use a simple format: "user_id:secret" encoded in base64
+    """Validate API key and return associated user_id, with usage tracking"""
+    from models import APIKey
+    
     try:
+        # First check new APIKey model
+        api_key_obj = APIKey.get_by_key_value(api_key)
+        if api_key_obj and api_key_obj.is_active:
+            # Record usage
+            api_key_obj.record_usage()
+            return api_key_obj.user_id
+        
+        # Fallback to old API key format for backwards compatibility
         import base64
         decoded = base64.b64decode(api_key).decode('utf-8')
         if ':' in decoded:
             user_id, secret = decoded.split(':', 1)
-            # Validate user exists and secret matches expected pattern
+            # Check if this matches the old single API key format
             user = User.get_by_id(user_id)
-            if user and secret == f"secret_{user_id[:8]}":  # Simple secret validation
+            if user and user.api_key == api_key:
+                # Migrate old API key to new system
+                migrate_old_api_key(user, api_key)
                 return user_id
         return None
     except:
         return None
+
+def migrate_old_api_key(user, old_api_key):
+    """Migrate old single API key to new multiple API key system"""
+    from models import APIKey
+    
+    try:
+        # Check if migration already done
+        existing_keys = APIKey.get_by_user_id(user.user_id)
+        if existing_keys:
+            return  # Already migrated
+        
+        # Create new API key entry
+        api_key = APIKey(
+            user_id=user.user_id,
+            name="Legacy API Key",
+            key_value=old_api_key,
+            is_active=True
+        )
+        api_key.save()
+        
+        # Clear old API key from user model
+        user.api_key = None
+        user.save()
+        
+        print(f"Migrated old API key for user {user.user_id}")
+    except Exception as e:
+        print(f"Error migrating API key: {e}")
 
 def create_canary_from_template(user_id, service_name, environment, template_name, deployment_data):
     """Create a new canary based on a template"""

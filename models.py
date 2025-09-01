@@ -34,6 +34,7 @@ users_table = dynamodb.Table('SilentCanary_Users')
 canaries_table = dynamodb.Table('SilentCanary_Canaries')
 canary_logs_table = dynamodb.Table('SilentCanary_CanaryLogs')
 smart_alerts_table = dynamodb.Table('SilentCanary_SmartAlerts')
+api_keys_table = dynamodb.Table('SilentCanary_APIKeys')
 
 class User:
     def __init__(self, user_id=None, username=None, email=None, password_hash=None, 
@@ -1173,3 +1174,141 @@ class SmartAlert:
                 'progress': 0,
                 'confidence': 0
             }
+
+
+class APIKey:
+    """Model for managing user API keys with usage tracking"""
+    
+    def __init__(self, api_key_id=None, user_id=None, name=None, key_value=None, 
+                 created_at=None, last_used=None, is_active=True, usage_count=0):
+        self.api_key_id = api_key_id or str(uuid.uuid4())
+        self.user_id = user_id
+        self.name = name
+        self.key_value = key_value
+        self.created_at = created_at or datetime.now(timezone.utc).isoformat()
+        self.last_used = last_used
+        self.is_active = is_active
+        self.usage_count = usage_count or 0
+    
+    @staticmethod
+    def generate_key_value(user_id):
+        """Generate a new API key value"""
+        import base64
+        secret = f"secret_{uuid.uuid4().hex[:16]}"
+        credentials = f"{user_id}:{secret}"
+        return base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
+    
+    def save(self):
+        """Save API key to DynamoDB"""
+        try:
+            item = {
+                'api_key_id': self.api_key_id,
+                'user_id': self.user_id,
+                'name': self.name,
+                'key_value': self.key_value,
+                'created_at': self.created_at,
+                'is_active': self.is_active,
+                'usage_count': self.usage_count
+            }
+            
+            if self.last_used:
+                item['last_used'] = self.last_used
+                
+            api_keys_table.put_item(Item=item)
+            return True
+        except ClientError as e:
+            print(f"Error saving API key: {e}")
+            return False
+    
+    def delete(self):
+        """Delete API key from DynamoDB"""
+        try:
+            api_keys_table.delete_item(Key={'api_key_id': self.api_key_id})
+            return True
+        except ClientError as e:
+            print(f"Error deleting API key: {e}")
+            return False
+    
+    def record_usage(self):
+        """Record usage of this API key"""
+        self.last_used = datetime.now(timezone.utc).isoformat()
+        self.usage_count += 1
+        return self.save()
+    
+    @staticmethod
+    def get_by_user_id(user_id):
+        """Get all API keys for a user"""
+        try:
+            response = api_keys_table.query(
+                IndexName='user-id-index',
+                KeyConditionExpression=Key('user_id').eq(user_id)
+            )
+            
+            api_keys = []
+            for item in response.get('Items', []):
+                api_key = APIKey(
+                    api_key_id=item['api_key_id'],
+                    user_id=item['user_id'],
+                    name=item['name'],
+                    key_value=item['key_value'],
+                    created_at=item['created_at'],
+                    last_used=item.get('last_used'),
+                    is_active=item['is_active'],
+                    usage_count=item.get('usage_count', 0)
+                )
+                api_keys.append(api_key)
+            
+            return api_keys
+        except ClientError as e:
+            print(f"Error fetching API keys: {e}")
+            return []
+    
+    @staticmethod  
+    def get_by_key_value(key_value):
+        """Get API key by its value"""
+        try:
+            response = api_keys_table.query(
+                IndexName='key-value-index',
+                KeyConditionExpression=Key('key_value').eq(key_value)
+            )
+            
+            items = response.get('Items', [])
+            if items:
+                item = items[0]
+                return APIKey(
+                    api_key_id=item['api_key_id'],
+                    user_id=item['user_id'],
+                    name=item['name'],
+                    key_value=item['key_value'],
+                    created_at=item['created_at'],
+                    last_used=item.get('last_used'),
+                    is_active=item['is_active'],
+                    usage_count=item.get('usage_count', 0)
+                )
+            return None
+        except ClientError as e:
+            print(f"Error fetching API key: {e}")
+            return None
+    
+    @staticmethod
+    def get_by_id(api_key_id):
+        """Get API key by ID"""
+        try:
+            response = api_keys_table.get_item(Key={'api_key_id': api_key_id})
+            
+            item = response.get('Item')
+            if item:
+                return APIKey(
+                    api_key_id=item['api_key_id'],
+                    user_id=item['user_id'],
+                    name=item['name'],
+                    key_value=item['key_value'],
+                    created_at=item['created_at'],
+                    last_used=item.get('last_used'),
+                    is_active=item['is_active'],
+                    usage_count=item.get('usage_count', 0)
+                )
+            return None
+        except ClientError as e:
+            print(f"Error fetching API key: {e}")
+            return None
