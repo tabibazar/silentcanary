@@ -46,26 +46,109 @@
             </div>
         </div>
 
+        <!-- Quick Setup Guide -->
+        <div class="card mb-4 border-success">
+            <div class="card-header bg-success bg-opacity-10">
+                <h5 class="mb-0"><i class="fas fa-rocket text-success"></i> Quick Setup Guide</h5>
+            </div>
+            <div class="card-body">
+                <p class="mb-3">Follow these steps to integrate SilentCanary with your CI/CD pipeline:</p>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-list-ol text-primary"></i> Step-by-Step Setup</h6>
+                        <ol class="small">
+                            <li><strong>Create API Key:</strong> Go to <a href="{{ url_for('settings') }}">Settings</a> → API Key Management → Create New API Key</li>
+                            <li><strong>Add to CI/CD Secrets:</strong> Store your API key as <code>SILENTCANARY_API_KEY</code> in your CI/CD platform's secrets</li>
+                            <li><strong>Add Integration Step:</strong> Copy the appropriate code snippet below and add it to your deployment pipeline</li>
+                            <li><strong>Customize:</strong> Update service name, environment, and notification settings</li>
+                            <li><strong>Deploy & Test:</strong> Run your pipeline and check your SilentCanary dashboard</li>
+                        </ol>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-lightbulb text-warning"></i> Prerequisites</h6>
+                        <ul class="small">
+                            <li>SilentCanary account at <a href="https://silentcanary.com" target="_blank">https://silentcanary.com</a></li>
+                            <li>API key with appropriate permissions</li>
+                            <li>CI/CD pipeline with internet access</li>
+                            <li>curl or equivalent HTTP client available</li>
+                        </ul>
+                        
+                        <div class="alert alert-info mt-3">
+                            <small><i class="fas fa-info-circle"></i> <strong>Tip:</strong> Start with one service to test the integration, then roll out to other services.</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-4">
+                    <h6><i class="fas fa-cog text-secondary"></i> What Happens Next?</h6>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="text-center p-3 border rounded">
+                                <i class="fas fa-plus-circle fa-2x text-success mb-2"></i>
+                                <p class="small mb-0">Canary automatically created for your service</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center p-3 border rounded">
+                                <i class="fas fa-bell fa-2x text-warning mb-2"></i>
+                                <p class="small mb-0">Notifications configured based on your settings</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center p-3 border rounded">
+                                <i class="fas fa-chart-line fa-2x text-info mb-2"></i>
+                                <p class="small mb-0">Monitoring begins immediately after deployment</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- API Authentication -->
         <div class="card mb-4">
             <div class="card-header">
                 <h5 class="mb-0"><i class="fas fa-key text-warning"></i> API Authentication</h5>
             </div>
             <div class="card-body">
-                <h6>Generating Your API Key</h6>
-                <p class="small">Your API key is generated using this format:</p>
-                <pre class="bg-light p-3"><code>echo -n "YOUR_USER_ID:secret_FIRST8CHARS" | base64</code></pre>
+                <h6>Creating Your API Key</h6>
+                <p class="small">API keys are managed through your account settings:</p>
                 
-                <div class="alert alert-info">
-                    <strong>Example:</strong> If your user ID is <code>abc123def456</code>, your secret would be <code>secret_abc123de</code>, and your API key would be:
-                    <pre class="mt-2 mb-0"><code>echo -n "abc123def456:secret_abc123de" | base64</code></pre>
+                <div class="row">
+                    <div class="col-md-6">
+                        <ol class="small">
+                            <li>Go to <a href="{{ url_for('settings') }}">Settings</a> → API Key Management</li>
+                            <li>Click "Create New API Key"</li>
+                            <li>Enter a descriptive name (e.g., "Production CI/CD")</li>
+                            <li>Copy the generated API key</li>
+                            <li>Store it securely in your CI/CD platform's secrets</li>
+                        </ol>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="alert alert-warning">
+                            <small>
+                                <i class="fas fa-shield-alt"></i> <strong>Security Best Practices:</strong>
+                                <ul class="mt-2 mb-0">
+                                    <li>Use separate API keys for different environments</li>
+                                    <li>Name your keys descriptively</li>
+                                    <li>Monitor usage in settings</li>
+                                    <li>Rotate keys regularly</li>
+                                </ul>
+                            </small>
+                        </div>
+                    </div>
                 </div>
                 
                 <h6 class="mt-3">Using the API Key</h6>
                 <p class="small">Include the API key in all requests:</p>
-                <pre class="bg-light p-3"><code>curl -H "X-API-Key: YOUR_BASE64_ENCODED_KEY" \
+                <pre class="bg-light p-3"><code>curl -H "X-API-Key: YOUR_API_KEY_FROM_SETTINGS" \
      -H "Content-Type: application/json" \
      https://silentcanary.com/api/v1/...</code></pre>
+                
+                <div class="alert alert-success">
+                    <small><i class="fas fa-chart-bar"></i> <strong>Usage Tracking:</strong> Monitor your API key usage, including request count and last used timestamp, in the <a href="{{ url_for('settings') }}">Settings page</a>.</small>
+                </div>
             </div>
         </div>
 
@@ -399,8 +482,14 @@ func main() {
                         </h2>
                         <div id="collapse1" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
                             <div class="accordion-body small">
-                                <strong>Cause:</strong> Invalid or malformed API key<br>
-                                <strong>Solution:</strong> Regenerate your API key using the correct format and ensure it's properly base64 encoded
+                                <strong>Cause:</strong> Invalid or expired API key<br>
+                                <strong>Solution:</strong> 
+                                <ul>
+                                    <li>Check that your API key is active in <a href="{{ url_for('settings') }}">Settings</a></li>
+                                    <li>Ensure the key is stored correctly in your CI/CD secrets</li>
+                                    <li>Create a new API key if the current one is compromised</li>
+                                    <li>Verify the key name matches what's used in your pipeline</li>
+                                </ul>
                             </div>
                         </div>
                     </div>
