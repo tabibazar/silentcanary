@@ -601,6 +601,33 @@ def settings():
         # Fallback to just common timezones if there's an issue
         form.timezone.choices = [(tz, tz) for tz in common_timezones]
     
+    if request.method == 'POST':
+        # Handle API key actions (these are not form fields, so handle them first)
+        if request.form.get('generate_api_key'):
+            print(f"DEBUG: Generate API key requested for user {current_user.user_id}")
+            result = current_user.generate_api_key()
+            print(f"DEBUG: generate_api_key returned: {result}")
+            print(f"DEBUG: User API key after generation: {current_user.api_key}")
+            if result:
+                flash('API key generated successfully!', 'success')
+            else:
+                flash('Failed to generate API key. Please try again.', 'error')
+            return redirect(url_for('settings'))
+            
+        elif request.form.get('regenerate_api_key'):
+            if current_user.regenerate_api_key():
+                flash('API key regenerated successfully! Please update your CI/CD configurations.', 'success')
+            else:
+                flash('Failed to regenerate API key. Please try again.', 'error')
+            return redirect(url_for('settings'))
+            
+        elif request.form.get('delete_api_key'):
+            if current_user.delete_api_key():
+                flash('API key deleted successfully. CI/CD integrations will stop working.', 'warning')
+            else:
+                flash('Failed to delete API key. Please try again.', 'error')
+            return redirect(url_for('settings'))
+    
     if form.validate_on_submit():
         # Handle verify email button
         if form.verify_email.data:
@@ -633,7 +660,7 @@ def settings():
                 flash('Failed to send verification email. Please try again.')
                 print(f"Email error: {e}")
             return redirect(url_for('settings'))
-            
+        
         # Handle delete account button
         elif form.delete_account.data:
             try:
@@ -1101,6 +1128,428 @@ def smart_alert_progress(canary_id):
     progress = smart_alert.get_learning_progress()
     return jsonify(progress)
 
+@app.route('/smart_alert_insights/<canary_id>', methods=['GET'])
+@login_required
+def smart_alert_insights(canary_id):
+    """API endpoint to get pattern insights for Smart Alerts"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        return jsonify({'error': 'Canary not found'}), 404
+    
+    smart_alert = SmartAlert.get_by_canary_id(canary_id)
+    if not smart_alert or not smart_alert.is_enabled:
+        return jsonify({'error': 'Smart alerting not enabled'}), 404
+    
+    # Get pattern insights
+    insights = {
+        'timing_patterns': [],
+        'anomaly_indicators': [],
+        'next_expected': None,
+        'confidence': 0
+    }
+    
+    if smart_alert.pattern_data:
+        pattern_data = smart_alert.pattern_data
+        
+        # Generate timing pattern insights
+        if pattern_data.get('avg_interval'):
+            avg_interval = float(pattern_data['avg_interval'])
+            expected_interval = pattern_data.get('expected_interval', avg_interval)
+            std_dev = float(pattern_data.get('interval_std', 0))
+            
+            insights['timing_patterns'].append(f"You typically check in every {expected_interval:.1f} minutes")
+            
+            if std_dev > 0:
+                insights['timing_patterns'].append(f"Your timing varies by ±{std_dev:.1f} minutes normally")
+            
+            if pattern_data.get('total_checkins', 0) > 0:
+                insights['timing_patterns'].append(f"Analysis based on {pattern_data['total_checkins']} check-ins")
+        
+        # Check for recent anomalies
+        recent_logs_data = CanaryLog.get_by_canary_id(canary_id, limit=5)
+        recent_logs = recent_logs_data.get('logs', [])
+        if recent_logs:
+            for log in recent_logs:
+                if hasattr(log, 'anomaly_score') and log.anomaly_score and float(log.anomaly_score) > 0.6:
+                    try:
+                        log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                        time_ago = (datetime.utcnow().replace(tzinfo=timezone.utc) - log_time).total_seconds() / 60
+                        insights['anomaly_indicators'].append(f"Unusual timing detected {time_ago:.0f} minutes ago")
+                    except:
+                        insights['anomaly_indicators'].append("Recent anomaly detected")
+        
+        # Predict next expected check-in
+        if pattern_data.get('expected_interval') and canary.last_checkin:
+            from datetime import datetime, timedelta
+            try:
+                last_checkin = datetime.fromisoformat(canary.last_checkin.replace('Z', '+00:00'))
+                next_expected = last_checkin + timedelta(minutes=expected_interval)
+                insights['next_expected'] = next_expected.strftime('%Y-%m-%d %H:%M UTC')
+                insights['confidence'] = min(95, max(50, 100 - (std_dev / avg_interval * 100)))
+            except:
+                pass
+    
+    return jsonify(insights)
+
+@app.route('/smart_alert_timeline/<canary_id>', methods=['GET'])
+@login_required
+def smart_alert_timeline(canary_id):
+    """API endpoint to get check-in timeline with pattern analysis"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        return jsonify({'error': 'Canary not found'}), 404
+    
+    smart_alert = SmartAlert.get_by_canary_id(canary_id)
+    if not smart_alert or not smart_alert.is_enabled:
+        return jsonify({'error': 'Smart alerting not enabled'}), 404
+    
+    # Get recent check-ins
+    recent_logs_data = CanaryLog.get_by_canary_id(canary_id, limit=10)
+    recent_logs = recent_logs_data.get('logs', [])
+    
+    timeline_data = {
+        'checkins': [],
+        'summary': None
+    }
+    
+    if recent_logs:
+        pattern_data = smart_alert.pattern_data or {}
+        expected_interval = pattern_data.get('expected_interval', 60)  # Default 1 hour
+        interval_std = float(pattern_data.get('interval_std', 30))  # Default 30 min std
+        
+        prev_checkin = None
+        anomaly_count = 0
+        
+        for log in recent_logs:
+            try:
+                log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                formatted_time = log_time.strftime('%m/%d %H:%M')
+            except:
+                formatted_time = str(log.timestamp)[:16]  # Fallback formatting
+                
+            checkin_data = {
+                'timestamp': formatted_time,
+                'interval': None,
+                'pattern_match': 100,
+                'analysis': 'Normal',
+                'anomaly_score': 0
+            }
+            
+            # Calculate interval from previous check-in
+            if prev_checkin:
+                try:
+                    prev_time = datetime.fromisoformat(prev_checkin.timestamp.replace('Z', '+00:00'))
+                    curr_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                    interval_minutes = (prev_time - curr_time).total_seconds() / 60
+                except:
+                    interval_minutes = 0
+                checkin_data['interval'] = f"{interval_minutes:.1f} min"
+                
+                # Calculate pattern match percentage
+                if expected_interval > 0:
+                    deviation = abs(interval_minutes - expected_interval)
+                    if interval_std > 0:
+                        # Use statistical deviation to calculate match
+                        z_score = deviation / interval_std
+                        pattern_match = max(0, min(100, 100 - (z_score * 20)))  # Scale z-score to percentage
+                    else:
+                        # Simple percentage deviation
+                        pattern_match = max(0, min(100, 100 - (deviation / expected_interval * 100)))
+                    
+                    checkin_data['pattern_match'] = round(pattern_match)
+                    checkin_data['anomaly_score'] = (100 - pattern_match) / 100
+                    
+                    # Analysis based on deviation
+                    if pattern_match < 60:
+                        checkin_data['analysis'] = 'Significant deviation from normal pattern'
+                        anomaly_count += 1
+                    elif pattern_match < 80:
+                        checkin_data['analysis'] = 'Slightly irregular timing'
+                    else:
+                        checkin_data['analysis'] = 'Matches expected pattern'
+            
+            timeline_data['checkins'].append(checkin_data)
+            prev_checkin = log
+        
+        # Generate summary
+        total_checkins = len(recent_logs)
+        if total_checkins > 0:
+            normal_count = total_checkins - anomaly_count
+            if anomaly_count == 0:
+                timeline_data['summary'] = f"All {total_checkins} recent check-ins match your normal patterns perfectly."
+            elif anomaly_count == 1:
+                timeline_data['summary'] = f"{normal_count} of {total_checkins} check-ins are normal. 1 check-in shows unusual timing."
+            else:
+                timeline_data['summary'] = f"{normal_count} of {total_checkins} check-ins are normal. {anomaly_count} check-ins show unusual timing patterns."
+    
+    return jsonify(timeline_data)
+
+@app.route('/smart_alert_logic/<canary_id>', methods=['GET'])
+@login_required
+def smart_alert_logic(canary_id):
+    """API endpoint to explain current alert logic and thresholds"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        return jsonify({'error': 'Canary not found'}), 404
+    
+    smart_alert = SmartAlert.get_by_canary_id(canary_id)
+    if not smart_alert or not smart_alert.is_enabled:
+        return jsonify({'error': 'Smart alerting not enabled'}), 404
+    
+    logic_data = {
+        'current_thresholds': [],
+        'recent_evaluations': [],
+        'explanation': None
+    }
+    
+    if smart_alert.pattern_data:
+        pattern_data = smart_alert.pattern_data
+        expected_interval = pattern_data.get('expected_interval', 60)
+        sensitivity = float(smart_alert.sensitivity)
+        interval_std = float(pattern_data.get('interval_std', 30))
+        
+        # Calculate actual alert thresholds
+        alert_threshold_minutes = expected_interval * (1 + sensitivity)
+        warning_threshold_minutes = expected_interval * (1 + sensitivity * 0.7)
+        
+        logic_data['current_thresholds'] = [
+            {
+                'condition': 'Critical Alert Threshold',
+                'value': f'{alert_threshold_minutes:.1f} minutes late'
+            },
+            {
+                'condition': 'Warning Threshold',  
+                'value': f'{warning_threshold_minutes:.1f} minutes late'
+            },
+            {
+                'condition': 'Expected Interval',
+                'value': f'{expected_interval:.1f} minutes'
+            },
+            {
+                'condition': 'Normal Variance Accepted',
+                'value': f'±{interval_std:.1f} minutes'
+            },
+            {
+                'condition': 'Sensitivity Setting',
+                'value': f'{sensitivity * 100:.0f}%'
+            }
+        ]
+        
+        # Get recent check-ins to simulate evaluations
+        recent_logs_data = CanaryLog.get_by_canary_id(canary_id, limit=3)
+        recent_logs = recent_logs_data.get('logs', [])
+        if recent_logs:
+            for log in recent_logs:
+                # Calculate if this check-in would have triggered an alert
+                time_since_expected = 0
+                would_trigger = False
+                result = "Normal"
+                reason = "Check-in occurred within expected timeframe"
+                
+                # Simple simulation - in reality this would be more complex
+                if hasattr(log, 'interval_from_expected'):
+                    time_since_expected = getattr(log, 'interval_from_expected', 0)
+                    if time_since_expected > alert_threshold_minutes:
+                        would_trigger = True
+                        result = "ALERT"
+                        reason = f"Check-in was {time_since_expected:.1f} minutes late (threshold: {alert_threshold_minutes:.1f})"
+                    elif time_since_expected > warning_threshold_minutes:
+                        would_trigger = False
+                        result = "Warning"
+                        reason = f"Check-in was {time_since_expected:.1f} minutes late (within warning range)"
+                
+                try:
+                    log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                    formatted_time = log_time.strftime('%m/%d %H:%M')
+                except:
+                    formatted_time = str(log.timestamp)[:16]
+                    
+                logic_data['recent_evaluations'].append({
+                    'timestamp': formatted_time,
+                    'would_trigger': would_trigger,
+                    'result': result,
+                    'reason': reason
+                })
+        
+        logic_data['explanation'] = f"""
+        Smart alerts trigger when your check-in patterns deviate significantly from learned behavior. 
+        With {sensitivity * 100:.0f}% sensitivity, alerts activate when check-ins are {alert_threshold_minutes:.1f} minutes late 
+        (your normal {expected_interval:.1f}-minute interval + {sensitivity * 100:.0f}% tolerance). 
+        The system accounts for your typical ±{interval_std:.1f} minute variance in timing.
+        """
+    else:
+        logic_data['explanation'] = "Alert thresholds will be calculated once sufficient check-in data is collected and patterns are learned."
+    
+    return jsonify(logic_data)
+
+# CI/CD Integration API Routes
+@app.route('/api/v1/deployment/webhook', methods=['POST'])
+def deployment_webhook():
+    """Webhook endpoint for CI/CD deployments to auto-create/manage canaries"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        # Validate required fields
+        required_fields = ['service_name', 'environment', 'deployment_id']
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+        
+        # Extract deployment information
+        service_name = data['service_name']
+        environment = data['environment']
+        deployment_id = data['deployment_id']
+        pipeline_url = data.get('pipeline_url')
+        commit_sha = data.get('commit_sha')
+        branch = data.get('branch', 'main')
+        user_id = data.get('user_id')  # Optional: if provided, link to specific user
+        template_name = data.get('template', 'default')
+        
+        # Authentication via API key or user_id
+        api_key = request.headers.get('X-API-Key')
+        if api_key:
+            # Validate API key (implement API key validation)
+            user_id = validate_api_key(api_key)
+            if not user_id:
+                return jsonify({'error': 'Invalid API key'}), 401
+        elif not user_id:
+            return jsonify({'error': 'Either X-API-Key header or user_id field required'}), 401
+        
+        # Check if user exists
+        user = User.get_by_id(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Generate canary name
+        canary_name = f"{service_name}-{environment}"
+        
+        # Check if canary already exists for this service/environment
+        existing_canaries = Canary.get_by_user_id(user_id)
+        existing_canary = None
+        for canary in existing_canaries:
+            if canary.name == canary_name:
+                existing_canary = canary
+                break
+        
+        if existing_canary:
+            # Update existing canary with deployment info
+            result = update_canary_for_deployment(existing_canary, data)
+            return jsonify({
+                'status': 'updated',
+                'canary_id': existing_canary.canary_id,
+                'message': f'Updated existing canary for {service_name} in {environment}',
+                'canary_url': f"{request.url_root}canary/{existing_canary.canary_id}",
+                'deployment_info': result
+            })
+        else:
+            # Create new canary from template
+            new_canary = create_canary_from_template(user_id, service_name, environment, template_name, data)
+            return jsonify({
+                'status': 'created',
+                'canary_id': new_canary.canary_id,
+                'canary_token': new_canary.token,
+                'message': f'Created new canary for {service_name} in {environment}',
+                'canary_url': f"{request.url_root}canary/{new_canary.canary_id}",
+                'check_in_url': f"{request.url_root}ping/{new_canary.token}",
+                'deployment_info': {
+                    'deployment_id': deployment_id,
+                    'commit_sha': commit_sha,
+                    'branch': branch,
+                    'pipeline_url': pipeline_url
+                }
+            })
+            
+    except Exception as e:
+        print(f"❌ Deployment webhook error: {e}")
+        return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
+
+@app.route('/api/v1/canary/template', methods=['POST'])
+def create_canary_from_api():
+    """API endpoint to create canary with template"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        # Validate API key
+        api_key = request.headers.get('X-API-Key')
+        if not api_key:
+            return jsonify({'error': 'X-API-Key header required'}), 401
+            
+        user_id = validate_api_key(api_key)
+        if not user_id:
+            return jsonify({'error': 'Invalid API key'}), 401
+        
+        # Validate required fields
+        required_fields = ['name', 'interval_minutes']
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+        
+        # Create canary
+        canary = create_canary_from_data(user_id, data)
+        
+        return jsonify({
+            'status': 'success',
+            'canary_id': canary.canary_id,
+            'canary_token': canary.token,
+            'check_in_url': f"{request.url_root}ping/{canary.token}",
+            'dashboard_url': f"{request.url_root}canary/{canary.canary_id}"
+        })
+        
+    except Exception as e:
+        print(f"❌ API canary creation error: {e}")
+        return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
+
+@app.route('/api/v1/canary/<canary_id>/deployment', methods=['POST'])
+def update_canary_deployment(canary_id):
+    """Update canary with new deployment information"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        # Validate API key
+        api_key = request.headers.get('X-API-Key')
+        if not api_key:
+            return jsonify({'error': 'X-API-Key header required'}), 401
+            
+        user_id = validate_api_key(api_key)
+        if not user_id:
+            return jsonify({'error': 'Invalid API key'}), 401
+        
+        # Get canary and validate ownership
+        canary = Canary.get_by_id(canary_id)
+        if not canary or canary.user_id != user_id:
+            return jsonify({'error': 'Canary not found'}), 404
+        
+        # Update deployment metadata
+        deployment_info = {
+            'deployment_id': data.get('deployment_id'),
+            'commit_sha': data.get('commit_sha'),
+            'branch': data.get('branch'),
+            'pipeline_url': data.get('pipeline_url'),
+            'deployed_at': datetime.utcnow().isoformat(),
+            'version': data.get('version'),
+            'environment': data.get('environment')
+        }
+        
+        # Store deployment info (would need to add deployment_metadata field to Canary model)
+        # For now, log the deployment
+        CanaryLog.log_deployment(canary_id, deployment_info)
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Deployment information updated',
+            'deployment_info': deployment_info
+        })
+        
+    except Exception as e:
+        print(f"❌ Deployment update error: {e}")
+        return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
+
 # Help Documentation Routes
 @app.route('/help')
 @app.route('/help/overview')
@@ -1137,6 +1586,11 @@ def help_troubleshooting():
 def help_faq():
     """Frequently asked questions"""
     return render_template('help/faq.html')
+
+@app.route('/help/cicd-integration')
+def help_cicd_integration():
+    """CI/CD Integration documentation"""
+    return render_template('help/cicd_integration.html')
 
 def send_notifications(canary, log_entry=None):
     """Send notifications based on canary alert type and log timestamps."""
@@ -1279,6 +1733,149 @@ def api_canaries_status():
             'status': 'error',
             'message': str(e)
         }), 500
+
+def validate_api_key(api_key):
+    """Validate API key and return associated user_id"""
+    # Simple API key validation - in production, store API keys in database
+    # For now, use a simple format: "user_id:secret" encoded in base64
+    try:
+        import base64
+        decoded = base64.b64decode(api_key).decode('utf-8')
+        if ':' in decoded:
+            user_id, secret = decoded.split(':', 1)
+            # Validate user exists and secret matches expected pattern
+            user = User.get_by_id(user_id)
+            if user and secret == f"secret_{user_id[:8]}":  # Simple secret validation
+                return user_id
+        return None
+    except:
+        return None
+
+def create_canary_from_template(user_id, service_name, environment, template_name, deployment_data):
+    """Create a new canary based on a template"""
+    # Define templates
+    templates = {
+        'default': {
+            'interval_minutes': 60,
+            'alert_type': 'both',
+            'smart_alerts_enabled': True,
+            'description': 'Auto-created from CI/CD deployment'
+        },
+        'microservice': {
+            'interval_minutes': 30,
+            'alert_type': 'slack',
+            'smart_alerts_enabled': True,
+            'description': 'Microservice monitoring canary'
+        },
+        'batch_job': {
+            'interval_minutes': 1440,  # 24 hours
+            'alert_type': 'email',
+            'smart_alerts_enabled': False,
+            'description': 'Daily batch job monitoring'
+        },
+        'api_service': {
+            'interval_minutes': 15,
+            'alert_type': 'both',
+            'smart_alerts_enabled': True,
+            'description': 'High-frequency API service monitoring'
+        }
+    }
+    
+    template = templates.get(template_name, templates['default'])
+    
+    # Create canary with template settings
+    canary_name = f"{service_name}-{environment}"
+    canary = Canary(
+        user_id=user_id,
+        name=canary_name,
+        description=f"{template['description']} - {service_name} in {environment}",
+        interval_minutes=template['interval_minutes'],
+        alert_type=template['alert_type'],
+        is_active=True
+    )
+    
+    # Override with any provided settings
+    if 'interval_minutes' in deployment_data:
+        canary.interval_minutes = deployment_data['interval_minutes']
+    if 'alert_type' in deployment_data:
+        canary.alert_type = deployment_data['alert_type']
+    if 'email' in deployment_data:
+        canary.email = deployment_data['email']
+    if 'slack_webhook' in deployment_data:
+        canary.slack_webhook = deployment_data['slack_webhook']
+    
+    canary.save()
+    
+    # Enable smart alerts if template requires it
+    if template.get('smart_alerts_enabled') and deployment_data.get('enable_smart_alerts', True):
+        smart_alert = SmartAlert(
+            canary_id=canary.canary_id,
+            user_id=user_id,
+            sensitivity=Decimal('0.8'),
+            learning_period_days=7,
+            is_enabled=True
+        )
+        smart_alert.save()
+    
+    # Log the creation
+    CanaryLog.log_deployment(canary.canary_id, {
+        'event': 'canary_created',
+        'deployment_id': deployment_data.get('deployment_id'),
+        'commit_sha': deployment_data.get('commit_sha'),
+        'template': template_name,
+        'created_by': 'ci_cd_webhook'
+    })
+    
+    return canary
+
+def create_canary_from_data(user_id, data):
+    """Create canary from direct API data"""
+    canary = Canary(
+        user_id=user_id,
+        name=data['name'],
+        description=data.get('description', 'Created via API'),
+        interval_minutes=data['interval_minutes'],
+        alert_type=data.get('alert_type', 'email'),
+        email=data.get('email'),
+        slack_webhook=data.get('slack_webhook'),
+        is_active=data.get('is_active', True)
+    )
+    
+    canary.save()
+    
+    # Enable smart alerts if requested
+    if data.get('enable_smart_alerts', False):
+        smart_alert = SmartAlert(
+            canary_id=canary.canary_id,
+            user_id=user_id,
+            sensitivity=Decimal(str(data.get('smart_alert_sensitivity', 0.8))),
+            learning_period_days=data.get('smart_alert_learning_period', 7),
+            is_enabled=True
+        )
+        smart_alert.save()
+    
+    return canary
+
+def update_canary_for_deployment(canary, deployment_data):
+    """Update existing canary with new deployment information"""
+    # Log the deployment
+    deployment_info = {
+        'event': 'deployment_updated',
+        'deployment_id': deployment_data.get('deployment_id'),
+        'commit_sha': deployment_data.get('commit_sha'),
+        'branch': deployment_data.get('branch'),
+        'pipeline_url': deployment_data.get('pipeline_url'),
+        'updated_by': 'ci_cd_webhook'
+    }
+    
+    CanaryLog.log_deployment(canary.canary_id, deployment_info)
+    
+    # Update canary description if provided
+    if 'description' in deployment_data:
+        canary.description = deployment_data['description']
+        canary.save()
+    
+    return deployment_info
 
 def send_smart_alert_notifications(canary, log_entry, smart_alert):
     """Send smart alert notifications with ML context"""

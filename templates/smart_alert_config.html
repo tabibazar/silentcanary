@@ -94,14 +94,71 @@
                             {% if smart_alert.pattern_data and smart_alert.pattern_data.avg_interval %}
                             <div class="card mt-3">
                                 <div class="card-body">
-                                    <h6 class="card-title">Learned Patterns</h6>
-                                    <p class="card-text">
-                                        <small class="text-muted">
-                                            <strong>Average Interval:</strong> {{ smart_alert.pattern_data.avg_interval | round(1) }} minutes<br>
-                                            <strong>Expected Interval:</strong> {{ smart_alert.pattern_data.expected_interval }} minutes<br>
-                                            <strong>Variability:</strong> ±{{ smart_alert.pattern_data.interval_std | round(1) }} minutes
-                                        </small>
-                                    </p>
+                                    <h6 class="card-title">
+                                        <i class="fas fa-chart-bar text-success"></i> Learned Patterns
+                                        <button class="btn btn-outline-info btn-sm float-end" type="button" data-bs-toggle="collapse" data-bs-target="#patternDetails">
+                                            <i class="fas fa-info-circle"></i> Details
+                                        </button>
+                                    </h6>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <p class="card-text mb-2">
+                                                <small class="text-muted">
+                                                    <strong>Expected Interval:</strong> {{ smart_alert.pattern_data.expected_interval }} minutes<br>
+                                                    <strong>Actual Average:</strong> {{ smart_alert.pattern_data.avg_interval | round(1) }} minutes<br>
+                                                    <strong>Normal Variance:</strong> ±{{ smart_alert.pattern_data.interval_std | round(1) }} minutes
+                                                </small>
+                                            </p>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="text-center" id="pattern-confidence-display">
+                                                <div class="progress mb-1" style="height: 8px;">
+                                                    <div class="progress-bar bg-success" role="progressbar" 
+                                                         style="width: 85%" title="Pattern Confidence" id="confidence-bar">
+                                                    </div>
+                                                </div>
+                                                <small class="text-muted" id="confidence-text">Pattern Confidence: Loading...</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="collapse mt-3" id="patternDetails">
+                                        <div class="border-top pt-3">
+                                            <h6><i class="fas fa-microscope text-primary"></i> How This Works</h6>
+                                            <div class="row">
+                                                <div class="col-md-6">
+                                                    <p class="small mb-2"><strong>What We Analyze:</strong></p>
+                                                    <ul class="small">
+                                                        <li>Check-in timing patterns</li>
+                                                        <li>Interval consistency</li>
+                                                        <li>Day-of-week variations</li>
+                                                        <li>Time-of-day preferences</li>
+                                                    </ul>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <p class="small mb-2"><strong>Alert Triggers:</strong></p>
+                                                    <ul class="small">
+                                                        <li>Intervals {{ (smart_alert.sensitivity * 100) | round(0) }}% longer than expected</li>
+                                                        <li>Check-ins at unusual times</li>
+                                                        <li>Sudden pattern changes</li>
+                                                        <li>Multiple consecutive deviations</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="alert alert-light mt-3">
+                                                <h6><i class="fas fa-lightbulb text-warning"></i> Current Pattern Analysis</h6>
+                                                <div id="pattern-insights">
+                                                    <div class="text-center">
+                                                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                                            <span class="visually-hidden">Loading...</span>
+                                                        </div>
+                                                        <span class="ms-2">Loading pattern insights...</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             {% endif %}
@@ -193,6 +250,48 @@
         </div>
         {% endif %}
 
+        <!-- Recent Check-ins Analysis Card -->
+        {% if smart_alert and smart_alert.is_enabled %}
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-history text-info"></i> Recent Check-ins & Pattern Analysis
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="checkin-timeline">
+                    <div class="text-center">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading recent check-ins...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Alert Logic Explanation Card -->
+        {% if smart_alert and smart_alert.is_enabled %}
+        <div class="card mt-4 border-warning">
+            <div class="card-header bg-warning bg-opacity-10">
+                <h5 class="mb-0">
+                    <i class="fas fa-exclamation-triangle text-warning"></i> When Smart Alerts Trigger
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="alert-logic-explanation">
+                    <div class="text-center">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading alert trigger conditions...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- How It Works Card -->
         <div class="card mt-4">
             <div class="card-header">
@@ -223,6 +322,210 @@
 <script>
 function updateSensitivityValue(value) {
     document.getElementById('sensitivity-value').textContent = Math.round(value * 100) + '%';
+}
+
+// Function to load pattern insights
+async function loadPatternInsights() {
+    try {
+        const response = await fetch(`/smart_alert_insights/{{ canary.canary_id }}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch pattern insights');
+        }
+        
+        const insights = await response.json();
+        
+        let insightsHtml = '<div class="row">';
+        
+        if (insights.timing_patterns && insights.timing_patterns.length > 0) {
+            insightsHtml += '<div class="col-md-6"><h6 class="small"><i class="fas fa-clock text-primary"></i> Timing Patterns</h6><ul class="small mb-3">';
+            insights.timing_patterns.forEach(pattern => {
+                insightsHtml += `<li>${pattern}</li>`;
+            });
+            insightsHtml += '</ul></div>';
+        }
+        
+        if (insights.anomaly_indicators && insights.anomaly_indicators.length > 0) {
+            insightsHtml += '<div class="col-md-6"><h6 class="small"><i class="fas fa-exclamation-triangle text-warning"></i> Recent Anomalies</h6><ul class="small mb-3">';
+            insights.anomaly_indicators.forEach(anomaly => {
+                insightsHtml += `<li class="text-warning">${anomaly}</li>`;
+            });
+            insightsHtml += '</ul></div>';
+        }
+        
+        insightsHtml += '</div>';
+        
+        if (insights.next_expected && insights.confidence > 70) {
+            insightsHtml += `<div class="alert alert-info small mt-2">
+                <i class="fas fa-clock"></i> <strong>Next Expected Check-in:</strong> ${insights.next_expected}
+                (Confidence: ${insights.confidence}%)
+            </div>`;
+        }
+        
+        document.getElementById('pattern-insights').innerHTML = insightsHtml;
+        
+        // Update pattern confidence display if available
+        if (insights.confidence > 0) {
+            const confidenceBar = document.getElementById('confidence-bar');
+            const confidenceText = document.getElementById('confidence-text');
+            
+            if (confidenceBar && confidenceText) {
+                confidenceBar.style.width = insights.confidence + '%';
+                confidenceText.textContent = `Pattern Confidence: ${insights.confidence}%`;
+                
+                // Update bar color based on confidence level
+                confidenceBar.className = 'progress-bar ' + 
+                    (insights.confidence > 80 ? 'bg-success' : 
+                     insights.confidence > 60 ? 'bg-warning' : 'bg-danger');
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error loading pattern insights:', error);
+        document.getElementById('pattern-insights').innerHTML = 
+            '<p class="text-muted small mb-0">Pattern insights unavailable</p>';
+    }
+}
+
+// Function to load check-in timeline
+async function loadCheckinTimeline() {
+    try {
+        const response = await fetch(`/smart_alert_timeline/{{ canary.canary_id }}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch check-in timeline');
+        }
+        
+        const timeline = await response.json();
+        
+        let timelineHtml = '';
+        
+        if (timeline.checkins && timeline.checkins.length > 0) {
+            timelineHtml += '<div class="table-responsive"><table class="table table-sm"><thead><tr>';
+            timelineHtml += '<th>Time</th><th>Interval</th><th>Pattern Match</th><th>Analysis</th></tr></thead><tbody>';
+            
+            timeline.checkins.forEach((checkin, index) => {
+                const statusClass = checkin.anomaly_score > 0.7 ? 'table-warning' : 
+                                  checkin.anomaly_score > 0.4 ? 'table-info' : 'table-light';
+                
+                timelineHtml += `<tr class="${statusClass}">`;
+                timelineHtml += `<td><small>${checkin.timestamp}</small></td>`;
+                timelineHtml += `<td><small>${checkin.interval || 'N/A'}</small></td>`;
+                timelineHtml += `<td><small>`;
+                
+                if (checkin.pattern_match > 80) {
+                    timelineHtml += `<span class="badge bg-success">${checkin.pattern_match}%</span>`;
+                } else if (checkin.pattern_match > 60) {
+                    timelineHtml += `<span class="badge bg-warning">${checkin.pattern_match}%</span>`;
+                } else {
+                    timelineHtml += `<span class="badge bg-danger">${checkin.pattern_match}%</span>`;
+                }
+                
+                timelineHtml += `</small></td>`;
+                timelineHtml += `<td><small class="text-muted">${checkin.analysis || 'Normal'}</small></td>`;
+                timelineHtml += '</tr>';
+            });
+            
+            timelineHtml += '</tbody></table></div>';
+            
+            if (timeline.summary) {
+                timelineHtml += `<div class="alert alert-light mt-3">
+                    <h6><i class="fas fa-chart-line text-primary"></i> Timeline Summary</h6>
+                    <p class="small mb-0">${timeline.summary}</p>
+                </div>`;
+            }
+        } else {
+            timelineHtml = '<p class="text-muted">No recent check-ins available for analysis.</p>';
+        }
+        
+        document.getElementById('checkin-timeline').innerHTML = timelineHtml;
+        
+    } catch (error) {
+        console.error('Error loading check-in timeline:', error);
+        document.getElementById('checkin-timeline').innerHTML = 
+            '<p class="text-danger">Error loading check-in timeline</p>';
+    }
+}
+
+// Function to load alert logic explanation
+async function loadAlertLogicExplanation() {
+    try {
+        const response = await fetch(`/smart_alert_logic/{{ canary.canary_id }}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch alert logic');
+        }
+        
+        const logic = await response.json();
+        
+        let explanationHtml = '<div class="row">';
+        
+        if (logic.current_thresholds) {
+            explanationHtml += '<div class="col-md-6">';
+            explanationHtml += '<h6 class="text-warning mb-3"><i class="fas fa-calculator"></i> Current Alert Thresholds</h6>';
+            explanationHtml += '<div class="alert alert-light border-warning">';
+            
+            logic.current_thresholds.forEach(threshold => {
+                explanationHtml += `<div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+                    <span class="small">${threshold.condition}</span>
+                    <strong class="text-warning">${threshold.value}</strong>
+                </div>`;
+            });
+            
+            explanationHtml += '</div></div>';
+        }
+        
+        if (logic.recent_evaluations) {
+            explanationHtml += '<div class="col-md-6">';
+            explanationHtml += '<h6 class="text-info mb-3"><i class="fas fa-history"></i> Recent Evaluations</h6>';
+            
+            logic.recent_evaluations.forEach(eval => {
+                const alertClass = eval.would_trigger ? 'alert-danger' : 'alert-success';
+                const icon = eval.would_trigger ? 'fas fa-exclamation-triangle text-danger' : 'fas fa-check text-success';
+                
+                explanationHtml += `<div class="alert ${alertClass} p-2 mb-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small><i class="${icon}"></i> ${eval.timestamp}</small>
+                        <small>${eval.result}</small>
+                    </div>
+                    <small class="text-muted">${eval.reason}</small>
+                </div>`;
+            });
+            
+            explanationHtml += '</div>';
+        }
+        
+        explanationHtml += '</div>';
+        
+        if (logic.explanation) {
+            explanationHtml += `<div class="alert alert-info mt-3">
+                <h6><i class="fas fa-info-circle"></i> How This Works</h6>
+                <p class="mb-0 small">${logic.explanation}</p>
+            </div>`;
+        }
+        
+        document.getElementById('alert-logic-explanation').innerHTML = explanationHtml;
+        
+    } catch (error) {
+        console.error('Error loading alert logic:', error);
+        document.getElementById('alert-logic-explanation').innerHTML = 
+            '<p class="text-muted">Alert logic explanation unavailable</p>';
+    }
 }
 
 // Function to update learning progress
@@ -323,7 +626,15 @@ async function updateLearningProgress() {
 {% if smart_alert and smart_alert.is_enabled %}
 document.addEventListener('DOMContentLoaded', function() {
     updateLearningProgress();
-    setInterval(updateLearningProgress, 10000); // Update every 10 seconds
+    loadPatternInsights();
+    loadCheckinTimeline();
+    loadAlertLogicExplanation();
+    
+    // Update all data for real-time feedback
+    setInterval(updateLearningProgress, 10000);
+    setInterval(loadPatternInsights, 15000); // Pattern insights every 15 seconds
+    setInterval(loadCheckinTimeline, 30000); // Timeline every 30 seconds
+    setInterval(loadAlertLogicExplanation, 45000); // Alert logic every 45 seconds
 });
 {% endif %}
 </script>

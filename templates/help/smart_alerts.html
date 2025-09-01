@@ -7,13 +7,30 @@
     <div class="row">
         <div class="col-md-3">
             <div class="list-group">
-                <a href="{{ url_for('help_overview') }}" class="list-group-item list-group-item-action">Overview</a>
-                <a href="{{ url_for('help_getting_started') }}" class="list-group-item list-group-item-action">Getting Started</a>
-                <a href="{{ url_for('help_examples') }}" class="list-group-item list-group-item-action">Examples</a>
-                <a href="{{ url_for('help_smart_alerts') }}" class="list-group-item list-group-item-action active">Smart Alerts</a>
-                <a href="{{ url_for('help_api') }}" class="list-group-item list-group-item-action">API Documentation</a>
-                <a href="{{ url_for('help_troubleshooting') }}" class="list-group-item list-group-item-action">Troubleshooting</a>
-                <a href="{{ url_for('help_faq') }}" class="list-group-item list-group-item-action">FAQ</a>
+                <a href="{{ url_for('help_overview') }}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-home"></i> Overview
+                </a>
+                <a href="{{ url_for('help_getting_started') }}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-rocket"></i> Getting Started
+                </a>
+                <a href="{{ url_for('help_examples') }}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-lightbulb"></i> Examples
+                </a>
+                <a href="{{ url_for('help_smart_alerts') }}" class="list-group-item list-group-item-action active">
+                    <i class="fas fa-brain"></i> Smart Alerts
+                </a>
+                <a href="{{ url_for('help_api') }}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-code"></i> API Documentation
+                </a>
+                <a href="{{ url_for('help_cicd_integration') }}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-code-branch"></i> CI/CD Integration
+                </a>
+                <a href="{{ url_for('help_troubleshooting') }}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-wrench"></i> Troubleshooting
+                </a>
+                <a href="{{ url_for('help_faq') }}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-question"></i> FAQ
+                </a>
             </div>
         </div>
         <div class="col-md-9">

@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: silentcanary
-        image: 251132308531.dkr.ecr.ca-central-1.amazonaws.com/silentcanary:decimal-fix-3dbbf87
+        image: 251132308531.dkr.ecr.ca-central-1.amazonaws.com/silentcanary:timezone-fix-329c606
         ports:
         - containerPort: 5000
           name: http

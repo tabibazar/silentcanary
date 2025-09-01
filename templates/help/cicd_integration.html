@@ -1,0 +1,438 @@
+{% extends "base.html" %}
+
+{% block title %}CI/CD Integration - SilentCanary Help{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3">
+                <i class="fas fa-code-branch text-primary"></i> CI/CD Integration
+            </h1>
+            <a href="{{ url_for('help_overview') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left"></i> Back to Help
+            </a>
+        </div>
+
+        <!-- Overview Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-info-circle text-primary"></i> Overview</h5>
+            </div>
+            <div class="card-body">
+                <p>SilentCanary's CI/CD integration automatically creates and manages monitoring canaries for your deployments. This ensures every service has monitoring from day one and reduces manual setup overhead.</p>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-rocket text-success"></i> Benefits</h6>
+                        <ul class="small">
+                            <li>Automatic canary creation for new services</li>
+                            <li>Deployment tracking and correlation</li>
+                            <li>Template-based configuration</li>
+                            <li>Zero manual intervention required</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-plug text-info"></i> Supported Platforms</h6>
+                        <ul class="small">
+                            <li>GitHub Actions</li>
+                            <li>GitLab CI/CD</li>
+                            <li>Jenkins</li>
+                            <li>Azure DevOps</li>
+                            <li>Any CI/CD with webhook support</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Authentication -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-key text-warning"></i> API Authentication</h5>
+            </div>
+            <div class="card-body">
+                <h6>Generating Your API Key</h6>
+                <p class="small">Your API key is generated using this format:</p>
+                <pre class="bg-light p-3"><code>echo -n "YOUR_USER_ID:secret_FIRST8CHARS" | base64</code></pre>
+                
+                <div class="alert alert-info">
+                    <strong>Example:</strong> If your user ID is <code>abc123def456</code>, your secret would be <code>secret_abc123de</code>, and your API key would be:
+                    <pre class="mt-2 mb-0"><code>echo -n "abc123def456:secret_abc123de" | base64</code></pre>
+                </div>
+                
+                <h6 class="mt-3">Using the API Key</h6>
+                <p class="small">Include the API key in all requests:</p>
+                <pre class="bg-light p-3"><code>curl -H "X-API-Key: YOUR_BASE64_ENCODED_KEY" \
+     -H "Content-Type: application/json" \
+     https://silentcanary.com/api/v1/...</code></pre>
+            </div>
+        </div>
+
+        <!-- Deployment Webhook -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-webhook text-primary"></i> Deployment Webhook</h5>
+            </div>
+            <div class="card-body">
+                <h6>Endpoint</h6>
+                <pre class="bg-light p-3"><code>POST https://silentcanary.com/api/v1/deployment/webhook</code></pre>
+                
+                <h6>Request Body</h6>
+                <pre class="bg-light p-3"><code>{
+  "service_name": "my-api-service",
+  "environment": "production",
+  "deployment_id": "deploy-12345",
+  "commit_sha": "a1b2c3d4e5f6",
+  "branch": "main",
+  "pipeline_url": "https://github.com/org/repo/actions/runs/12345",
+  "template": "microservice",
+  "interval_minutes": 30,
+  "alert_type": "both",
+  "email": "team@company.com",
+  "slack_webhook": "https://hooks.slack.com/services/...",
+  "enable_smart_alerts": true
+}</code></pre>
+
+                <h6>Required Fields</h6>
+                <ul class="small">
+                    <li><strong>service_name:</strong> Name of the service being deployed</li>
+                    <li><strong>environment:</strong> Environment (production, staging, etc.)</li>
+                    <li><strong>deployment_id:</strong> Unique deployment identifier</li>
+                </ul>
+
+                <h6>Optional Fields</h6>
+                <ul class="small">
+                    <li><strong>template:</strong> Template to use (default, microservice, batch_job, api_service)</li>
+                    <li><strong>commit_sha:</strong> Git commit hash</li>
+                    <li><strong>branch:</strong> Git branch name</li>
+                    <li><strong>pipeline_url:</strong> Link to CI/CD pipeline</li>
+                    <li><strong>interval_minutes:</strong> Override default check-in interval</li>
+                    <li><strong>alert_type:</strong> email, slack, or both</li>
+                    <li><strong>email:</strong> Alert email address</li>
+                    <li><strong>slack_webhook:</strong> Slack webhook URL</li>
+                    <li><strong>enable_smart_alerts:</strong> Enable ML-based smart alerts</li>
+                </ul>
+
+                <h6>Response</h6>
+                <pre class="bg-light p-3"><code>{
+  "status": "created",
+  "canary_id": "uuid-here",
+  "canary_token": "token-here",
+  "message": "Created new canary for my-api-service in production",
+  "canary_url": "https://silentcanary.com/canary/uuid-here",
+  "check_in_url": "https://silentcanary.com/ping/token-here",
+  "deployment_info": {
+    "deployment_id": "deploy-12345",
+    "commit_sha": "a1b2c3d4e5f6",
+    "branch": "main",
+    "pipeline_url": "https://github.com/org/repo/actions/runs/12345"
+  }
+}</code></pre>
+            </div>
+        </div>
+
+        <!-- Templates -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-template text-success"></i> Canary Templates</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-cog text-primary"></i> default</h6>
+                        <ul class="small">
+                            <li><strong>Interval:</strong> 60 minutes</li>
+                            <li><strong>Alerts:</strong> Email + Slack</li>
+                            <li><strong>Smart Alerts:</strong> Enabled</li>
+                            <li><strong>Use Case:</strong> General services</li>
+                        </ul>
+
+                        <h6 class="mt-3"><i class="fas fa-cubes text-info"></i> microservice</h6>
+                        <ul class="small">
+                            <li><strong>Interval:</strong> 30 minutes</li>
+                            <li><strong>Alerts:</strong> Slack only</li>
+                            <li><strong>Smart Alerts:</strong> Enabled</li>
+                            <li><strong>Use Case:</strong> Microservices</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-tasks text-warning"></i> batch_job</h6>
+                        <ul class="small">
+                            <li><strong>Interval:</strong> 24 hours</li>
+                            <li><strong>Alerts:</strong> Email only</li>
+                            <li><strong>Smart Alerts:</strong> Disabled</li>
+                            <li><strong>Use Case:</strong> Daily batch jobs</li>
+                        </ul>
+
+                        <h6 class="mt-3"><i class="fas fa-tachometer-alt text-danger"></i> api_service</h6>
+                        <ul class="small">
+                            <li><strong>Interval:</strong> 15 minutes</li>
+                            <li><strong>Alerts:</strong> Email + Slack</li>
+                            <li><strong>Smart Alerts:</strong> Enabled</li>
+                            <li><strong>Use Case:</strong> High-frequency APIs</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Platform Examples -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-code text-primary"></i> Platform Examples</h5>
+            </div>
+            <div class="card-body">
+                <!-- GitHub Actions -->
+                <h6><i class="fab fa-github"></i> GitHub Actions</h6>
+                <pre class="bg-light p-3"><code>- name: Register with SilentCanary
+  run: |
+    curl -X POST https://silentcanary.com/api/v1/deployment/webhook \
+         -H "X-API-Key: ${% raw %}{{ secrets.SILENTCANARY_API_KEY }}{% endraw %}" \
+         -H "Content-Type: application/json" \
+         -d '{
+           "service_name": "${% raw %}{{ github.event.repository.name }}{% endraw %}",
+           "environment": "production",
+           "deployment_id": "${% raw %}{{ github.run_id }}{% endraw %}",
+           "commit_sha": "${% raw %}{{ github.sha }}{% endraw %}",
+           "branch": "${% raw %}{{ github.ref_name }}{% endraw %}",
+           "pipeline_url": "${% raw %}{{ github.server_url }}{% endraw %}/${% raw %}{{ github.repository }}{% endraw %}/actions/runs/${% raw %}{{ github.run_id }}{% endraw %}",
+           "template": "microservice"
+         }'</code></pre>
+
+                <!-- GitLab CI -->
+                <h6 class="mt-4"><i class="fab fa-gitlab"></i> GitLab CI/CD</h6>
+                <pre class="bg-light p-3"><code>register_canary:
+  script:
+    - |
+      curl -X POST https://silentcanary.com/api/v1/deployment/webhook \
+           -H "X-API-Key: $SILENTCANARY_API_KEY" \
+           -H "Content-Type: application/json" \
+           -d "{
+             \"service_name\": \"$CI_PROJECT_NAME\",
+             \"environment\": \"$CI_ENVIRONMENT_NAME\",
+             \"deployment_id\": \"$CI_PIPELINE_ID\",
+             \"commit_sha\": \"$CI_COMMIT_SHA\",
+             \"branch\": \"$CI_COMMIT_REF_NAME\",
+             \"pipeline_url\": \"$CI_PIPELINE_URL\",
+             \"template\": \"api_service\"
+           }"
+  only:
+    - main</code></pre>
+
+                <!-- Jenkins -->
+                <h6 class="mt-4"><i class="fas fa-hammer"></i> Jenkins</h6>
+                <pre class="bg-light p-3"><code>pipeline {
+    agent any
+    stages {
+        stage('Register Canary') {
+            steps {
+                script {
+                    def payload = [
+                        service_name: env.JOB_NAME,
+                        environment: "production",
+                        deployment_id: env.BUILD_ID,
+                        commit_sha: env.GIT_COMMIT,
+                        branch: env.GIT_BRANCH,
+                        pipeline_url: env.BUILD_URL,
+                        template: "default"
+                    ]
+                    
+                    sh """
+                        curl -X POST https://silentcanary.com/api/v1/deployment/webhook \\
+                             -H "X-API-Key: \${% raw %}{SILENTCANARY_API_KEY}{% endraw %}" \\
+                             -H "Content-Type: application/json" \\
+                             -d '${% raw %}{groovy.json.JsonOutput.toJson(payload)}{% endraw %}'
+                    """
+                }
+            }
+        }
+    }
+}</code></pre>
+            </div>
+        </div>
+
+        <!-- Integration in Code -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-code-branch text-info"></i> Integration in Application Code</h5>
+            </div>
+            <div class="card-body">
+                <p>Add check-ins to your application code to report health status:</p>
+                
+                <h6>Python Example</h6>
+                <pre class="bg-light p-3"><code>import requests
+import os
+
+def healthcheck():
+    """Send check-in to SilentCanary"""
+    canary_token = os.getenv('SILENTCANARY_TOKEN')
+    if canary_token:
+        try:
+            response = requests.get(
+                f"https://silentcanary.com/ping/{canary_token}",
+                params={"message": "Service running normally"},
+                timeout=5
+            )
+            print(f"SilentCanary check-in: {response.status_code}")
+        except Exception as e:
+            print(f"SilentCanary check-in failed: {e}")
+
+# Call periodically or in health check endpoint
+if __name__ == "__main__":
+    healthcheck()</code></pre>
+
+                <h6>Node.js Example</h6>
+                <pre class="bg-light p-3"><code>const axios = require('axios');
+
+async function healthcheck() {
+    const canaryToken = process.env.SILENTCANARY_TOKEN;
+    if (canaryToken) {
+        try {
+            const response = await axios.get(
+                `https://silentcanary.com/ping/${% raw %}{canaryToken}{% endraw %}`,
+                { 
+                    params: { message: "Service running normally" },
+                    timeout: 5000 
+                }
+            );
+            console.log(`SilentCanary check-in: ${% raw %}{response.status}{% endraw %}`);
+        } catch (error) {
+            console.log(`SilentCanary check-in failed: ${% raw %}{error.message}{% endraw %}`);
+        }
+    }
+}
+
+// Call periodically
+setInterval(healthcheck, 30 * 60 * 1000); // Every 30 minutes</code></pre>
+
+                <h6>Go Example</h6>
+                <pre class="bg-light p-3"><code>package main
+
+import (
+    "fmt"
+    "net/http"
+    "os"
+    "time"
+)
+
+func healthcheck() {
+    token := os.Getenv("SILENTCANARY_TOKEN")
+    if token == "" {
+        return
+    }
+    
+    client := &http.Client{Timeout: 5 * time.Second}
+    url := fmt.Sprintf("https://silentcanary.com/ping/%s?message=Service+running+normally", token)
+    
+    resp, err := client.Get(url)
+    if err != nil {
+        fmt.Printf("SilentCanary check-in failed: %v\n", err)
+        return
+    }
+    defer resp.Body.Close()
+    
+    fmt.Printf("SilentCanary check-in: %d\n", resp.StatusCode)
+}
+
+func main() {
+    // Call periodically
+    ticker := time.NewTicker(30 * time.Minute)
+    defer ticker.Stop()
+    
+    for {
+        select {
+        case <-ticker.C:
+            healthcheck()
+        }
+    }
+}</code></pre>
+            </div>
+        </div>
+
+        <!-- Best Practices -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-lightbulb text-warning"></i> Best Practices</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-check-circle text-success"></i> Do</h6>
+                        <ul class="small">
+                            <li>Use consistent naming conventions (service-environment)</li>
+                            <li>Set appropriate check-in intervals for your service type</li>
+                            <li>Enable smart alerts for production services</li>
+                            <li>Include deployment metadata for better tracking</li>
+                            <li>Use environment-specific templates</li>
+                            <li>Store API keys securely in CI/CD secrets</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-times-circle text-danger"></i> Don't</h6>
+                        <ul class="small">
+                            <li>Hardcode API keys in code or config files</li>
+                            <li>Use overly aggressive check-in intervals</li>
+                            <li>Create canaries for temporary/test services</li>
+                            <li>Ignore failed webhook calls in CI/CD</li>
+                            <li>Use the same canary for multiple environments</li>
+                            <li>Forget to implement actual health checks</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Troubleshooting -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-wrench text-danger"></i> Troubleshooting</h5>
+            </div>
+            <div class="card-body">
+                <h6>Common Issues</h6>
+                <div class="accordion" id="troubleshootingAccordion">
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse1">
+                                401 Unauthorized Error
+                            </button>
+                        </h2>
+                        <div id="collapse1" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                            <div class="accordion-body small">
+                                <strong>Cause:</strong> Invalid or malformed API key<br>
+                                <strong>Solution:</strong> Regenerate your API key using the correct format and ensure it's properly base64 encoded
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse2">
+                                Canary Not Created
+                            </button>
+                        </h2>
+                        <div id="collapse2" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                            <div class="accordion-body small">
+                                <strong>Cause:</strong> Missing required fields in request<br>
+                                <strong>Solution:</strong> Ensure service_name, environment, and deployment_id are included in the payload
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse3">
+                                Check-ins Not Working
+                            </button>
+                        </h2>
+                        <div id="collapse3" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                            <div class="accordion-body small">
+                                <strong>Cause:</strong> Incorrect token or URL<br>
+                                <strong>Solution:</strong> Use the check_in_url returned from the webhook response, or verify the token is correct
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

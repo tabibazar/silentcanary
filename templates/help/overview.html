@@ -27,6 +27,9 @@
                     <a href="{{ url_for('help_api') }}" class="list-group-item list-group-item-action">
                         <i class="fas fa-code"></i> API Documentation
                     </a>
+                    <a href="{{ url_for('help_cicd_integration') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-code-branch"></i> CI/CD Integration
+                    </a>
                     <a href="{{ url_for('help_troubleshooting') }}" class="list-group-item list-group-item-action">
                         <i class="fas fa-wrench"></i> Troubleshooting
                     </a>
@@ -83,6 +86,30 @@
                                         <i class="fas fa-bell fa-3x text-warning mb-3"></i>
                                         <h5>Multi-Channel Alerts</h5>
                                         <p class="small">Email and Slack notifications with rich context and actionable information.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- CI/CD Integration Feature -->
+                        <div class="row mt-4">
+                            <div class="col-md-12">
+                                <div class="card border-info">
+                                    <div class="card-body">
+                                        <div class="row align-items-center">
+                                            <div class="col-md-2 text-center">
+                                                <i class="fas fa-code-branch fa-3x text-info"></i>
+                                            </div>
+                                            <div class="col-md-8">
+                                                <h5 class="mb-2">CI/CD Integration</h5>
+                                                <p class="small mb-0">Automatically create and manage canaries during deployments. Supports GitHub Actions, GitLab CI/CD, Jenkins, and more.</p>
+                                            </div>
+                                            <div class="col-md-2 text-center">
+                                                <a href="{{ url_for('help_cicd_integration') }}" class="btn btn-info btn-sm">
+                                                    <i class="fas fa-arrow-right"></i> Learn More
+                                                </a>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

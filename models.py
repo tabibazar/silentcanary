@@ -37,15 +37,16 @@ smart_alerts_table = dynamodb.Table('SilentCanary_SmartAlerts')
 
 class User:
     def __init__(self, user_id=None, username=None, email=None, password_hash=None, 
-                 is_verified=False, user_timezone='UTC', created_at=None, last_login=None):
+                 is_verified=False, user_timezone='UTC', created_at=None, last_login=None, api_key=None):
         self.user_id = user_id or str(uuid.uuid4())
         self.username = username
         self.email = email
         self.password_hash = password_hash
         self.is_verified = is_verified
-        self.timezone = user_timezone
+        self.timezone = user_timezone or 'UTC'  # Default to UTC if None
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
         self.last_login = last_login
+        self.api_key = api_key
     
     def set_password(self, password):
         """Set password hash"""
@@ -73,8 +74,35 @@ class User:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         
-        user_tz = pytz.timezone(self.timezone)
+        # Default to UTC if timezone is None or invalid
+        timezone_str = self.timezone or 'UTC'
+        try:
+            user_tz = pytz.timezone(timezone_str)
+        except pytz.exceptions.UnknownTimeZoneError:
+            user_tz = pytz.UTC
+        
         return dt.astimezone(user_tz)
+    
+    def generate_api_key(self):
+        """Generate a new API key for this user"""
+        print(f"DEBUG: Generating API key for user {self.user_id}")
+        import base64
+        secret = f"secret_{self.user_id[:8]}"
+        credentials = f"{self.user_id}:{secret}"
+        self.api_key = base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
+        print(f"DEBUG: Generated API key: {self.api_key}")
+        result = self.save()
+        print(f"DEBUG: Save result: {result}")
+        return result
+    
+    def regenerate_api_key(self):
+        """Regenerate the API key"""
+        return self.generate_api_key()
+    
+    def delete_api_key(self):
+        """Delete the API key"""
+        self.api_key = None
+        return self.save()
     
     def save(self):
         """Save user to DynamoDB"""
@@ -91,6 +119,9 @@ class User:
             
             if self.last_login is not None:
                 item['last_login'] = self.last_login
+                
+            if self.api_key is not None:
+                item['api_key'] = self.api_key
             
             users_table.put_item(Item=item)
             return True
@@ -122,7 +153,8 @@ class User:
                     is_verified=item.get('is_verified', False),
                     user_timezone=item.get('timezone', 'UTC'),
                     created_at=item['created_at'],
-                    last_login=item.get('last_login')
+                    last_login=item.get('last_login'),
+                    api_key=item.get('api_key')
                 )
             return None
         except ClientError as e:
@@ -147,7 +179,8 @@ class User:
                     is_verified=item.get('is_verified', False),
                     user_timezone=item.get('timezone', 'UTC'),
                     created_at=item['created_at'],
-                    last_login=item.get('last_login')
+                    last_login=item.get('last_login'),
+                    api_key=item.get('api_key')
                 )
             return None
         except ClientError as e:
@@ -172,7 +205,8 @@ class User:
                     is_verified=item.get('is_verified', False),
                     user_timezone=item.get('timezone', 'UTC'),
                     created_at=item['created_at'],
-                    last_login=item.get('last_login')
+                    last_login=item.get('last_login'),
+                    api_key=item.get('api_key')
                 )
             return None
         except ClientError as e:
@@ -776,6 +810,29 @@ class CanaryLog:
             status='success',
             message=message
         )
+        return log.save()
+    
+    @staticmethod
+    def log_deployment(canary_id, deployment_info):
+        """Log a deployment event with metadata"""
+        import json
+        message = f"Deployment: {deployment_info.get('event', 'deployment')}"
+        if deployment_info.get('commit_sha'):
+            message += f" - {deployment_info['commit_sha'][:8]}"
+        if deployment_info.get('deployment_id'):
+            message += f" (ID: {deployment_info['deployment_id']})"
+        
+        log = CanaryLog(
+            canary_id=canary_id,
+            event_type='deployment',
+            status='success',
+            message=message
+        )
+        
+        # Store deployment metadata in user_agent field as JSON
+        # (could add a proper metadata field to the model later)
+        log.user_agent = json.dumps(deployment_info)
+        
         return log.save()
     
     def update_email_notification(self, status, timestamp=None):
