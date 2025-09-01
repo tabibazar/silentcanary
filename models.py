@@ -246,6 +246,26 @@ class Canary:
         if was_failed:
             recovery_msg = f"Canary recovered after missing check-ins{': ' + custom_message if custom_message else ''}"
             CanaryLog.log_recovery(self.canary_id, recovery_msg)
+        
+        # Trigger smart alert pattern learning if enabled (async to avoid blocking check-in)
+        try:
+            smart_alert = SmartAlert.get_by_canary_id(self.canary_id)
+            if smart_alert and smart_alert.is_enabled and smart_alert.should_update_patterns():
+                # Update patterns in background (don't block the check-in response)
+                import threading
+                def update_patterns():
+                    try:
+                        smart_alert.learn_patterns()
+                        print(f"✅ Background pattern update completed for canary {self.canary_id}")
+                    except Exception as e:
+                        print(f"Background pattern update failed for {self.canary_id}: {e}")
+                
+                thread = threading.Thread(target=update_patterns)
+                thread.daemon = True
+                thread.start()
+                print(f"🧠 Triggered background pattern update for canary {self.canary_id}")
+        except Exception as e:
+            print(f"Error checking smart alert patterns for {self.canary_id}: {e}")
     
     def is_overdue(self):
         """Check if canary is overdue"""
@@ -999,3 +1019,91 @@ class SmartAlert:
         
         # Consider it anomalous if this day has < 5% of normal activity
         return day_frequency < 0.05
+    
+    def should_update_patterns(self):
+        """Determine if patterns should be updated based on time and new data availability"""
+        if not self.is_enabled:
+            return False
+        
+        # Update patterns every hour for active learning
+        if self.last_analysis:
+            try:
+                last_analysis_time = datetime.fromisoformat(self.last_analysis.replace('Z', '+00:00'))
+                time_since_analysis = datetime.now(timezone.utc) - last_analysis_time
+                
+                # Update every hour if patterns exist, or every 15 minutes if no patterns yet
+                update_interval = timedelta(hours=1) if self.pattern_data else timedelta(minutes=15)
+                
+                return time_since_analysis > update_interval
+            except:
+                return True  # If we can't parse the time, update patterns
+        else:
+            return True  # Never analyzed before, so update
+    
+    def get_learning_progress(self):
+        """Get learning progress information for display"""
+        try:
+            # Get canary to analyze
+            canary = Canary.get_by_id(self.canary_id)
+            if not canary:
+                return {
+                    'status': 'error',
+                    'message': 'Canary not found',
+                    'progress': 0
+                }
+            
+            # Get check-in logs for learning period
+            end_time = datetime.now(timezone.utc)
+            start_time = end_time - timedelta(days=self.learning_period_days)
+            
+            logs_result = CanaryLog.get_by_canary_id(self.canary_id, limit=1000)
+            logs = logs_result['logs']
+            
+            # Filter to successful check-ins within learning period
+            checkin_times = []
+            for log in logs:
+                if log.event_type == 'ping' and log.status == 'success':
+                    log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                    if start_time <= log_time <= end_time:
+                        checkin_times.append(log_time)
+            
+            total_checkins = len(checkin_times)
+            min_required = 3
+            
+            # Calculate progress percentage
+            progress = min(100, (total_checkins / min_required) * 100)
+            
+            if total_checkins >= min_required:
+                status = 'ready'
+                message = f'Patterns learned from {total_checkins} check-ins'
+            elif total_checkins > 0:
+                status = 'learning'
+                message = f'Learning: {total_checkins}/{min_required} check-ins needed'
+            else:
+                status = 'waiting'
+                message = 'Waiting for check-ins to start learning'
+            
+            # Calculate pattern confidence if patterns exist
+            confidence = 0
+            if self.pattern_data and 'total_checkins' in self.pattern_data:
+                pattern_checkins = self.pattern_data.get('total_checkins', 0)
+                # Confidence increases with more data, maxes out at 100 check-ins
+                confidence = min(100, (pattern_checkins / 100) * 100)
+            
+            return {
+                'status': status,
+                'message': message,
+                'progress': round(progress, 1),
+                'total_checkins': total_checkins,
+                'min_required': min_required,
+                'confidence': round(confidence, 1),
+                'last_updated': self.last_analysis,
+                'learning_period_days': self.learning_period_days
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f'Error calculating progress: {e}',
+                'progress': 0,
+                'confidence': 0
+            }

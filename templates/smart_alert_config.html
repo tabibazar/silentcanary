@@ -63,11 +63,36 @@
                                         {% endif %}
                                     </td>
                                 </tr>
+                                <tr>
+                                    <td><strong>Learning Status:</strong></td>
+                                    <td>
+                                        <div id="learning-status">
+                                            <span class="badge bg-secondary">Loading...</span>
+                                        </div>
+                                    </td>
+                                </tr>
                             </table>
                         </div>
                         <div class="col-md-6">
+                            <!-- Learning Progress Card -->
+                            <div class="card" id="learning-progress-card">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-brain text-primary"></i> Learning Progress
+                                    </h6>
+                                    <div id="learning-progress-content">
+                                        <div class="text-center">
+                                            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                                <span class="visually-hidden">Loading...</span>
+                                            </div>
+                                            <p class="mt-2">Loading learning progress...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             {% if smart_alert.pattern_data and smart_alert.pattern_data.avg_interval %}
-                            <div class="card">
+                            <div class="card mt-3">
                                 <div class="card-body">
                                     <h6 class="card-title">Learned Patterns</h6>
                                     <p class="card-text">
@@ -199,5 +224,107 @@
 function updateSensitivityValue(value) {
     document.getElementById('sensitivity-value').textContent = Math.round(value * 100) + '%';
 }
+
+// Function to update learning progress
+async function updateLearningProgress() {
+    try {
+        const response = await fetch(`/smart_alert_progress/{{ canary.canary_id }}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch learning progress');
+        }
+        
+        const progress = await response.json();
+        
+        // Update learning status badge
+        const statusElement = document.getElementById('learning-status');
+        let statusBadge = '';
+        let progressHtml = '';
+        
+        switch(progress.status) {
+            case 'ready':
+                statusBadge = `<span class="badge bg-success"><i class="fas fa-check"></i> Ready</span>`;
+                break;
+            case 'learning':
+                statusBadge = `<span class="badge bg-warning"><i class="fas fa-cog fa-spin"></i> Learning</span>`;
+                break;
+            case 'waiting':
+                statusBadge = `<span class="badge bg-info"><i class="fas fa-clock"></i> Waiting</span>`;
+                break;
+            case 'error':
+                statusBadge = `<span class="badge bg-danger"><i class="fas fa-exclamation-triangle"></i> Error</span>`;
+                break;
+        }
+        
+        statusElement.innerHTML = statusBadge;
+        
+        // Update progress card content
+        if (progress.status !== 'error') {
+            progressHtml = `
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <small class="text-muted">Data Collection Progress</small>
+                        <small class="text-muted">${progress.progress}%</small>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar ${progress.status === 'ready' ? 'bg-success' : 'bg-primary'}" 
+                             role="progressbar" 
+                             style="width: ${progress.progress}%"
+                             aria-valuenow="${progress.progress}" 
+                             aria-valuemin="0" 
+                             aria-valuemax="100">
+                        </div>
+                    </div>
+                </div>
+                <p class="small mb-2">${progress.message}</p>`;
+                
+            if (progress.confidence > 0) {
+                progressHtml += `
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <small class="text-muted">Pattern Confidence</small>
+                            <small class="text-muted">${progress.confidence}%</small>
+                        </div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar bg-info" 
+                                 role="progressbar" 
+                                 style="width: ${progress.confidence}%"
+                                 aria-valuenow="${progress.confidence}" 
+                                 aria-valuemin="0" 
+                                 aria-valuemax="100">
+                            </div>
+                        </div>
+                    </div>`;
+            }
+            
+            if (progress.last_updated) {
+                const lastUpdated = new Date(progress.last_updated).toLocaleString();
+                progressHtml += `<small class="text-muted">Last updated: ${lastUpdated}</small>`;
+            }
+        } else {
+            progressHtml = `<p class="text-danger small mb-0">${progress.message}</p>`;
+        }
+        
+        document.getElementById('learning-progress-content').innerHTML = progressHtml;
+        
+    } catch (error) {
+        console.error('Error updating learning progress:', error);
+        document.getElementById('learning-progress-content').innerHTML = 
+            '<p class="text-danger small mb-0">Error loading progress</p>';
+    }
+}
+
+// Update progress immediately and then every 30 seconds
+{% if smart_alert and smart_alert.is_enabled %}
+document.addEventListener('DOMContentLoaded', function() {
+    updateLearningProgress();
+    setInterval(updateLearningProgress, 30000); // Update every 30 seconds
+});
+{% endif %}
 </script>
 {% endblock %}

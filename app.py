@@ -1080,6 +1080,27 @@ def relearn_patterns(canary_id):
     
     return redirect(url_for('smart_alert_config', canary_id=canary_id))
 
+@app.route('/smart_alert_progress/<canary_id>', methods=['GET'])
+@login_required
+def smart_alert_progress(canary_id):
+    """API endpoint to get learning progress for a Smart Alert"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        return jsonify({'status': 'error', 'message': 'Canary not found'}), 404
+    
+    smart_alert = SmartAlert.get_by_canary_id(canary_id)
+    if not smart_alert:
+        return jsonify({
+            'status': 'error', 
+            'message': 'Smart alerting is not enabled for this canary',
+            'progress': 0,
+            'confidence': 0
+        }), 404
+    
+    # Get learning progress information
+    progress = smart_alert.get_learning_progress()
+    return jsonify(progress)
+
 # Help Documentation Routes
 @app.route('/help')
 @app.route('/help/overview')
@@ -1397,6 +1418,7 @@ def check_failed_canaries():
         
         failed_count = 0
         smart_anomaly_count = 0
+        learning_updates = 0
         
         for canary in active_canaries:
             # Check for regular failures (overdue based on interval + grace)
@@ -1415,18 +1437,41 @@ def check_failed_canaries():
             # Check for smart alert anomalies (even if not technically overdue)
             elif canary.status != 'failed':
                 smart_alert = SmartAlert.get_by_canary_id(canary.canary_id)
-                if smart_alert and smart_alert.is_anomaly():
-                    print(f"🧠 Smart alert detected anomaly for '{canary.name}' - sending notifications")
+                if smart_alert and smart_alert.is_enabled:
+                    # Continuously update patterns if enabled
+                    try:
+                        # Check if patterns should be updated (every hour or when significant new data)
+                        should_update = smart_alert.should_update_patterns()
+                        if should_update:
+                            print(f"🧠 Updating patterns for Smart Alert '{canary.name}'")
+                            if smart_alert.learn_patterns():
+                                learning_updates += 1
+                                print(f"✅ Patterns updated successfully for '{canary.name}'")
+                            else:
+                                print(f"⚠️ Insufficient data for pattern update '{canary.name}'")
+                    except Exception as e:
+                        print(f"❌ Error updating patterns for '{canary.name}': {e}")
                     
-                    # Log the smart anomaly event
-                    smart_log = CanaryLog.log_miss(canary.canary_id, f"Smart alert detected anomaly: '{canary.name}' pattern deviation")
-                    
-                    # Send notifications with smart alert context
-                    send_smart_alert_notifications(canary, smart_log, smart_alert)
-                    smart_anomaly_count += 1
+                    # Check for anomalies
+                    if smart_alert.is_anomaly():
+                        print(f"🧠 Smart alert detected anomaly for '{canary.name}' - sending notifications")
+                        
+                        # Log the smart anomaly event
+                        smart_log = CanaryLog.log_miss(canary.canary_id, f"Smart alert detected anomaly: '{canary.name}' pattern deviation")
+                        
+                        # Send notifications with smart alert context
+                        send_smart_alert_notifications(canary, smart_log, smart_alert)
+                        smart_anomaly_count += 1
         
-        if failed_count > 0 or smart_anomaly_count > 0:
-            print(f"📧 Processed {failed_count} failed canaries and {smart_anomaly_count} smart anomalies")
+        if failed_count > 0 or smart_anomaly_count > 0 or learning_updates > 0:
+            status_parts = []
+            if failed_count > 0:
+                status_parts.append(f"{failed_count} failed canaries")
+            if smart_anomaly_count > 0:
+                status_parts.append(f"{smart_anomaly_count} smart anomalies")
+            if learning_updates > 0:
+                status_parts.append(f"{learning_updates} pattern updates")
+            print(f"📧 Processed {', '.join(status_parts)}")
         else:
             print("✅ All canaries are healthy")
 
