@@ -1658,8 +1658,10 @@ def send_notifications(canary, log_entry=None):
     
     <p>Please investigate your monitoring target immediately.</p>
     
+    <p><strong>Dashboard:</strong> <a href="https://silentcanary.com/dashboard">View Dashboard</a></p>
+    
     <hr>
-    <p><small>This alert was sent by SilentCanary</small></p>
+    <p><small>This alert was sent by <a href="https://silentcanary.com">SilentCanary</a></small></p>
     '''
     
     # Slack message with markdown formatting
@@ -1672,7 +1674,9 @@ Canary "*{canary.name}*" has failed to check in!
 • Grace period: {canary.grace_minutes} minutes
 • Check-in interval: {canary.interval_minutes} minutes
 
-Please investigate your monitoring target immediately."""
+Please investigate your monitoring target immediately.
+
+📊 Dashboard: https://silentcanary.com/dashboard"""
 
     from datetime import datetime, timezone
     
@@ -2003,11 +2007,11 @@ def send_smart_alert_notifications(canary, log_entry, smart_alert):
         <li>Consider if external factors might be affecting your schedule</li>
     </ol>
     
-    <p><strong>Dashboard:</strong> <a href="{request.url_root}dashboard">View Dashboard</a></p>
-    <p><strong>Smart Alerts:</strong> <a href="{request.url_root}smart_alert/{canary.canary_id}">Configure Smart Alerts</a></p>
+    <p><strong>Dashboard:</strong> <a href="https://silentcanary.com/dashboard">View Dashboard</a></p>
+    <p><strong>Smart Alerts:</strong> <a href="https://silentcanary.com/smart_alert/{canary.canary_id}">Configure Smart Alerts</a></p>
     
     <hr>
-    <small>This is a smart alert - meaning it was triggered by pattern analysis, not just a simple timeout.</small>
+    <small>This is a smart alert - meaning it was triggered by pattern analysis, not just a simple timeout. Learn more at <a href="https://silentcanary.com">SilentCanary.com</a></small>
     '''
     
     # Send notifications based on alert type
@@ -2063,9 +2067,14 @@ def send_smart_alert_notifications(canary, log_entry, smart_alert):
                                     "title": "Learning Period",
                                     "value": f"{smart_alert.learning_period_days} days",
                                     "short": True
+                                },
+                                {
+                                    "title": "Dashboard",
+                                    "value": "https://silentcanary.com/dashboard",
+                                    "short": False
                                 }
                             ],
-                            "footer": "SilentCanary Smart Alerts",
+                            "footer": "SilentCanary Smart Alerts - https://silentcanary.com",
                             "footer_icon": "🧠"
                         }
                     ]
