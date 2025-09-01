@@ -250,20 +250,28 @@ class Canary:
         # Trigger smart alert pattern learning if enabled (async to avoid blocking check-in)
         try:
             smart_alert = SmartAlert.get_by_canary_id(self.canary_id)
-            if smart_alert and smart_alert.is_enabled and smart_alert.should_update_patterns():
-                # Update patterns in background (don't block the check-in response)
-                import threading
-                def update_patterns():
-                    try:
-                        smart_alert.learn_patterns()
-                        print(f"✅ Background pattern update completed for canary {self.canary_id}")
-                    except Exception as e:
-                        print(f"Background pattern update failed for {self.canary_id}: {e}")
+            if smart_alert and smart_alert.is_enabled:
+                # Always update patterns after every 3rd check-in for real-time learning
+                logs_result = CanaryLog.get_by_canary_id(self.canary_id, limit=3)
+                recent_checkins = [log for log in logs_result['logs'] if log.event_type == 'ping' and log.status == 'success']
                 
-                thread = threading.Thread(target=update_patterns)
-                thread.daemon = True
-                thread.start()
-                print(f"🧠 Triggered background pattern update for canary {self.canary_id}")
+                # Update patterns every 3 successful check-ins or if time-based update is due
+                should_update = (len(recent_checkins) >= 3) or smart_alert.should_update_patterns()
+                
+                if should_update:
+                    # Update patterns in background (don't block the check-in response)
+                    import threading
+                    def update_patterns():
+                        try:
+                            smart_alert.learn_patterns()
+                            print(f"✅ Background pattern update completed for canary {self.canary_id}")
+                        except Exception as e:
+                            print(f"Background pattern update failed for {self.canary_id}: {e}")
+                    
+                    thread = threading.Thread(target=update_patterns)
+                    thread.daemon = True
+                    thread.start()
+                    print(f"🧠 Triggered background pattern update for canary {self.canary_id}")
         except Exception as e:
             print(f"Error checking smart alert patterns for {self.canary_id}: {e}")
     
@@ -1025,14 +1033,14 @@ class SmartAlert:
         if not self.is_enabled:
             return False
         
-        # Update patterns every hour for active learning
+        # Update patterns frequently for real-time learning
         if self.last_analysis:
             try:
                 last_analysis_time = datetime.fromisoformat(self.last_analysis.replace('Z', '+00:00'))
                 time_since_analysis = datetime.now(timezone.utc) - last_analysis_time
                 
-                # Update every hour if patterns exist, or every 15 minutes if no patterns yet
-                update_interval = timedelta(hours=1) if self.pattern_data else timedelta(minutes=15)
+                # Update every 5 minutes if patterns exist, or every 2 minutes if no patterns yet
+                update_interval = timedelta(minutes=5) if self.pattern_data else timedelta(minutes=2)
                 
                 return time_since_analysis > update_interval
             except:
@@ -1070,8 +1078,13 @@ class SmartAlert:
             total_checkins = len(checkin_times)
             min_required = 3
             
-            # Calculate progress percentage
-            progress = min(100, (total_checkins / min_required) * 100)
+            # Calculate progress percentage (more granular for better visual feedback)
+            if total_checkins == 0:
+                progress = 0
+            elif total_checkins < min_required:
+                progress = (total_checkins / min_required) * 90  # Show up to 90% before patterns are ready
+            else:
+                progress = 100
             
             if total_checkins >= min_required:
                 status = 'ready'
@@ -1087,8 +1100,8 @@ class SmartAlert:
             confidence = 0
             if self.pattern_data and 'total_checkins' in self.pattern_data:
                 pattern_checkins = self.pattern_data.get('total_checkins', 0)
-                # Confidence increases with more data, maxes out at 100 check-ins
-                confidence = min(100, (pattern_checkins / 100) * 100)
+                # Confidence increases with more data, maxes out at 20 check-ins for faster feedback
+                confidence = min(100, (pattern_checkins / 20) * 100)
             
             return {
                 'status': status,

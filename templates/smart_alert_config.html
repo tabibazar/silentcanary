@@ -319,11 +319,11 @@ async function updateLearningProgress() {
     }
 }
 
-// Update progress immediately and then every 30 seconds
+// Update progress immediately and then every 10 seconds for real-time feedback
 {% if smart_alert and smart_alert.is_enabled %}
 document.addEventListener('DOMContentLoaded', function() {
     updateLearningProgress();
-    setInterval(updateLearningProgress, 30000); // Update every 30 seconds
+    setInterval(updateLearningProgress, 10000); // Update every 10 seconds
 });
 {% endif %}
 </script>
