@@ -191,49 +191,26 @@
                 <div class="col-lg-2 col-md-6 mb-4">
                     <h6 class="mb-3 text-uppercase">Resources</h6>
                     <ul class="list-unstyled">
-                        {% if current_user.is_authenticated %}
                         <li class="mb-2">
-                            <a href="{{ url_for('help_smart_alerts') }}" class="text-muted text-decoration-none hover-primary">
+                            <a href="{{ url_for('resources_smart_alerts') }}" class="text-muted text-decoration-none hover-primary">
                                 <i class="fas fa-brain me-1"></i> Smart Alerts
                             </a>
                         </li>
                         <li class="mb-2">
-                            <a href="{{ url_for('help_cicd_integration') }}" class="text-muted text-decoration-none hover-primary">
-                                <i class="fas fa-code-branch me-1"></i> CI/CD Integration
+                            <a href="{{ url_for('resources_integrations') }}" class="text-muted text-decoration-none hover-primary">
+                                <i class="fas fa-code-branch me-1"></i> Integrations
                             </a>
                         </li>
                         <li class="mb-2">
-                            <a href="{{ url_for('help_troubleshooting') }}" class="text-muted text-decoration-none hover-primary">
-                                <i class="fas fa-wrench me-1"></i> Troubleshooting
+                            <a href="{{ url_for('resources_api') }}" class="text-muted text-decoration-none hover-primary">
+                                <i class="fas fa-code me-1"></i> API Reference
                             </a>
                         </li>
                         <li class="mb-2">
-                            <a href="{{ url_for('help_faq') }}" class="text-muted text-decoration-none hover-primary">
-                                <i class="fas fa-question me-1"></i> FAQ
+                            <a href="{{ url_for('resources_examples') }}" class="text-muted text-decoration-none hover-primary">
+                                <i class="fas fa-lightbulb me-1"></i> Examples
                             </a>
                         </li>
-                        {% else %}
-                        <li class="mb-2">
-                            <a href="{{ url_for('register') }}" class="text-muted text-decoration-none hover-primary">
-                                <i class="fas fa-brain me-1"></i> Smart Alerts
-                            </a>
-                        </li>
-                        <li class="mb-2">
-                            <a href="{{ url_for('register') }}" class="text-muted text-decoration-none hover-primary">
-                                <i class="fas fa-code-branch me-1"></i> CI/CD Integration
-                            </a>
-                        </li>
-                        <li class="mb-2">
-                            <a href="{{ url_for('register') }}" class="text-muted text-decoration-none hover-primary">
-                                <i class="fas fa-wrench me-1"></i> Troubleshooting
-                            </a>
-                        </li>
-                        <li class="mb-2">
-                            <a href="{{ url_for('register') }}" class="text-muted text-decoration-none hover-primary">
-                                <i class="fas fa-question me-1"></i> FAQ
-                            </a>
-                        </li>
-                        {% endif %}
                     </ul>
                 </div>
 
@@ -252,7 +229,7 @@
                             </a>
                         </li>
                         <li class="mb-2">
-                            <a href="#" class="text-muted text-decoration-none hover-primary">
+                            <a href="{{ url_for('status') }}" class="text-muted text-decoration-none hover-primary">
                                 <i class="fas fa-shield-alt me-1"></i> Status Page
                             </a>
                         </li>
@@ -269,22 +246,22 @@
                     <h6 class="mb-3 text-uppercase">Legal</h6>
                     <ul class="list-unstyled">
                         <li class="mb-2">
-                            <a href="#" class="text-muted text-decoration-none hover-primary">
+                            <a href="{{ url_for('terms_of_service') }}" class="text-muted text-decoration-none hover-primary">
                                 <i class="fas fa-file-contract me-1"></i> Terms of Service
                             </a>
                         </li>
                         <li class="mb-2">
-                            <a href="#" class="text-muted text-decoration-none hover-primary">
+                            <a href="{{ url_for('privacy_policy') }}" class="text-muted text-decoration-none hover-primary">
                                 <i class="fas fa-user-shield me-1"></i> Privacy Policy
                             </a>
                         </li>
                         <li class="mb-2">
-                            <a href="#" class="text-muted text-decoration-none hover-primary">
+                            <a href="{{ url_for('cookie_policy') }}" class="text-muted text-decoration-none hover-primary">
                                 <i class="fas fa-cookie-bite me-1"></i> Cookie Policy
                             </a>
                         </li>
                         <li class="mb-2">
-                            <a href="#" class="text-muted text-decoration-none hover-primary">
+                            <a href="{{ url_for('sla') }}" class="text-muted text-decoration-none hover-primary">
                                 <i class="fas fa-balance-scale me-1"></i> SLA
                             </a>
                         </li>

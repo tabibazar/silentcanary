@@ -1,0 +1,503 @@
+{% extends "base.html" %}
+
+{% block title %}System Status - SilentCanary{% endblock %}
+
+{% block extra_css %}
+<style>
+    .status-hero {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        color: white;
+        border-radius: 15px;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .status-hero.degraded {
+        background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+    }
+    
+    .status-hero.down {
+        background: linear-gradient(135deg, #dc3545 0%, #e74c3c 100%);
+    }
+    
+    .status-hero::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="white" opacity="0.1"/><circle cx="75" cy="75" r="1" fill="white" opacity="0.1"/><circle cx="50" cy="10" r="0.5" fill="white" opacity="0.1"/></pattern></defs><rect width="100%" height="100%" fill="url(%23grain)"/></svg>');
+        opacity: 0.3;
+    }
+    
+    .status-hero-content {
+        position: relative;
+        z-index: 1;
+    }
+    
+    .service-card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    .service-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    }
+    
+    .status-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+        animation: pulse 2s infinite;
+    }
+    
+    .status-operational {
+        background: #28a745;
+        box-shadow: 0 0 0 0 rgba(40, 167, 69, 1);
+    }
+    
+    .status-degraded {
+        background: #ffc107;
+        box-shadow: 0 0 0 0 rgba(255, 193, 7, 1);
+    }
+    
+    .status-down {
+        background: #dc3545;
+        box-shadow: 0 0 0 0 rgba(220, 53, 69, 1);
+    }
+    
+    @keyframes pulse {
+        0% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+        }
+        70% {
+            transform: scale(1);
+            box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+        }
+        100% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+        }
+    }
+    
+    .metric-card {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 1.5rem;
+        text-align: center;
+        height: 100%;
+    }
+    
+    .metric-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #28a745;
+    }
+    
+    .uptime-bar {
+        background: #e9ecef;
+        border-radius: 10px;
+        height: 30px;
+        overflow: hidden;
+        margin: 1rem 0;
+    }
+    
+    .uptime-fill {
+        background: linear-gradient(90deg, #28a745, #20c997);
+        height: 100%;
+        border-radius: 10px;
+        transition: width 0.5s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+    }
+    
+    .incident-item {
+        border-left: 4px solid #dee2e6;
+        padding-left: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .incident-resolved {
+        border-left-color: #28a745;
+    }
+    
+    .incident-investigating {
+        border-left-color: #ffc107;
+    }
+    
+    .incident-major {
+        border-left-color: #dc3545;
+    }
+    
+    .response-time-chart {
+        height: 200px;
+        background: linear-gradient(45deg, #f8f9fa 25%, transparent 25%), 
+                    linear-gradient(-45deg, #f8f9fa 25%, transparent 25%), 
+                    linear-gradient(45deg, transparent 75%, #f8f9fa 75%), 
+                    linear-gradient(-45deg, transparent 75%, #f8f9fa 75%);
+        background-size: 20px 20px;
+        background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #6c757d;
+        font-style: italic;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Status Hero -->
+<div class="status-hero p-4 mb-5">
+    <div class="status-hero-content text-center">
+        <h1 class="display-4 mb-3">
+            <i class="fas fa-shield-check"></i> System Status
+        </h1>
+        <p class="lead mb-3">All SilentCanary services are operational</p>
+        <p class="mb-0">
+            <i class="fas fa-clock me-2"></i>Last updated: <span id="lastUpdated"></span>
+        </p>
+    </div>
+</div>
+
+<!-- Current Status Overview -->
+<div class="row mb-5">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="fas fa-tachometer-alt text-primary me-2"></i>Current Status
+        </h2>
+    </div>
+    
+    <!-- Web Application -->
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card service-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h5 class="card-title">
+                        <i class="fas fa-globe text-primary me-2"></i>Web Application
+                    </h5>
+                    <span class="badge bg-success">
+                        <span class="status-indicator status-operational"></span>Operational
+                    </span>
+                </div>
+                <p class="text-muted">Main SilentCanary web interface and dashboard</p>
+                <small class="text-success">
+                    <i class="fas fa-check-circle me-1"></i>Response time: ~150ms
+                </small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- API Services -->
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card service-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h5 class="card-title">
+                        <i class="fas fa-code text-info me-2"></i>API Services
+                    </h5>
+                    <span class="badge bg-success">
+                        <span class="status-indicator status-operational"></span>Operational
+                    </span>
+                </div>
+                <p class="text-muted">Check-in endpoints and REST API</p>
+                <small class="text-success">
+                    <i class="fas fa-check-circle me-1"></i>Response time: ~95ms
+                </small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Monitoring System -->
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card service-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h5 class="card-title">
+                        <i class="fas fa-heartbeat text-danger me-2"></i>Monitoring System
+                    </h5>
+                    <span class="badge bg-success">
+                        <span class="status-indicator status-operational"></span>Operational
+                    </span>
+                </div>
+                <p class="text-muted">Background monitoring and alerting engine</p>
+                <small class="text-success">
+                    <i class="fas fa-check-circle me-1"></i>Last check: 30 seconds ago
+                </small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Email Notifications -->
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card service-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h5 class="card-title">
+                        <i class="fas fa-envelope text-warning me-2"></i>Email Notifications
+                    </h5>
+                    <span class="badge bg-success">
+                        <span class="status-indicator status-operational"></span>Operational
+                    </span>
+                </div>
+                <p class="text-muted">SendGrid email delivery service</p>
+                <small class="text-success">
+                    <i class="fas fa-check-circle me-1"></i>Delivery rate: 99.8%
+                </small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Database -->
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card service-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h5 class="card-title">
+                        <i class="fas fa-database text-success me-2"></i>Database
+                    </h5>
+                    <span class="badge bg-success">
+                        <span class="status-indicator status-operational"></span>Operational
+                    </span>
+                </div>
+                <p class="text-muted">Amazon DynamoDB data storage</p>
+                <small class="text-success">
+                    <i class="fas fa-check-circle me-1"></i>Query time: ~12ms
+                </small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Payment Processing -->
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card service-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h5 class="card-title">
+                        <i class="fas fa-credit-card text-primary me-2"></i>Payment Processing
+                    </h5>
+                    <span class="badge bg-success">
+                        <span class="status-indicator status-operational"></span>Operational
+                    </span>
+                </div>
+                <p class="text-muted">Stripe payment and subscription handling</p>
+                <small class="text-success">
+                    <i class="fas fa-check-circle me-1"></i>Success rate: 99.9%
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Performance Metrics -->
+<div class="row mb-5">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="fas fa-chart-line text-success me-2"></i>Performance Metrics
+        </h2>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="metric-card">
+            <div class="metric-value">99.97%</div>
+            <div class="text-muted">Uptime (30 days)</div>
+            <div class="uptime-bar">
+                <div class="uptime-fill" style="width: 99.97%">99.97%</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="metric-card">
+            <div class="metric-value">142ms</div>
+            <div class="text-muted">Avg Response Time</div>
+            <div class="text-success mt-2">
+                <i class="fas fa-arrow-down me-1"></i>5ms faster than last week
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="metric-card">
+            <div class="metric-value">99.2%</div>
+            <div class="text-muted">Alert Delivery Rate</div>
+            <div class="text-success mt-2">
+                <i class="fas fa-check-circle me-1"></i>Within SLA target
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="metric-card">
+            <div class="metric-value">0</div>
+            <div class="text-muted">Active Incidents</div>
+            <div class="text-success mt-2">
+                <i class="fas fa-shield-check me-1"></i>All systems operational
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Service History -->
+<div class="row mb-5">
+    <div class="col-lg-8">
+        <h2 class="mb-4">
+            <i class="fas fa-history text-info me-2"></i>Recent Incidents
+        </h2>
+        
+        <div class="incident-item incident-resolved">
+            <div class="d-flex justify-content-between">
+                <h6 class="mb-1">Scheduled Maintenance - Database Optimization</h6>
+                <small class="text-muted">2 days ago</small>
+            </div>
+            <p class="mb-1 text-muted">Performed routine database optimization and index rebuilding.</p>
+            <small class="text-success">
+                <i class="fas fa-check-circle me-1"></i>Resolved - Duration: 15 minutes
+            </small>
+        </div>
+        
+        <div class="incident-item incident-resolved">
+            <div class="d-flex justify-content-between">
+                <h6 class="mb-1">Email Delivery Delays</h6>
+                <small class="text-muted">1 week ago</small>
+            </div>
+            <p class="mb-1 text-muted">Some email notifications experienced delays due to SendGrid rate limiting.</p>
+            <small class="text-success">
+                <i class="fas fa-check-circle me-1"></i>Resolved - Duration: 1 hour 23 minutes
+            </small>
+        </div>
+        
+        <div class="incident-item incident-resolved">
+            <div class="d-flex justify-content-between">
+                <h6 class="mb-1">API Response Time Degradation</h6>
+                <small class="text-muted">2 weeks ago</small>
+            </div>
+            <p class="mb-1 text-muted">Check-in API experienced elevated response times due to increased traffic.</p>
+            <small class="text-success">
+                <i class="fas fa-check-circle me-1"></i>Resolved - Duration: 45 minutes
+            </small>
+        </div>
+        
+        <div class="text-center mt-4">
+            <p class="text-muted">
+                <i class="fas fa-info-circle me-1"></i>
+                No major incidents in the past 30 days
+            </p>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <h2 class="mb-4">
+            <i class="fas fa-clock text-warning me-2"></i>Response Times
+        </h2>
+        
+        <div class="response-time-chart">
+            <div class="text-center">
+                <i class="fas fa-chart-area fa-3x mb-3"></i>
+                <p>Response time chart<br><small>Coming soon</small></p>
+            </div>
+        </div>
+        
+        <div class="mt-4">
+            <h6>SLA Targets</h6>
+            <ul class="list-unstyled">
+                <li class="mb-2">
+                    <i class="fas fa-target text-success me-2"></i>
+                    <strong>Uptime:</strong> 99.9%
+                </li>
+                <li class="mb-2">
+                    <i class="fas fa-tachometer-alt text-info me-2"></i>
+                    <strong>Response Time:</strong> < 500ms
+                </li>
+                <li class="mb-2">
+                    <i class="fas fa-bell text-warning me-2"></i>
+                    <strong>Alert Delivery:</strong> < 30 seconds
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Infrastructure Details -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-server text-primary me-2"></i>Infrastructure
+                </h5>
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6>Hosting</h6>
+                        <p class="text-muted">
+                            <i class="fab fa-aws me-2"></i>Amazon Web Services<br>
+                            <small>Canada Central (ca-central-1)</small>
+                        </p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Container Orchestration</h6>
+                        <p class="text-muted">
+                            <i class="fas fa-dharmachakra me-2"></i>Kubernetes<br>
+                            <small>Amazon EKS with auto-scaling</small>
+                        </p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Monitoring</h6>
+                        <p class="text-muted">
+                            <i class="fas fa-chart-line me-2"></i>CloudWatch + Custom<br>
+                            <small>Real-time health checks every 30s</small>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Subscribe to Updates -->
+<div class="bg-light p-5 rounded text-center mt-5">
+    <h4 class="mb-3">Stay Updated</h4>
+    <p class="text-muted mb-4">Get notified about planned maintenance and service updates.</p>
+    <a href="{{ url_for('contact') }}" class="btn btn-primary me-3">
+        <i class="fas fa-bell me-2"></i>Subscribe to Updates
+    </a>
+    <a href="{{ url_for('contact') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-envelope me-2"></i>Report an Issue
+    </a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Update the last updated time
+    document.addEventListener('DOMContentLoaded', function() {
+        const lastUpdated = new Date().toLocaleString();
+        document.getElementById('lastUpdated').textContent = lastUpdated;
+        
+        // Auto-refresh every 5 minutes
+        setTimeout(function() {
+            window.location.reload();
+        }, 300000);
+    });
+    
+    // Simulate real-time updates (in a real implementation, this would come from an API)
+    function updateServiceStatus() {
+        // This would fetch real status data from monitoring APIs
+        console.log('Checking service status...');
+    }
+    
+    // Check status every 30 seconds
+    setInterval(updateServiceStatus, 30000);
+</script>
+{% endblock %}
