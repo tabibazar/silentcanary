@@ -14,20 +14,20 @@ import os
 import uuid
 import pytz
 import requests
-import stripe
-
-# Import our DynamoDB models
+import time
+# Import our DynamoDB models  
 from models import User, Canary, CanaryLog, SmartAlert, Subscription, get_dynamodb_resource
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Configure Stripe
-stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
+# Stripe removed - using Buy Me Coffee donation model
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'asdfkjahc rha384y92834yc cx832b48234918xb487214jhasf')
 app.config['PREFERRED_URL_SCHEME'] = 'https'
+
+# We'll add route debugging at the end of the file
 
 # Handle proxy headers for HTTPS detection
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -45,6 +45,23 @@ app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'auth@
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+
+@login_manager.unauthorized_handler
+def unauthorized_callback():
+    print(f"🚫 Unauthorized access attempt to: {request.endpoint}")
+    print(f"🚫 Request URL: {request.url}")
+    print(f"🚫 Request path: {request.path}")
+    return redirect(url_for('login'))
+
+@app.before_request
+def log_all_requests():
+    print(f"📍 REQUEST: {request.method} {request.path} -> Endpoint: {request.endpoint}")
+    if request.path.startswith('/upgrade/'):
+        print(f"📍 UPGRADE REQUEST INTERCEPTED: {request.path}")
+        print(f"📍 User authenticated: {current_user.is_authenticated}")
+        if current_user.is_authenticated:
+            print(f"📍 User ID: {current_user.user_id}")
+    return None  # Continue processing
 mail = Mail(app)
 
 # Initialize scheduler
@@ -137,6 +154,7 @@ class SettingsForm(FlaskForm):
     username = StringField('Username', render_kw={'readonly': True})
     email = StringField('Email', render_kw={'readonly': True})  
     timezone = SelectField('Timezone', choices=[], validators=[Optional()])
+    anthropic_api_key = StringField('Anthropic API Key (Optional)', validators=[Optional()], render_kw={'placeholder': 'sk-ant-api03-... (for AI-powered insights)'})
     current_password = PasswordField('Current Password')
     new_password = PasswordField('New Password', validators=[Optional(), Length(min=8)])
     confirm_password = PasswordField('Confirm New Password', validators=[Optional(), EqualTo('new_password')])
@@ -180,6 +198,33 @@ def health():
     except Exception as e:
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 503
 
+@app.route('/debug/auth')
+def debug_auth():
+    """Debug authentication status"""
+    print(f"🔍 Debug auth check - is_authenticated: {current_user.is_authenticated}")
+    if current_user.is_authenticated:
+        print(f"🔍 Current user ID: {current_user.user_id}")
+        return jsonify({
+            'authenticated': True,
+            'user_id': current_user.user_id,
+            'username': current_user.username
+        })
+    else:
+        print("🔍 User not authenticated")
+        return jsonify({'authenticated': False})
+
+@app.route('/debug/upgrade/<plan>')  
+def debug_upgrade_route(plan):
+    """Test upgrade route without auth"""
+    print(f"🧪 Debug upgrade route called with plan: {plan}")
+    return jsonify({'plan': plan, 'status': 'route_working'})
+
+@app.route('/debug/test')
+def debug_test():
+    """Simple test route to verify deployment"""
+    print("🧪 Debug test route called")
+    return jsonify({'status': 'test_working', 'timestamp': datetime.now().isoformat()})
+
 @app.route('/')
 def index():
     if current_user.is_authenticated:
@@ -212,8 +257,7 @@ def register():
         user.set_password(form.password.data)
         
         if user.save():
-            # Create default free subscription for new user
-            Subscription.create_default_subscription(user.user_id)
+            # No subscription needed - unlimited free service
             
             # Send verification email automatically
             try:
@@ -376,12 +420,7 @@ def verify_email(token):
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    # Get or create subscription for user
-    subscription = Subscription.get_by_user_id(current_user.user_id)
-    if not subscription:
-        # Create default subscription if none exists (for existing users)
-        Subscription.create_default_subscription(current_user.user_id)
-        subscription = Subscription.get_by_user_id(current_user.user_id)
+    # No subscription limits - unlimited canaries
     
     # Get filter parameters
     tag_filter = request.args.get('tag')
@@ -389,6 +428,18 @@ def dashboard():
     
     # Get all user's canaries
     canaries = Canary.get_by_user_id(current_user.user_id)
+    
+    # Add smart alert information to each canary
+    for canary in canaries:
+        smart_alert = SmartAlert.get_by_canary_id(canary.canary_id)
+        canary.smart_alert_enabled = smart_alert and smart_alert.is_enabled
+        
+        # Add smart alert tag if enabled
+        if canary.smart_alert_enabled:
+            if not canary.tags:
+                canary.tags = []
+            if 'Smart Alerts' not in canary.tags:
+                canary.tags.append('Smart Alerts')
     
     # Apply filters
     filtered_canaries = canaries
@@ -414,14 +465,9 @@ def dashboard():
         status = canary.status
         status_counts[status] = status_counts.get(status, 0) + 1
     
-    # Get subscription usage information
-    usage = subscription.get_usage()
-    
     return render_template('dashboard.html', 
                          canaries=filtered_canaries,
                          all_canaries=canaries,
-                         subscription=subscription,
-                         usage=usage,
                          all_tags=sorted(all_tags),
                          tag_counts=tag_counts,
                          status_counts=status_counts,
@@ -603,137 +649,9 @@ def admin_update_email(user_id):
     
     return redirect(url_for('admin'))
 
-@app.route('/subscription')
-@login_required
-def subscription():
-    """View subscription details and plans"""
-    subscription = Subscription.get_by_user_id(current_user.user_id)
-    if not subscription:
-        Subscription.create_default_subscription(current_user.user_id)
-        subscription = Subscription.get_by_user_id(current_user.user_id)
-    
-    usage = subscription.get_usage()
-    return render_template('subscription_plans.html', subscription=subscription, usage=usage)
+# Subscription functionality removed - using Buy Me Coffee instead
 
-@app.route('/upgrade/<plan>')
-@login_required
-def upgrade_plan(plan):
-    """Create Stripe checkout session for plan upgrade"""
-    # Define plan configuration with Stripe price IDs
-    plan_config = {
-        'starter': {
-            'limit': 3,
-            'price_id': 'price_1S2esLC1JljIJA9acmj2iber',  # $5/month
-            'amount': 500  # $5.00 in cents
-        },
-        'pro': {
-            'limit': 10,
-            'price_id': 'price_1S2esMC1JljIJA9alWy4bz60',  # $15/month  
-            'amount': 1500  # $15.00 in cents
-        },
-        'business': {
-            'limit': 50,
-            'price_id': 'price_1S2esMC1JljIJA9axdIKPJGI',  # $50/month
-            'amount': 5000  # $50.00 in cents
-        }
-    }
-    
-    if plan not in plan_config:
-        flash('Invalid subscription plan')
-        return redirect(url_for('subscription'))
-    
-    # Get or create subscription
-    subscription = Subscription.get_by_user_id(current_user.user_id)
-    if not subscription:
-        Subscription.create_default_subscription(current_user.user_id)
-        subscription = Subscription.get_by_user_id(current_user.user_id)
-    
-    try:
-        # Create Stripe customer if needed
-        if not subscription.stripe_customer_id:
-            if not subscription.create_stripe_customer():
-                flash('Failed to create payment profile. Please try again.')
-                return redirect(url_for('subscription'))
-        
-        # Create Stripe checkout session
-        checkout_session = stripe.checkout.Session.create(
-            customer=subscription.stripe_customer_id,
-            payment_method_types=['card'],
-            line_items=[{
-                'price': plan_config[plan]['price_id'],
-                'quantity': 1,
-            }],
-            mode='subscription',
-            success_url=url_for('subscription_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
-            cancel_url=url_for('subscription', _external=True),
-            metadata={
-                'user_id': current_user.user_id,
-                'subscription_id': subscription.subscription_id,
-                'plan': plan
-            }
-        )
-        
-        # Redirect to Stripe Checkout
-        return redirect(checkout_session.url, code=303)
-        
-    except Exception as e:
-        print(f"Error creating checkout session: {e}")
-        flash('Failed to create checkout session. Please try again.')
-        return redirect(url_for('subscription'))
-
-@app.route('/subscription/success')
-@login_required 
-def subscription_success():
-    """Handle successful subscription payment"""
-    session_id = request.args.get('session_id')
-    
-    if not session_id:
-        flash('Invalid session')
-        return redirect(url_for('subscription'))
-    
-    try:
-        # Retrieve the checkout session
-        checkout_session = stripe.checkout.Session.retrieve(session_id)
-        
-        if checkout_session.payment_status == 'paid':
-            # Get subscription details from metadata
-            plan = checkout_session.metadata.get('plan')
-            
-            # Define plan limits
-            plan_limits = {
-                'starter': 3,
-                'pro': 10,
-                'business': 50
-            }
-            
-            # Update subscription
-            subscription = Subscription.get_by_user_id(current_user.user_id)
-            if subscription and plan in plan_limits:
-                subscription.plan_name = plan
-                subscription.canary_limit = plan_limits[plan]
-                subscription.status = 'active'
-                
-                # Get Stripe subscription details
-                if checkout_session.subscription:
-                    stripe_subscription = stripe.Subscription.retrieve(checkout_session.subscription)
-                    subscription.stripe_subscription_id = stripe_subscription.id
-                    subscription.current_period_start = datetime.fromtimestamp(stripe_subscription.current_period_start).isoformat()
-                    subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end).isoformat()
-                
-                if subscription.save():
-                    flash(f'🎉 Successfully upgraded to {plan.title()} plan! You can now create up to {plan_limits[plan]} canaries.')
-                else:
-                    flash('Subscription updated but failed to save locally. Please contact support.')
-            else:
-                flash('Failed to update subscription. Please contact support.')
-        else:
-            flash('Payment was not successful. Please try again.')
-            
-    except Exception as e:
-        print(f"Error processing successful subscription: {e}")
-        flash('Error processing subscription. Please contact support if you were charged.')
-    
-    return redirect(url_for('subscription'))
+# All subscription and payment functionality removed - using Buy Me Coffee donation model
 
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
@@ -854,179 +772,12 @@ def resources_examples():
     """Resources: Examples page"""
     return render_template('help/examples.html')
 
-@app.route('/webhook/stripe', methods=['POST'])
-def stripe_webhook():
-    """Handle Stripe webhooks"""
-    payload = request.get_data()
-    sig_header = request.headers.get('Stripe-Signature')
-    endpoint_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
-    
-    if not endpoint_secret:
-        print('Webhook secret not configured')
-        return '', 400
-    
-    try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, endpoint_secret
-        )
-    except ValueError:
-        print('Invalid payload')
-        return '', 400
-    except stripe.error.SignatureVerificationError:
-        print('Invalid signature')
-        return '', 400
-    
-    # Handle the event
-    if event['type'] == 'checkout.session.completed':
-        session = event['data']['object']
-        print(f'Checkout session completed: {session["id"]}')
-        
-    elif event['type'] == 'invoice.payment_succeeded':
-        invoice = event['data']['object']
-        subscription_id = invoice['subscription']
-        customer_id = invoice['customer']
-        
-        # Update subscription status
-        try:
-            stripe_subscription = stripe.Subscription.retrieve(subscription_id)
-            
-            # Find our subscription by Stripe customer ID
-            from boto3.dynamodb.conditions import Key
-            dynamodb = get_dynamodb_resource()
-            subscriptions_table = dynamodb.Table('SilentCanary_Subscriptions')
-            
-            response = subscriptions_table.query(
-                IndexName='stripe-customer-index',
-                KeyConditionExpression=Key('stripe_customer_id').eq(customer_id)
-            )
-            
-            if response['Items']:
-                subscription_data = response['Items'][0]
-                subscription = Subscription(
-                    subscription_id=subscription_data['subscription_id'],
-                    user_id=subscription_data['user_id'],
-                    stripe_subscription_id=subscription_data.get('stripe_subscription_id'),
-                    stripe_customer_id=subscription_data.get('stripe_customer_id'),
-                    status=subscription_data['status'],
-                    plan_name=subscription_data['plan_name'],
-                    canary_limit=subscription_data['canary_limit'],
-                    current_period_start=subscription_data.get('current_period_start'),
-                    current_period_end=subscription_data.get('current_period_end'),
-                    created_at=subscription_data['created_at']
-                )
-                
-                # Update with current Stripe data
-                subscription.status = stripe_subscription.status
-                subscription.current_period_start = datetime.fromtimestamp(stripe_subscription.current_period_start).isoformat()
-                subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end).isoformat()
-                subscription.save()
-                
-                print(f'Updated subscription {subscription.subscription_id} status to {subscription.status}')
-                
-        except Exception as e:
-            print(f'Error handling payment succeeded webhook: {e}')
-    
-    elif event['type'] == 'invoice.payment_failed':
-        invoice = event['data']['object']
-        subscription_id = invoice['subscription']
-        customer_id = invoice['customer']
-        
-        # Handle failed payment - mark subscription as past_due
-        try:
-            # Find our subscription by Stripe customer ID  
-            dynamodb = get_dynamodb_resource()
-            subscriptions_table = dynamodb.Table('SilentCanary_Subscriptions')
-            
-            response = subscriptions_table.query(
-                IndexName='stripe-customer-index',
-                KeyConditionExpression=Key('stripe_customer_id').eq(customer_id)
-            )
-            
-            if response['Items']:
-                subscription_data = response['Items'][0]
-                subscription = Subscription(
-                    subscription_id=subscription_data['subscription_id'],
-                    user_id=subscription_data['user_id'],
-                    stripe_subscription_id=subscription_data.get('stripe_subscription_id'),
-                    stripe_customer_id=subscription_data.get('stripe_customer_id'),
-                    status=subscription_data['status'],
-                    plan_name=subscription_data['plan_name'],
-                    canary_limit=subscription_data['canary_limit'],
-                    current_period_start=subscription_data.get('current_period_start'),
-                    current_period_end=subscription_data.get('current_period_end'),
-                    created_at=subscription_data['created_at']
-                )
-                
-                subscription.status = 'past_due'
-                subscription.save()
-                
-                print(f'Marked subscription {subscription.subscription_id} as past_due')
-                
-        except Exception as e:
-            print(f'Error handling payment failed webhook: {e}')
-    
-    elif event['type'] == 'customer.subscription.deleted':
-        subscription_obj = event['data']['object']
-        subscription_id = subscription_obj['id']
-        customer_id = subscription_obj['customer']
-        
-        # Handle subscription cancellation
-        try:
-            # Find our subscription by Stripe customer ID
-            dynamodb = get_dynamodb_resource()
-            subscriptions_table = dynamodb.Table('SilentCanary_Subscriptions')
-            
-            response = subscriptions_table.query(
-                IndexName='stripe-customer-index', 
-                KeyConditionExpression=Key('stripe_customer_id').eq(customer_id)
-            )
-            
-            if response['Items']:
-                subscription_data = response['Items'][0]
-                subscription = Subscription(
-                    subscription_id=subscription_data['subscription_id'],
-                    user_id=subscription_data['user_id'],
-                    stripe_subscription_id=subscription_data.get('stripe_subscription_id'),
-                    stripe_customer_id=subscription_data.get('stripe_customer_id'),
-                    status=subscription_data['status'],
-                    plan_name=subscription_data['plan_name'],
-                    canary_limit=subscription_data['canary_limit'],
-                    current_period_start=subscription_data.get('current_period_start'),
-                    current_period_end=subscription_data.get('current_period_end'),
-                    created_at=subscription_data['created_at']
-                )
-                
-                # Downgrade to free plan
-                subscription.plan_name = 'free'
-                subscription.canary_limit = 1
-                subscription.status = 'canceled'
-                subscription.stripe_subscription_id = None
-                subscription.save()
-                
-                print(f'Downgraded subscription {subscription.subscription_id} to free plan')
-                
-        except Exception as e:
-            print(f'Error handling subscription deleted webhook: {e}')
-    
-    else:
-        print(f'Unhandled event type: {event["type"]}')
-    
-    return '', 200
+# Stripe webhooks removed - using Buy Me Coffee donation model
 
 @app.route('/create_canary', methods=['GET', 'POST'])
 @login_required
 def create_canary():
-    # Check subscription limits
-    subscription = Subscription.get_by_user_id(current_user.user_id)
-    if not subscription:
-        # Create default subscription if none exists (for existing users)
-        Subscription.create_default_subscription(current_user.user_id)
-        subscription = Subscription.get_by_user_id(current_user.user_id)
-    
-    if not subscription.can_create_canary():
-        usage = subscription.get_usage()
-        flash(f'You have reached your canary limit ({usage["canary_limit"]}). Please upgrade your plan to create more canaries.')
-        return redirect(url_for('dashboard'))
+    # No subscription limits - unlimited canaries with Buy Me Coffee model
     
     form = CanaryForm()
     if form.validate_on_submit():
@@ -1053,9 +804,7 @@ def create_canary():
         else:
             flash('Failed to create canary. Please try again.')
     
-    # Add subscription info to template context
-    usage = subscription.get_usage()
-    return render_template('create_canary.html', form=form, subscription=subscription, usage=usage)
+    return render_template('create_canary.html', form=form)
 
 @app.route('/checkin/<token>', methods=['GET', 'POST'])
 def checkin(token):
@@ -1248,8 +997,31 @@ def settings():
             # Update timezone
             current_user.timezone = form.timezone.data
             
+            # Update Anthropic API key with validation
+            new_api_key = form.anthropic_api_key.data.strip() if form.anthropic_api_key.data else None
+            api_key_validated = False
+            
+            # Validate API key if provided and changed
+            if new_api_key and new_api_key != current_user.anthropic_api_key:
+                is_valid, message = validate_anthropic_api_key(new_api_key)
+                if is_valid:
+                    current_user.anthropic_api_key = new_api_key
+                    flash(f'Settings updated successfully! {message}', 'success')
+                    api_key_validated = True
+                else:
+                    flash(f'API key validation failed: {message}', 'error')
+                    return render_template('settings.html', form=form)
+            elif new_api_key is None and current_user.anthropic_api_key:
+                # User is clearing the key
+                current_user.anthropic_api_key = None
+                flash('Settings updated successfully! AI features disabled.', 'info')
+                api_key_validated = True
+            
+            # Save changes
             if current_user.save():
-                flash('Settings updated successfully!')
+                # Only show generic success if we haven't shown a specific API key message
+                if not api_key_validated:
+                    flash('Settings updated successfully!')
             else:
                 flash('Failed to update settings.')
             return redirect(url_for('settings'))
@@ -1259,6 +1031,8 @@ def settings():
     form.email.data = current_user.email
     if not form.timezone.data:
         form.timezone.data = current_user.timezone or 'UTC'
+    if not form.anthropic_api_key.data:
+        form.anthropic_api_key.data = current_user.anthropic_api_key or ''
     
     # Get user's API keys
     from models import APIKey
@@ -1763,7 +1537,7 @@ def smart_alert_timeline(canary_id):
     
     if recent_logs:
         pattern_data = smart_alert.pattern_data or {}
-        expected_interval = pattern_data.get('expected_interval', 60)  # Default 1 hour
+        expected_interval = float(pattern_data.get('expected_interval', 60))  # Default 1 hour
         interval_std = float(pattern_data.get('interval_std', 30))  # Default 30 min std
         
         prev_checkin = None
@@ -1831,6 +1605,11 @@ def smart_alert_timeline(canary_id):
             else:
                 timeline_data['summary'] = f"{normal_count} of {total_checkins} check-ins are normal. {anomaly_count} check-ins show unusual timing patterns."
     
+    # Add AI enhancement if user has API key
+    user = User.get_by_id(canary.user_id)
+    if user and user.anthropic_api_key:
+        timeline_data = enhance_smart_alert_timeline(timeline_data, canary, smart_alert, user.anthropic_api_key)
+    
     return jsonify(timeline_data)
 
 @app.route('/smart_alert_logic/<canary_id>', methods=['GET'])
@@ -1853,29 +1632,44 @@ def smart_alert_logic(canary_id):
     
     if smart_alert.pattern_data:
         pattern_data = smart_alert.pattern_data
-        expected_interval = pattern_data.get('expected_interval', 60)
+        expected_interval = float(pattern_data.get('expected_interval', 60))
         sensitivity = float(smart_alert.sensitivity)
         interval_std = float(pattern_data.get('interval_std', 30))
         
-        # Calculate actual alert thresholds
-        alert_threshold_minutes = expected_interval * (1 + sensitivity)
-        warning_threshold_minutes = expected_interval * (1 + sensitivity * 0.7)
+        # Calculate actual alert thresholds using the same logic as is_anomaly method
+        avg_interval = float(pattern_data.get('avg_interval', expected_interval))
+        sensitivity_factor = sensitivity
+        
+        if interval_std > 0:
+            # Use standard deviations but with minimum buffer (same as is_anomaly)
+            threshold_multiplier = max(1.5, 3.0 - sensitivity_factor)  # 1.5 to 2.0 range
+            alert_threshold_minutes = avg_interval + (interval_std * threshold_multiplier)
+        else:
+            # Percentage-based threshold (same as is_anomaly)
+            threshold_percentage = max(0.3, 1.0 - (sensitivity_factor * 0.4))  # 0.3 to 0.6 range
+            alert_threshold_minutes = avg_interval * (1 + threshold_percentage)
+        
+        warning_threshold_minutes = alert_threshold_minutes * 0.8  # 80% of alert threshold
         
         logic_data['current_thresholds'] = [
             {
                 'condition': 'Critical Alert Threshold',
-                'value': f'{alert_threshold_minutes:.1f} minutes late'
+                'value': f'{alert_threshold_minutes:.1f} minutes since last check-in'
             },
             {
                 'condition': 'Warning Threshold',  
-                'value': f'{warning_threshold_minutes:.1f} minutes late'
+                'value': f'{warning_threshold_minutes:.1f} minutes since last check-in'
             },
             {
-                'condition': 'Expected Interval',
+                'condition': 'Learned Average Interval',
+                'value': f'{avg_interval:.1f} minutes'
+            },
+            {
+                'condition': 'Configured Expected Interval',
                 'value': f'{expected_interval:.1f} minutes'
             },
             {
-                'condition': 'Normal Variance Accepted',
+                'condition': 'Normal Variance (1 std dev)',
                 'value': f'±{interval_std:.1f} minutes'
             },
             {
@@ -1920,16 +1714,378 @@ def smart_alert_logic(canary_id):
                     'reason': reason
                 })
         
-        logic_data['explanation'] = f"""
-        Smart alerts trigger when your check-in patterns deviate significantly from learned behavior. 
-        With {sensitivity * 100:.0f}% sensitivity, alerts activate when check-ins are {alert_threshold_minutes:.1f} minutes late 
-        (your normal {expected_interval:.1f}-minute interval + {sensitivity * 100:.0f}% tolerance). 
-        The system accounts for your typical ±{interval_std:.1f} minute variance in timing.
-        """
+        threshold_method = "statistical" if interval_std > 0 else "percentage-based"
+        if interval_std > 0:
+            threshold_multiplier = max(1.5, 3.0 - sensitivity_factor)
+            explanation = f"""
+            Smart alerts use statistical analysis of your {pattern_data.get('total_checkins', 0)} check-ins over the past 7 days. 
+            Your average check-in interval is {avg_interval:.1f} minutes (vs. configured {expected_interval:.1f} minutes).
+            With {sensitivity * 100:.0f}% sensitivity, alerts trigger when check-ins exceed {alert_threshold_minutes:.1f} minutes 
+            since the last check-in (average + {threshold_multiplier:.1f} standard deviations).
+            Normal variance: ±{interval_std:.1f} minutes.
+            """
+        else:
+            threshold_percentage = max(0.3, 1.0 - (sensitivity_factor * 0.4))
+            explanation = f"""
+            Smart alerts use percentage-based thresholds since your check-in pattern has low variance.
+            With {sensitivity * 100:.0f}% sensitivity, alerts trigger when check-ins exceed {alert_threshold_minutes:.1f} minutes
+            since the last check-in ({avg_interval:.1f} minutes + {threshold_percentage * 100:.0f}% tolerance).
+            """
+        
+        logic_data['explanation'] = explanation.strip()
     else:
         logic_data['explanation'] = "Alert thresholds will be calculated once sufficient check-in data is collected and patterns are learned."
     
+    # Add AI enhancement if user has API key
+    user = User.get_by_id(canary.user_id)
+    if user and user.anthropic_api_key:
+        logic_data = enhance_smart_alert_logic(logic_data, canary, smart_alert, user.anthropic_api_key)
+    
     return jsonify(logic_data)
+
+@app.route('/ai_chat/<canary_id>', methods=['POST'])
+@login_required
+def ai_chat(canary_id):
+    """AI-powered chat interface for monitoring insights"""
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        return jsonify({'error': 'Canary not found'}), 404
+    
+    user = User.get_by_id(current_user.user_id)
+    if not user or not user.anthropic_api_key:
+        return jsonify({'error': 'AI features require an Anthropic API key. Add one in Settings.'}), 403
+    
+    message = request.json.get('message', '').strip()
+    if not message:
+        return jsonify({'error': 'Message is required'}), 400
+    
+    # Get canary context
+    smart_alert = SmartAlert.get_by_canary_id(canary_id)
+    recent_logs_data = CanaryLog.get_by_canary_id(canary_id, limit=10)
+    recent_logs = recent_logs_data.get('logs', [])
+    
+    # Build context for AI
+    context_lines = [
+        f"User question about canary '{canary.name}': {message}",
+        f"",
+        f"Canary Details:",
+        f"- Status: {canary.status}",
+        f"- Expected interval: {canary.interval_minutes} minutes",
+        f"- Grace period: {canary.grace_minutes} minutes",
+        f"- SLA threshold: {canary.sla_threshold}%",
+        f"- Last check-in: {canary.last_checkin or 'Never'}",
+        f"- Tags: {', '.join(canary.tags) if canary.tags else 'None'}",
+        f""
+    ]
+    
+    if smart_alert and smart_alert.pattern_data:
+        context_lines.extend([
+            f"Smart Alert Learning:",
+            f"- Average interval: {smart_alert.pattern_data.get('avg_interval', 'N/A')} minutes",
+            f"- Standard deviation: {smart_alert.pattern_data.get('interval_std', 'N/A')} minutes",
+            f"- Check-ins analyzed: {smart_alert.pattern_data.get('total_checkins', 0)}",
+            f"- Sensitivity: {float(smart_alert.sensitivity) * 100:.0f}%",
+            f""
+        ])
+    
+    if recent_logs:
+        context_lines.append("Recent Check-ins:")
+        for log in recent_logs[:5]:
+            context_lines.append(f"- {log.timestamp}: {log.status}")
+        context_lines.append("")
+    
+    context_lines.extend([
+        "Instructions:",
+        "1. Answer the user's specific question about their monitoring setup",
+        "2. Reference the actual data provided above",
+        "3. Be helpful and actionable",
+        "4. Keep response conversational but informative (2-4 sentences)",
+        "5. If suggesting changes, be specific about what to adjust"
+    ])
+    
+    prompt = "\n".join(context_lines)
+    
+    response, error = call_claude_api(prompt, user.anthropic_api_key, max_tokens=400, feature_used='chat', canary_id=canary_id, user_id=user.user_id)
+    
+    if response:
+        return jsonify({'response': response})
+    else:
+        error_message = error if error else 'AI analysis temporarily unavailable. Check your API key.'
+        return jsonify({'error': error_message}), 500
+
+@app.route('/validate_anthropic_key', methods=['POST'])
+@login_required
+def validate_anthropic_key():
+    """AJAX endpoint to validate Anthropic API key"""
+    api_key = request.json.get('api_key', '').strip()
+    
+    if not api_key:
+        return jsonify({'valid': False, 'message': 'Please enter an API key'})
+    
+    is_valid, message = validate_anthropic_api_key(api_key)
+    return jsonify({'valid': is_valid, 'message': message})
+
+@app.route('/api_key_logs', methods=['GET'])
+@login_required
+def api_key_logs():
+    """Get recent API key related logs for debugging"""
+    try:
+        import subprocess
+        import json
+        
+        # Get recent logs from kubernetes pods
+        result = subprocess.run([
+            'kubectl', 'logs', '-n', 'silentcanary', '-l', 'app=silentcanary', 
+            '--since=1h', '--tail=500'
+        ], capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0:
+            all_logs = result.stdout
+            # Filter for API key related logs
+            api_logs = []
+            for line in all_logs.split('\n'):
+                if any(keyword in line.lower() for keyword in ['anthropic', 'api_key', 'validat', 'call_claude_api']):
+                    api_logs.append(line)
+            
+            return jsonify({
+                'success': True,
+                'logs': api_logs[-50:],  # Last 50 relevant log entries
+                'total_lines': len(api_logs)
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to fetch logs',
+                'details': result.stderr
+            })
+            
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'success': False,
+            'error': 'Timeout fetching logs'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error fetching logs: {str(e)}'
+        })
+
+@app.route('/api_usage_summary', methods=['GET'])
+@login_required
+def api_usage_summary():
+    """Get API usage summary for current user"""
+    try:
+        from models import ApiUsageLog
+        
+        days = request.args.get('days', 30, type=int)
+        summary = ApiUsageLog.get_user_usage_summary(current_user.user_id, days=days)
+        
+        return jsonify({
+            'success': True,
+            'summary': summary
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error fetching usage summary: {str(e)}'
+        })
+
+@app.route('/canary_diagnostics/<canary_id>', methods=['GET'])
+@login_required
+def canary_diagnostics(canary_id):
+    """Diagnostic endpoint to analyze canary check-in patterns"""
+    try:
+        # Get the canary
+        canary = Canary.get_by_id(canary_id)
+        if not canary or canary.user_id != current_user.user_id:
+            return jsonify({'error': 'Canary not found'}), 404
+        
+        # Get recent check-in logs (last 100)
+        from models import CanaryLog
+        logs = CanaryLog.get_by_canary_id(canary_id, limit=100)
+        
+        if not logs:
+            return jsonify({
+                'error': 'No check-in logs found',
+                'suggestion': 'This canary has never checked in'
+            })
+        
+        # Analyze check-in patterns
+        analysis = analyze_checkin_patterns(logs, canary)
+        
+        return jsonify({
+            'success': True,
+            'canary': {
+                'name': canary.name,
+                'expected_interval_minutes': canary.interval_minutes,
+                'expected_interval_days': round(canary.interval_minutes / 1440, 2),
+                'grace_minutes': canary.grace_minutes,
+                'status': canary.status,
+                'token': canary.token[-8:] + '...'  # Last 8 chars for identification
+            },
+            'analysis': analysis
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error analyzing canary: {str(e)}'
+        })
+
+def analyze_checkin_patterns(logs, canary):
+    """Analyze check-in patterns to identify issues"""
+    from datetime import datetime, timezone, timedelta
+    
+    if len(logs) < 2:
+        return {
+            'issue': 'insufficient_data',
+            'message': 'Need at least 2 check-ins to analyze patterns',
+            'total_checkins': len(logs)
+        }
+    
+    # Sort logs by timestamp (newest first from DB, reverse for analysis)
+    sorted_logs = sorted(logs, key=lambda x: datetime.fromisoformat(x.timestamp.replace('Z', '+00:00')))
+    
+    # Calculate intervals between check-ins
+    intervals = []
+    timestamps = []
+    sources = []
+    
+    for i in range(1, len(sorted_logs)):
+        current = datetime.fromisoformat(sorted_logs[i].timestamp.replace('Z', '+00:00'))
+        previous = datetime.fromisoformat(sorted_logs[i-1].timestamp.replace('Z', '+00:00'))
+        
+        interval_seconds = (current - previous).total_seconds()
+        interval_minutes = interval_seconds / 60
+        
+        intervals.append(interval_minutes)
+        timestamps.append(current.isoformat())
+        
+        # Try to extract source information
+        source_info = {
+            'timestamp': current.isoformat(),
+            'interval_minutes': round(interval_minutes, 2),
+            'interval_readable': format_interval(interval_minutes),
+            'user_agent': getattr(sorted_logs[i], 'user_agent', 'Unknown'),
+            'ip_address': getattr(sorted_logs[i], 'ip_address', 'Unknown')
+        }
+        sources.append(source_info)
+    
+    # Statistical analysis
+    avg_interval = sum(intervals) / len(intervals)
+    min_interval = min(intervals)
+    max_interval = max(intervals)
+    
+    # Identify issues
+    issues = []
+    recommendations = []
+    
+    # Check if intervals are much shorter than expected
+    expected_minutes = canary.interval_minutes
+    if avg_interval < expected_minutes * 0.01:  # Less than 1% of expected
+        issues.append({
+            'type': 'too_frequent',
+            'severity': 'high',
+            'message': f'Check-ins are happening every {format_interval(avg_interval)} instead of every {format_interval(expected_minutes)}'
+        })
+        recommendations.append('Verify your job is only pinging once per execution cycle')
+    
+    # Check for very short intervals (potential loops or multiple sources)
+    short_intervals = [i for i in intervals if i < 5]  # Less than 5 minutes
+    if len(short_intervals) > 0:
+        issues.append({
+            'type': 'rapid_fire',
+            'severity': 'critical',
+            'message': f'{len(short_intervals)} check-ins happened within 5 minutes of each other',
+            'shortest_interval': f'{min(short_intervals):.2f} minutes'
+        })
+        recommendations.append('Check if multiple systems are using the same canary token')
+        recommendations.append('Look for retry loops or error handling that might cause repeated pings')
+    
+    # Check for pattern consistency
+    if len(intervals) > 5:
+        # Look for two distinct patterns (might indicate multiple sources)
+        from statistics import stdev
+        if stdev(intervals) > avg_interval * 0.5:  # High variation
+            issues.append({
+                'type': 'inconsistent_pattern',
+                'severity': 'medium',
+                'message': 'Highly irregular check-in intervals detected'
+            })
+            recommendations.append('Multiple systems might be using the same token with different schedules')
+    
+    return {
+        'total_checkins': len(logs),
+        'analysis_period': f'{len(intervals)} intervals analyzed',
+        'expected_interval_minutes': expected_minutes,
+        'actual_patterns': {
+            'average_interval_minutes': round(avg_interval, 2),
+            'average_interval_readable': format_interval(avg_interval),
+            'shortest_interval_minutes': round(min_interval, 2),
+            'shortest_interval_readable': format_interval(min_interval),
+            'longest_interval_minutes': round(max_interval, 2),
+            'longest_interval_readable': format_interval(max_interval)
+        },
+        'recent_checkins': sources[-10:],  # Last 10 intervals
+        'issues': issues,
+        'recommendations': recommendations,
+        'next_steps': [
+            'Review the "Recent Check-ins" section to identify patterns',
+            'Check if multiple systems are using the same canary token',
+            'Verify your job scheduling configuration',
+            'Consider creating separate canaries for different monitoring needs'
+        ]
+    }
+
+def format_interval(minutes):
+    """Format interval minutes into readable format"""
+    if minutes < 1:
+        return f"{minutes * 60:.1f} seconds"
+    elif minutes < 60:
+        return f"{minutes:.1f} minutes"
+    elif minutes < 1440:  # Less than a day
+        hours = minutes / 60
+        return f"{hours:.1f} hours"
+    else:
+        days = minutes / 1440
+        return f"{days:.1f} days"
+
+@app.route('/api_usage_logs', methods=['GET'])
+@login_required
+def api_usage_logs():
+    """Get detailed API usage logs for current user"""
+    try:
+        from models import ApiUsageLog
+        
+        limit = request.args.get('limit', 50, type=int)
+        logs = ApiUsageLog.get_by_user_id(current_user.user_id, limit=limit)
+        
+        # Convert logs to dictionaries for JSON serialization
+        logs_data = []
+        for log in logs:
+            logs_data.append({
+                'timestamp': log.timestamp,
+                'feature_used': log.feature_used,
+                'model': log.model,
+                'input_tokens': log.input_tokens,
+                'output_tokens': log.output_tokens,
+                'total_tokens': log.total_tokens,
+                'estimated_cost': log.estimated_cost,
+                'success': log.success,
+                'error_message': log.error_message,
+                'response_time_ms': log.response_time_ms,
+                'canary_id': log.canary_id
+            })
+        
+        return jsonify({
+            'success': True,
+            'logs': logs_data
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error fetching usage logs: {str(e)}'
+        })
 
 # CI/CD Integration API Routes
 @app.route('/api/v1/deployment/webhook', methods=['POST'])
@@ -2383,7 +2539,6 @@ def create_canary_from_template(user_id, service_name, environment, template_nam
     canary = Canary(
         user_id=user_id,
         name=canary_name,
-        description=f"{template['description']} - {service_name} in {environment}",
         interval_minutes=template['interval_minutes'],
         alert_type=template['alert_type'],
         is_active=True
@@ -2677,6 +2832,278 @@ def check_failed_canaries():
         else:
             print("✅ All canaries are healthy")
 
+# AI Integration Functions
+def call_claude_api(prompt, user_api_key, max_tokens=1000, feature_used='unknown', canary_id=None, user_id=None):
+    """Call Claude API with user's own API key and log usage"""
+    if not user_api_key:
+        print("call_claude_api: No API key provided")  # Debug log
+        return None, "No API key provided"
+    
+    print(f"call_claude_api: Using API key: {user_api_key[:15]}...")  # Debug log
+    
+    start_time = time.time()
+    success = False
+    error_message = None
+    response_text = None
+    input_tokens = None
+    output_tokens = None
+    total_tokens = None
+    estimated_cost = None
+    
+    try:
+        from anthropic import Anthropic
+        
+        client = Anthropic(api_key=user_api_key)
+        print("call_claude_api: Client created, making API call...")  # Debug log
+        
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        print(f"call_claude_api: Response received: {response}")  # Debug log
+        
+        # Extract usage information
+        if hasattr(response, 'usage'):
+            input_tokens = response.usage.input_tokens
+            output_tokens = response.usage.output_tokens
+            total_tokens = input_tokens + output_tokens
+            
+            # Estimate cost for Claude 3.5 Sonnet (approximate pricing)
+            # Input: $3.00 per 1M tokens, Output: $15.00 per 1M tokens
+            input_cost = (input_tokens / 1_000_000) * 3.00
+            output_cost = (output_tokens / 1_000_000) * 15.00
+            estimated_cost = input_cost + output_cost
+        
+        response_text = response.content[0].text
+        success = True
+        
+        return response_text, None
+        
+    except Exception as e:
+        error_message = str(e)
+        print(f"call_claude_api: Exception: {e}")  # Debug log
+        print(f"call_claude_api: Exception type: {type(e)}")  # Debug log
+        
+        # Handle specific Anthropic error types
+        if hasattr(e, 'status_code'):
+            print(f"call_claude_api: Status code: {e.status_code}")  # Debug log
+            if e.status_code == 401:
+                error_message = "Invalid API key"
+            elif e.status_code == 403:
+                error_message = "Access denied - check API key permissions"
+            elif e.status_code == 429:
+                error_message = "Rate limited - try again in a moment"
+            elif e.status_code == 404:
+                error_message = "API service not found"
+        
+        # Handle generic errors
+        if "authentication" in error_message.lower() or "invalid" in error_message.lower():
+            error_message = "Invalid API key"
+        elif "rate" in error_message.lower() or "limit" in error_message.lower():
+            error_message = "Rate limited - try again in a moment"
+        else:
+            error_message = f"API error: {str(e)[:100]}"
+            
+        return None, error_message
+        
+    finally:
+        # Log the API usage
+        try:
+            response_time_ms = int((time.time() - start_time) * 1000)
+            
+            from models import ApiUsageLog
+            usage_log = ApiUsageLog(
+                user_id=user_id,
+                api_type='anthropic',
+                endpoint='messages',
+                model='claude-3-5-sonnet-20241022',
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                estimated_cost=estimated_cost,
+                success=success,
+                error_message=error_message,
+                response_time_ms=response_time_ms,
+                feature_used=feature_used,
+                canary_id=canary_id
+            )
+            usage_log.save()
+            print(f"call_claude_api: Usage logged - tokens: {total_tokens}, cost: ${estimated_cost:.4f}" if total_tokens else "call_claude_api: Usage logged - error case")
+        except Exception as log_error:
+            print(f"call_claude_api: Failed to log usage: {log_error}")
+
+def validate_anthropic_api_key(api_key):
+    """Test if Anthropic API key is valid with a simple call"""
+    if not api_key:
+        return False, "Please enter an API key"
+    
+    # Clean the API key
+    api_key = api_key.strip()
+    print(f"Validating API key: {api_key[:15]}...")  # Debug log
+    
+    # Check format - should start with sk-ant-
+    if not api_key.startswith('sk-ant-'):
+        return False, "Invalid API key format. Anthropic API keys start with 'sk-ant-'"
+    
+    # Check length - Anthropic keys are typically longer
+    if len(api_key) < 40:
+        return False, "API key seems too short. Please check your key at console.anthropic.com"
+    
+    try:
+        from anthropic import Anthropic
+        
+        client = Anthropic(api_key=api_key)
+        print("Anthropic client created, making test call...")  # Debug log
+        
+        # Make a minimal test call
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=5,
+            messages=[{"role": "user", "content": "Hi"}]
+        )
+        
+        print(f"Response received: {response}")  # Debug log
+        
+        if response and response.content and len(response.content) > 0:
+            print("API key validation successful!")  # Debug log
+            return True, "✅ API key validated successfully! AI features are now available."
+        else:
+            print("Empty response received")  # Debug log
+            return False, "API key validation failed - empty response"
+            
+    except Exception as e:
+        error_msg = str(e)
+        print(f"API key validation exception: {e}")  # Debug log
+        print(f"Exception type: {type(e)}")  # Debug log
+        
+        # Handle specific Anthropic error types
+        if hasattr(e, 'status_code'):
+            print(f"Status code: {e.status_code}")  # Debug log
+            if e.status_code == 401:
+                return False, "❌ Invalid API key. Get your key at console.anthropic.com"
+            elif e.status_code == 403:
+                return False, "❌ Access denied. Check your API key permissions at console.anthropic.com"
+            elif e.status_code == 429:
+                return False, "⏳ Rate limited. Your key is valid but try again in a moment."
+            elif e.status_code == 404:
+                return False, "❌ Service not found. Please check your API key at console.anthropic.com"
+        
+        # Handle generic errors
+        error_lower = error_msg.lower()
+        if "authentication" in error_lower or "invalid" in error_lower or "unauthorized" in error_lower:
+            return False, "❌ Invalid API key. Get your key at console.anthropic.com"
+        elif "rate" in error_lower or "limit" in error_lower:
+            return False, "⏳ Rate limited. Your key is valid but try again in a moment."
+        elif "timeout" in error_lower or "timed out" in error_lower:
+            return False, "⏰ Validation timed out. Please try again."
+        elif "network" in error_lower or "connection" in error_lower:
+            return False, "🌐 Network error. Please check your internet connection and try again."
+        else:
+            print(f"API key validation error: {e}")
+            return False, f"❌ Validation failed: {str(e)[:100]}"
+
+def generate_ai_alert_analysis(canary, smart_alert, user_api_key):
+    """Generate AI-powered alert analysis if user has API key"""
+    if not user_api_key or not smart_alert.pattern_data:
+        return None
+        
+    pattern_data = smart_alert.pattern_data
+    
+    prompt = f"""
+    Analyze this monitoring alert for service '{canary.name}':
+    
+    Configuration:
+    - Expected interval: {canary.interval_minutes} minutes
+    - Grace period: {canary.grace_minutes} minutes
+    - SLA threshold: {canary.sla_threshold}%
+    
+    Learned Patterns:
+    - Average interval: {pattern_data.get('avg_interval', 'N/A')} minutes
+    - Standard deviation: {pattern_data.get('interval_std', 'N/A')} minutes
+    - Total check-ins analyzed: {pattern_data.get('total_checkins', 0)}
+    - Learning period: {pattern_data.get('learning_start', 'N/A')} to {pattern_data.get('learning_end', 'N/A')}
+    
+    Current Status:
+    - Status: {canary.status}
+    - Last check-in: {canary.last_checkin}
+    - Tags: {canary.tags}
+    
+    Provide a brief analysis in 2-3 sentences covering:
+    1. What this pattern suggests about the service health
+    2. Likely root cause if there's an issue
+    3. One specific actionable recommendation
+    
+    Keep response concise and actionable for DevOps teams.
+    """
+    
+    response, error = call_claude_api(prompt, user_api_key, max_tokens=300, feature_used='smart_alert_analysis', canary_id=canary.canary_id, user_id=canary.user_id)
+    return response
+
+def enhance_smart_alert_timeline(timeline_data, canary, smart_alert, user_api_key):
+    """Enhance timeline data with AI insights"""
+    if not user_api_key or not timeline_data.get('checkins'):
+        return timeline_data
+        
+    # Build context from recent check-ins
+    recent_intervals = []
+    anomaly_count = 0
+    for checkin in timeline_data['checkins']:
+        if checkin.get('interval'):
+            interval_str = checkin['interval'].replace(' min', '')
+            try:
+                interval = float(interval_str)
+                recent_intervals.append(interval)
+                if checkin.get('pattern_match', 100) < 60:
+                    anomaly_count += 1
+            except:
+                pass
+    
+    if recent_intervals:
+        prompt = f"""
+        Analyze these recent check-in intervals for '{canary.name}':
+        Recent intervals: {recent_intervals} minutes
+        Anomalies detected: {anomaly_count} out of {len(timeline_data['checkins'])}
+        Service type: {', '.join(canary.tags) if canary.tags else 'Unknown'}
+        
+        In 1-2 sentences, explain what this pattern indicates about service health and any trends to watch.
+        """
+        
+        ai_insight, error = call_claude_api(prompt, user_api_key, max_tokens=200, feature_used='timeline_insight', canary_id=canary.canary_id, user_id=canary.user_id)
+        if ai_insight:
+            timeline_data['ai_insight'] = ai_insight
+    
+    return timeline_data
+
+def enhance_smart_alert_logic(logic_data, canary, smart_alert, user_api_key):
+    """Enhance alert logic explanation with AI insights"""
+    if not user_api_key:
+        return logic_data
+        
+    thresholds_text = "\n".join([f"- {t['condition']}: {t['value']}" for t in logic_data.get('current_thresholds', [])])
+    
+    prompt = f"""
+    Explain this Smart Alert configuration for '{canary.name}' in simple terms:
+    
+    {thresholds_text}
+    
+    Service tags: {', '.join(canary.tags) if canary.tags else 'None'}
+    
+    In 2-3 sentences, explain:
+    1. What these thresholds mean in practical terms
+    2. Whether the configuration seems appropriate for this type of service
+    3. One optimization suggestion if any
+    
+    Use clear, non-technical language that any developer would understand.
+    """
+    
+    ai_explanation, error = call_claude_api(prompt, user_api_key, max_tokens=300, feature_used='smart_alert_logic', canary_id=canary.canary_id, user_id=canary.user_id)
+    if ai_explanation:
+        logic_data['ai_explanation'] = ai_explanation
+        
+    return logic_data
+
 # Start scheduler automatically when module is imported (not just when run as main)
 def start_background_scheduler():
     """Start the scheduler for background canary monitoring"""
@@ -2708,6 +3135,11 @@ if __name__ == '__main__':
         exit(1)
     
     print("✅ Scheduler already initialized during module import")
+    
+    # Debug: Print all registered routes
+    print("🔍 FLASK ROUTES REGISTERED:")
+    for rule in app.url_map.iter_rules():
+        print(f"  {rule.rule} -> {rule.endpoint} [{', '.join(rule.methods)}]")
     
     try:
         app.run(debug=False, port=5000, host='0.0.0.0')

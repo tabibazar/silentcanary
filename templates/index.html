@@ -112,16 +112,16 @@
         <p class="mb-5">Monitor cron jobs, scripts, services, and applications. Get intelligent alerts when they stop checking in.</p>
         <div class="d-flex flex-column flex-md-row justify-content-center gap-3">
             <a class="btn btn-light btn-lg px-4" href="{{ url_for('register') }}">
-                <i class="fas fa-rocket me-2"></i>Start Free Trial
+                <i class="fas fa-rocket me-2"></i>Get Started Free
             </a>
-            <a class="btn btn-outline-light btn-lg px-4" href="#pricing">
-                <i class="fas fa-eye me-2"></i>View Pricing
+            <a class="btn btn-warning btn-lg px-4" href="https://buymeacoffee.com/silentcanary" target="_blank">
+                <i class="fas fa-coffee me-2"></i>Buy Me Coffee
             </a>
         </div>
         <p class="mt-3 small opacity-75">
+            <i class="fas fa-check-circle me-1"></i> Completely free forever • 
             <i class="fas fa-check-circle me-1"></i> No credit card required • 
-            <i class="fas fa-check-circle me-1"></i> Setup in 2 minutes •
-            <i class="fas fa-check-circle me-1"></i> Cancel anytime
+            <i class="fas fa-check-circle me-1"></i> Unlimited canaries
         </p>
     </div>
 </div>
@@ -221,134 +221,23 @@
     </div>
 </div>
 
-<!-- Pricing Section -->
-<div id="pricing" class="mb-5">
-    <div class="row">
-        <div class="col-12">
-            <h2 class="section-title text-center">Simple, Transparent Pricing</h2>
-            <p class="text-center text-muted mb-5">Choose the plan that fits your monitoring needs. Upgrade or downgrade anytime.</p>
-        </div>
-    </div>
-    
-    <div class="row">
-        <!-- Free Plan -->
-        <div class="col-lg-3 col-md-6 mb-4">
-            <div class="card pricing-card h-100">
-                <div class="card-body text-center p-4">
-                    <h4 class="card-title">Free</h4>
-                    <div class="display-4 text-primary mb-3">$0</div>
-                    <p class="text-muted mb-4">per month</p>
-                    
-                    <ul class="list-unstyled">
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>1 Canary</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Email Alerts</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Web Dashboard</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>API Access</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Smart Alerts (AI)</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Advanced Analytics</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Custom Webhooks</li>
-                    </ul>
-                    
-                    <a href="{{ url_for('register') }}" class="btn btn-outline-primary btn-block">
-                        Get Started Free
-                    </a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Starter Plan -->
-        <div class="col-lg-3 col-md-6 mb-4">
-            <div class="card pricing-card h-100">
-                <div class="card-body text-center p-4">
-                    <h4 class="card-title">Starter</h4>
-                    <div class="display-4 text-primary mb-3">$5</div>
-                    <p class="text-muted mb-4">per month</p>
-                    
-                    <ul class="list-unstyled">
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>3 Canaries</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Email Alerts</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Web Dashboard</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>API Access</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Smart Alerts (AI)</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Advanced Analytics</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Custom Webhooks</li>
-                    </ul>
-                    
-                    <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
-                        Start Free Trial
-                    </a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Pro Plan (Featured) -->
-        <div class="col-lg-3 col-md-6 mb-4">
-            <div class="card pricing-card featured h-100">
-                <div class="card-body text-center p-4">
-                    <h4 class="card-title">Pro</h4>
-                    <div class="display-4 text-primary mb-3">$15</div>
-                    <p class="text-muted mb-4">per month</p>
-                    
-                    <ul class="list-unstyled">
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>10 Canaries</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Email Alerts</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Web Dashboard</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>API Access</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Smart Alerts (AI)</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Advanced Analytics</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Custom Webhooks</li>
-                    </ul>
-                    
-                    <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
-                        Start Free Trial
-                    </a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Business Plan -->
-        <div class="col-lg-3 col-md-6 mb-4">
-            <div class="card pricing-card h-100">
-                <div class="card-body text-center p-4">
-                    <h4 class="card-title">Business</h4>
-                    <div class="display-4 text-primary mb-3">$50</div>
-                    <p class="text-muted mb-4">per month</p>
-                    
-                    <ul class="list-unstyled">
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>50 Canaries</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Email Alerts</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Web Dashboard</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>API Access</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Smart Alerts (AI)</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Advanced Analytics</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Custom Webhooks</li>
-                    </ul>
-                    
-                    <a href="{{ url_for('register') }}" class="btn btn-outline-primary btn-block">
-                        Start Free Trial
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="text-center mt-4">
-        <p class="text-muted">
-            <i class="fas fa-shield-alt me-2"></i>14-day free trial on all paid plans •
-            <i class="fas fa-credit-card me-2"></i>No setup fees •
-            <i class="fas fa-times-circle me-2"></i>Cancel anytime
-        </p>
-    </div>
+<!-- Support Section -->
+<div class="bg-light p-5 rounded text-center mb-5">
+    <h3 class="mb-3">Support SilentCanary</h3>
+    <p class="mb-4">SilentCanary is completely free to use with unlimited canaries. If you find it useful, consider supporting development with a coffee!</p>
+    <a href="https://buymeacoffee.com/silentcanary" target="_blank" class="btn btn-warning btn-lg">
+        <i class="fas fa-coffee me-2"></i>Buy Me Coffee
+    </a>
 </div>
 
 <!-- CTA Section -->
-<div class="bg-light p-5 rounded text-center mb-5">
+<div class="bg-primary text-white p-5 rounded text-center mb-5">
     <h3 class="mb-3">Ready to monitor your critical systems?</h3>
     <p class="mb-4">Join thousands of developers who trust SilentCanary to keep their applications running smoothly.</p>
-    <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg me-3">
+    <a href="{{ url_for('register') }}" class="btn btn-light btn-lg me-3">
         <i class="fas fa-rocket me-2"></i>Get Started Free
     </a>
-    <a href="{{ url_for('help_overview') }}" class="btn btn-outline-secondary btn-lg">
+    <a href="{{ url_for('help_overview') }}" class="btn btn-outline-light btn-lg">
         <i class="fas fa-book me-2"></i>View Documentation
     </a>
 </div>

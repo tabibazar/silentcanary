@@ -181,10 +181,15 @@
                                     <strong>Tags:</strong>
                                     {% for tag in canary.tags %}
                                         <a href="{{ url_for('dashboard', tag=tag) }}" 
-                                           class="badge bg-secondary me-1 text-decoration-none canary-tag
+                                           class="badge me-1 text-decoration-none canary-tag
+                                                  {% if tag == 'Smart Alerts' %}bg-info{% else %}bg-secondary{% endif %}
                                                   {% if current_tag_filter == tag %}bg-primary{% endif %}" 
-                                           title="Filter by tag: {{ tag }}">
-                                            {{ tag }}
+                                           title="{% if tag == 'Smart Alerts' %}Smart AI-powered anomaly detection enabled{% else %}Filter by tag: {{ tag }}{% endif %}">
+                                            {% if tag == 'Smart Alerts' %}
+                                                <i class="fas fa-brain me-1"></i>{{ tag }}
+                                            {% else %}
+                                                {{ tag }}
+                                            {% endif %}
                                         </a>
                                     {% endfor %}<br>
                                     {% endif %}

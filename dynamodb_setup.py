@@ -271,6 +271,61 @@ def create_smart_alerts_table(dynamodb):
             print(f"❌ Error creating Smart Alerts table: {e}")
             raise
 
+def create_api_usage_table(dynamodb):
+    """Create API Usage table"""
+    try:
+        table = dynamodb.create_table(
+            TableName='SilentCanary_APIUsage',
+            KeySchema=[
+                {
+                    'AttributeName': 'log_id',
+                    'KeyType': 'HASH'  # Partition key
+                }
+            ],
+            AttributeDefinitions=[
+                {
+                    'AttributeName': 'log_id',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'user_id',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'timestamp',
+                    'AttributeType': 'S'
+                }
+            ],
+            GlobalSecondaryIndexes=[
+                {
+                    'IndexName': 'user-id-index',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'user_id',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'timestamp',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                }
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        )
+        print("✅ API Usage table created successfully")
+        return table
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            print("✅ API Usage table already exists")
+            return dynamodb.Table('SilentCanary_APIUsage')
+        else:
+            print(f"❌ Error creating API Usage table: {e}")
+            raise
+
 def setup_tables():
     """Set up all DynamoDB tables"""
     print("🔄 Setting up DynamoDB tables for SilentCanary...")
@@ -283,6 +338,7 @@ def setup_tables():
         canaries_table = create_canaries_table(dynamodb)
         logs_table = create_canary_logs_table(dynamodb)
         smart_alerts_table = create_smart_alerts_table(dynamodb)
+        api_usage_table = create_api_usage_table(dynamodb)
         
         # Wait for tables to be active
         print("⏳ Waiting for tables to be active...")
@@ -290,12 +346,14 @@ def setup_tables():
         canaries_table.wait_until_exists()
         logs_table.wait_until_exists()
         smart_alerts_table.wait_until_exists()
+        api_usage_table.wait_until_exists()
         
         print("🎉 DynamoDB setup completed successfully!")
         print(f"📊 Users table: {users_table.table_status}")
         print(f"📊 Canaries table: {canaries_table.table_status}")
         print(f"📊 Canary Logs table: {logs_table.table_status}")
         print(f"📊 Smart Alerts table: {smart_alerts_table.table_status}")
+        print(f"📊 API Usage table: {api_usage_table.table_status}")
         
         return True
         

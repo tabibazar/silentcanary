@@ -316,6 +316,58 @@
                 </div>
             </div>
         </div>
+
+        <!-- AI Chat Interface (only show if user has API key) -->
+        {% if current_user.anthropic_api_key %}
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-robot text-primary"></i> AI Assistant
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <small class="text-muted">
+                        <i class="fas fa-key"></i> Ask questions about your canary's health, patterns, or monitoring setup
+                    </small>
+                </div>
+                
+                <div id="ai-chat-messages" class="border rounded p-3 mb-3" style="height: 200px; overflow-y: auto; background-color: #f8f9fa;">
+                    <div class="text-muted text-center">
+                        <i class="fas fa-comment"></i> Start a conversation with your AI assistant
+                    </div>
+                </div>
+                
+                <div class="input-group">
+                    <input type="text" 
+                           id="ai-chat-input" 
+                           class="form-control" 
+                           placeholder="Ask about your canary... (e.g., 'Why haven't I received any alerts?')"
+                           maxlength="200">
+                    <button class="btn btn-primary" type="button" id="ai-chat-send">
+                        <i class="fas fa-paper-plane"></i> Ask
+                    </button>
+                </div>
+                
+                <div id="ai-chat-loading" class="text-center mt-2" style="display: none;">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status">
+                        <span class="visually-hidden">Thinking...</span>
+                    </div>
+                    <span class="ms-2 small">AI is analyzing...</span>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="card mt-4">
+            <div class="card-body text-center">
+                <h6><i class="fas fa-robot text-muted"></i> AI Assistant Available</h6>
+                <p class="text-muted mb-3">Add your Anthropic API key in Settings to unlock AI-powered insights and chat with your monitoring data.</p>
+                <a href="{{ url_for('settings') }}" class="btn btn-outline-primary">
+                    <i class="fas fa-cog"></i> Add API Key in Settings
+                </a>
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -444,6 +496,17 @@ async function loadCheckinTimeline() {
                     <p class="small mb-0">${timeline.summary}</p>
                 </div>`;
             }
+            
+            // Add AI insights if available
+            if (timeline.ai_insight) {
+                timelineHtml += `<div class="alert alert-info mt-3">
+                    <h6><i class="fas fa-robot text-primary"></i> AI Insight</h6>
+                    <p class="small mb-0">${timeline.ai_insight}</p>
+                    <small class="text-muted d-block mt-1">
+                        <i class="fas fa-key"></i> Powered by your Anthropic API key
+                    </small>
+                </div>`;
+            }
         } else {
             timelineHtml = '<p class="text-muted">No recent check-ins available for analysis.</p>';
         }
@@ -516,6 +579,17 @@ async function loadAlertLogicExplanation() {
             explanationHtml += `<div class="alert alert-info mt-3">
                 <h6><i class="fas fa-info-circle"></i> How This Works</h6>
                 <p class="mb-0 small">${logic.explanation}</p>
+            </div>`;
+        }
+        
+        // Add AI explanation if available
+        if (logic.ai_explanation) {
+            explanationHtml += `<div class="alert alert-primary mt-3">
+                <h6><i class="fas fa-robot text-primary"></i> AI Analysis</h6>
+                <p class="mb-1 small">${logic.ai_explanation}</p>
+                <small class="text-muted">
+                    <i class="fas fa-key"></i> Powered by your Anthropic API key
+                </small>
             </div>`;
         }
         
@@ -621,6 +695,75 @@ async function updateLearningProgress() {
             '<p class="text-danger small mb-0">Error loading progress</p>';
     }
 }
+
+// AI Chat functionality
+{% if current_user.anthropic_api_key %}
+function addChatMessage(message, isUser = false) {
+    const messagesDiv = document.getElementById('ai-chat-messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `mb-2 ${isUser ? 'text-end' : ''}`;
+    
+    const badge = isUser ? 
+        '<span class="badge bg-primary me-2"><i class="fas fa-user"></i> You</span>' :
+        '<span class="badge bg-secondary me-2"><i class="fas fa-robot"></i> AI</span>';
+    
+    messageDiv.innerHTML = `
+        ${isUser ? '' : badge}
+        <span class="small ${isUser ? 'bg-primary text-white' : 'bg-light'} rounded p-2 d-inline-block" style="max-width: 80%;">
+            ${message}
+        </span>
+        ${isUser ? badge : ''}
+    `;
+    
+    messagesDiv.appendChild(messageDiv);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-chat-input');
+    const message = input.value.trim();
+    
+    if (!message) return;
+    
+    // Add user message
+    addChatMessage(message, true);
+    input.value = '';
+    
+    // Show loading
+    document.getElementById('ai-chat-loading').style.display = 'block';
+    
+    try {
+        const response = await fetch(`/ai_chat/{{ canary.canary_id }}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ message: message })
+        });
+        
+        const data = await response.json();
+        
+        if (data.response) {
+            addChatMessage(data.response);
+        } else {
+            addChatMessage(data.error || 'Sorry, I encountered an error processing your request.');
+        }
+    } catch (error) {
+        console.error('AI chat error:', error);
+        addChatMessage('Sorry, I\'m temporarily unavailable. Please try again later.');
+    } finally {
+        document.getElementById('ai-chat-loading').style.display = 'none';
+    }
+}
+
+// Set up AI chat event listeners
+document.getElementById('ai-chat-send').addEventListener('click', sendAIMessage);
+document.getElementById('ai-chat-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        sendAIMessage();
+    }
+});
+{% endif %}
 
 // Update progress immediately and then every 10 seconds for real-time feedback
 {% if smart_alert and smart_alert.is_enabled %}

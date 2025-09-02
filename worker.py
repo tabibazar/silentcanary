@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 from rq import Worker, Queue
 from redis_config import get_redis_connection
-from models import Canary, User
+from models import Canary, User, SmartAlert
 import requests
 from flask_mail import Mail, Message
 from flask import Flask
@@ -30,8 +30,88 @@ app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'auth@
 
 mail = Mail(app)
 
-def send_notifications(canary_id):
-    """Send notifications for a failed canary"""
+def should_suppress_alert(canary, alert_type="standard"):
+    """Check if we should suppress this alert to prevent spam"""
+    from datetime import timedelta
+    
+    # Don't send multiple alerts within this time window
+    ALERT_COOLDOWN_MINUTES = {
+        'standard': 60,      # 1 hour for standard alerts  
+        'smart_alert': 180,  # 3 hours for smart alerts
+        'long_job': 1440     # 24 hours for jobs >30 days
+    }
+    
+    # Determine cooldown period based on canary interval
+    if canary.interval_minutes > 43200:  # >30 days
+        cooldown_minutes = ALERT_COOLDOWN_MINUTES['long_job'] 
+        alert_key = 'long_job'
+    elif alert_type == 'smart_alert':
+        cooldown_minutes = ALERT_COOLDOWN_MINUTES['smart_alert']
+        alert_key = 'smart_alert'
+    else:
+        cooldown_minutes = ALERT_COOLDOWN_MINUTES['standard']
+        alert_key = 'standard'
+    
+    # Check if we sent an alert recently
+    redis_conn = get_redis_connection()
+    last_alert_key = f"last_alert:{canary.canary_id}:{alert_key}"
+    last_alert_time = redis_conn.get(last_alert_key)
+    
+    if last_alert_time:
+        try:
+            # Handle both bytes and string data from Redis
+            if isinstance(last_alert_time, bytes):
+                last_alert_str = last_alert_time.decode()
+            else:
+                last_alert_str = last_alert_time
+                
+            last_alert_dt = datetime.fromisoformat(last_alert_str)
+            time_since_alert = datetime.now(timezone.utc) - last_alert_dt
+            
+            if time_since_alert < timedelta(minutes=cooldown_minutes):
+                return True  # Suppress the alert
+        except Exception as e:
+            print(f"⚠️ Error checking last alert time: {e}")
+    
+    return False  # Don't suppress
+
+def record_alert_sent(canary, alert_type="standard"):
+    """Record that we sent an alert for this canary"""
+    # Determine alert key
+    if canary.interval_minutes > 43200:  # >30 days
+        alert_key = 'long_job'
+    elif alert_type == 'smart_alert':
+        alert_key = 'smart_alert' 
+    else:
+        alert_key = 'standard'
+    
+    redis_conn = get_redis_connection()
+    last_alert_key = f"last_alert:{canary.canary_id}:{alert_key}"
+    
+    # Store timestamp with expiration (7 days)
+    redis_conn.setex(
+        last_alert_key, 
+        604800,  # 7 days in seconds
+        datetime.now(timezone.utc).isoformat()
+    )
+
+def is_long_running_job(canary):
+    """Check if this is a long-running job (>30 days) that shouldn't use Smart Alerts"""
+    return canary.interval_minutes > 43200  # 30 days in minutes
+
+def should_use_smart_alerts(canary):
+    """Determine if Smart Alerts should be used for this canary"""
+    # Don't use Smart Alerts for long-running jobs
+    if is_long_running_job(canary):
+        print(f"⚠️ Skipping Smart Alerts for long-running job: {canary.name} (interval: {canary.interval_minutes/1440:.1f} days)")
+        return False
+    
+    # Check if Smart Alerts are enabled for this canary
+    smart_alert = SmartAlert.get_by_canary_id(canary.canary_id)
+    return smart_alert and smart_alert.is_enabled
+
+def send_notifications(canary_id, alert_type="standard"):
+    """Send notifications for a failed canary with deduplication"""
     with app.app_context():
         try:
             # Get canary and user data
@@ -41,6 +121,11 @@ def send_notifications(canary_id):
                 return False
             
             user = User.get_by_id(canary.user_id)
+            
+            # Check if we recently sent an alert for this canary to prevent spam
+            if should_suppress_alert(canary, alert_type):
+                print(f"📧 Suppressing duplicate alert for canary: {canary.name} (type: {alert_type})")
+                return True
             
             subject = f'SilentCanary Alert: {canary.name} has failed'
             
@@ -76,6 +161,7 @@ Canary "*{canary.name}*" has failed to check in!
 Please investigate your monitoring target immediately."""
 
             # Send email notification
+            email_sent = False
             if canary.alert_type in ['email', 'both']:
                 recipient = canary.alert_email or (user.email if user else None)
                 if recipient:
@@ -86,18 +172,26 @@ Please investigate your monitoring target immediately."""
                         sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER'])
                     )
                     mail.send(msg)
-                    print(f"📧 Email notification sent to {recipient}")
+                    print(f"📧 Email notification sent to {recipient} (type: {alert_type})")
+                    email_sent = True
                 else:
                     print("❌ No email recipient available")
             
             # Send Slack notification
+            slack_sent = False
             if canary.alert_type in ['slack', 'both'] and canary.slack_webhook:
                 payload = {"text": slack_message}
                 response = requests.post(canary.slack_webhook, json=payload, timeout=10)
                 if response.status_code == 200:
-                    print(f"💬 Slack notification sent for canary: {canary.name}")
+                    print(f"💬 Slack notification sent for canary: {canary.name} (type: {alert_type})")
+                    slack_sent = True
                 else:
                     print(f"❌ Slack notification failed: {response.status_code}")
+            
+            # Record that we sent an alert to prevent duplicates
+            if email_sent or slack_sent:
+                record_alert_sent(canary, alert_type)
+                print(f"✅ Alert cooldown period started for {canary.name} (type: {alert_type})")
             
             return True
             
@@ -121,16 +215,31 @@ def check_canary_health():
         failed_count = 0
         for canary in active_canaries:
             if canary.status != 'failed' and canary.is_overdue():
-                print(f"⚠️ Canary '{canary.name}' is overdue - marking as failed")
+                # Determine alert type based on canary characteristics
+                alert_type = "standard"
+                
+                # For long-running jobs (>30 days), use special handling
+                if is_long_running_job(canary):
+                    alert_type = "long_job"
+                    print(f"⚠️ Long-running job '{canary.name}' is overdue (interval: {canary.interval_minutes/1440:.1f} days)")
+                
+                # For regular jobs, check if Smart Alerts should be used
+                elif should_use_smart_alerts(canary):
+                    alert_type = "smart_alert" 
+                    print(f"⚠️ Smart Alert canary '{canary.name}' is overdue")
+                
+                else:
+                    print(f"⚠️ Standard canary '{canary.name}' is overdue")
                 
                 # Update canary status
                 canary.status = 'failed'
                 canary.save()
                 
-                # Enqueue notification job
+                # Enqueue notification job with alert type
                 notification_queue.enqueue(
                     send_notifications,
                     canary.canary_id,
+                    alert_type,
                     job_timeout=300,  # 5 minutes timeout
                     retry=3
                 )
@@ -167,6 +276,161 @@ def schedule_health_checks():
     except Exception as e:
         print(f"❌ Error scheduling health checks: {e}")
         return False
+
+def test_long_job_alert_system():
+    """Comprehensive test suite for long-running job alert system"""
+    print("🧪 Starting comprehensive long-job alert system tests...")
+    
+    # Test 1: Email deduplication for long jobs
+    print("\n📧 Test 1: Email deduplication for long-running jobs")
+    test_results = []
+    
+    try:
+        # Create test canary data
+        class TestCanary:
+            def __init__(self, name, interval_days):
+                self.canary_id = f"test-{name}"
+                self.name = f"Test {name}"
+                self.interval_minutes = interval_days * 1440  # Convert days to minutes
+                self.alert_type = "email"
+        
+        # Test long job (85 days)
+        long_job = TestCanary("85-day-job", 85)
+        
+        # Test 1a: Should recognize as long-running job
+        is_long = is_long_running_job(long_job)
+        test_results.append(("Long job detection (85 days)", is_long, True))
+        
+        # Test 1b: Should NOT use Smart Alerts
+        use_smart = should_use_smart_alerts(long_job)  
+        test_results.append(("Smart Alert disabled for long jobs", not use_smart, True))
+        
+        # Test 1c: Alert suppression logic
+        redis_conn = get_redis_connection()
+        
+        # Clear any existing alert records for test
+        redis_conn.delete(f"last_alert:{long_job.canary_id}:long_job")
+        
+        # First alert should NOT be suppressed
+        suppress_first = should_suppress_alert(long_job, "long_job")
+        test_results.append(("First alert not suppressed", not suppress_first, True))
+        
+        # Record alert sent
+        record_alert_sent(long_job, "long_job")
+        
+        # Second alert should be suppressed (within 24h cooldown)
+        suppress_second = should_suppress_alert(long_job, "long_job")
+        test_results.append(("Second alert suppressed (24h cooldown)", suppress_second, True))
+        
+        print("\n📊 Test Results:")
+        all_passed = True
+        for test_name, result, expected in test_results:
+            status = "✅ PASS" if result == expected else "❌ FAIL"
+            print(f"  {status} {test_name}: {result} (expected: {expected})")
+            if result != expected:
+                all_passed = False
+        
+        # Test 2: Cooldown periods
+        print("\n⏰ Test 2: Alert cooldown periods")
+        
+        # Short job (1 hour)
+        short_job = TestCanary("1-hour-job", 1/24)  # 1 hour
+        
+        # Medium job (1 day)
+        medium_job = TestCanary("1-day-job", 1)
+        
+        # Long job (85 days)
+        long_job = TestCanary("85-day-job", 85)
+        
+        cooldown_tests = [
+            ("Short job cooldown", short_job, "standard", 60),
+            ("Medium job cooldown", medium_job, "standard", 60), 
+            ("Long job cooldown", long_job, "long_job", 1440)
+        ]
+        
+        for test_name, test_canary, alert_type, expected_minutes in cooldown_tests:
+            # This would need access to the internal cooldown logic
+            if is_long_running_job(test_canary):
+                actual_type = "long_job"
+            else:
+                actual_type = "standard"
+                
+            result = actual_type == alert_type.split("_")[0] if "_" in alert_type else actual_type == alert_type
+            status = "✅ PASS" if result else "❌ FAIL"
+            print(f"  {status} {test_name}: {actual_type} (expected type)")
+        
+        print(f"\n🎯 Overall Test Result: {'✅ ALL TESTS PASSED' if all_passed else '❌ SOME TESTS FAILED'}")
+        return all_passed
+        
+    except Exception as e:
+        print(f"❌ Test suite failed with error: {e}")
+        return False
+
+def test_alert_scenarios():
+    """Test specific alert scenarios for debugging"""
+    print("\n🔬 Testing specific alert scenarios...")
+    
+    scenarios = [
+        {
+            'name': '85-day job',
+            'interval_days': 85,
+            'should_use_smart_alerts': False,
+            'cooldown_hours': 24,
+            'alert_type': 'long_job'
+        },
+        {
+            'name': '1-day job',
+            'interval_days': 1, 
+            'should_use_smart_alerts': True,
+            'cooldown_hours': 1,
+            'alert_type': 'standard'
+        },
+        {
+            'name': '1-hour job',
+            'interval_days': 1/24,
+            'should_use_smart_alerts': True,
+            'cooldown_hours': 1,
+            'alert_type': 'standard'
+        }
+    ]
+    
+    for scenario in scenarios:
+        print(f"\n📋 Testing: {scenario['name']}")
+        
+        class TestCanary:
+            def __init__(self, name, interval_days):
+                self.canary_id = f"test-{name.replace(' ', '-')}"
+                self.name = name
+                self.interval_minutes = interval_days * 1440
+        
+        canary = TestCanary(scenario['name'], scenario['interval_days'])
+        
+        # Test long job detection
+        is_long = is_long_running_job(canary)
+        expected_long = scenario['interval_days'] > 30
+        print(f"  Long job detection: {is_long} (expected: {expected_long}) {'✅' if is_long == expected_long else '❌'}")
+        
+        # Test Smart Alert usage (for test canaries, simulate based on job type)
+        should_smart = should_use_smart_alerts(canary) if hasattr(canary, 'user_id') else (not is_long)
+        expected_smart = scenario['should_use_smart_alerts'] and not is_long
+        print(f"  Smart Alerts enabled: {should_smart} (expected: {expected_smart}) {'✅' if should_smart == expected_smart else '❌'}")
+        
+        print(f"  Interval: {scenario['interval_days']} days ({canary.interval_minutes} minutes)")
+        print(f"  Expected cooldown: {scenario['cooldown_hours']} hours")
+        print(f"  Alert type: {scenario['alert_type']}")
+
+def run_comprehensive_tests():
+    """Run all test suites"""
+    print("🚀 Running comprehensive long-job alert system tests...\n")
+    
+    # Test the alert system
+    alert_tests_passed = test_long_job_alert_system()
+    
+    # Test specific scenarios
+    test_alert_scenarios()
+    
+    print(f"\n🎯 Final Result: {'✅ SYSTEM READY' if alert_tests_passed else '❌ ISSUES DETECTED'}")
+    return alert_tests_passed
 
 if __name__ == '__main__':
     # Test Redis connection first

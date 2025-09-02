@@ -45,6 +45,113 @@
                     </div>
                     
                     <hr>
+                    <h5>AI Integration (Optional)</h5>
+                    <div class="mb-3">
+                        {{ form.anthropic_api_key.label(class="form-label") }}
+                        <div class="input-group">
+                            {{ form.anthropic_api_key(class="form-control", type="password", id="anthropic-api-key-input") }}
+                            <button class="btn btn-outline-secondary" type="button" id="toggle-api-key-visibility">
+                                <i class="fas fa-eye" id="visibility-icon"></i>
+                            </button>
+                            <button class="btn btn-outline-primary" type="button" id="validate-api-key" {% if not current_user.anthropic_api_key %}style="display: none;"{% endif %}>
+                                <i class="fas fa-check-circle"></i> Test
+                            </button>
+                            <button class="btn btn-outline-info" type="button" id="view-api-logs" {% if not current_user.anthropic_api_key %}style="display: none;"{% endif %}>
+                                <i class="fas fa-file-alt"></i> View Logs
+                            </button>
+                        </div>
+                        
+                        {% if form.anthropic_api_key.errors %}
+                            <div class="text-danger mt-2">
+                                {% for error in form.anthropic_api_key.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        
+                        <div id="api-key-validation-result" class="mt-2" style="display: none;"></div>
+                        
+                        <div class="form-text">
+                            <strong>🤖 Unlock AI-powered insights!</strong> Add your Anthropic API key to get:
+                            <ul class="mt-2 mb-2">
+                                <li><strong>Intelligent Alert Analysis:</strong> AI explains why alerts triggered and suggests fixes</li>
+                                <li><strong>Predictive Monitoring:</strong> Get warnings before failures happen</li>
+                                <li><strong>Smart Recommendations:</strong> AI suggests optimal canary configurations</li>
+                                <li><strong>Natural Language Chat:</strong> Ask questions about your monitoring data</li>
+                            </ul>
+                            <div class="alert alert-info p-2 mt-2">
+                                <small>
+                                    <strong>📝 How to get your API key:</strong>
+                                    <ol class="mb-1 mt-1">
+                                        <li>Visit <a href="https://console.anthropic.com/" target="_blank" class="fw-bold">console.anthropic.com</a></li>
+                                        <li>Sign up or log in to your Anthropic account</li>
+                                        <li>Go to "API Keys" and create a new key</li>
+                                        <li>Copy the key (starts with <code>sk-ant-</code>) and paste it above</li>
+                                        <li>Click "Test" to validate before saving</li>
+                                    </ol>
+                                </small>
+                            </div>
+                            <small class="text-muted">
+                                <i class="fas fa-shield-alt me-1"></i> Your key is stored securely and only used for your AI insights
+                                • <i class="fas fa-dollar-sign me-1"></i> Cost: ~$0.01-0.10 per analysis (you control usage)
+                                • <i class="fas fa-times-circle me-1"></i> Leave blank to disable AI features
+                            </small>
+                        </div>
+                    </div>
+                    
+                    <!-- API Usage Statistics -->
+                    {% if current_user.anthropic_api_key %}
+                    <hr>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5>API Usage Statistics</h5>
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="refresh-usage">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                    
+                    <div class="row" id="usage-summary">
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h6 class="card-title text-muted">Total Calls</h6>
+                                    <h4 class="text-primary" id="total-calls">-</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h6 class="card-title text-muted">Success Rate</h6>
+                                    <h4 class="text-success" id="success-rate">-</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h6 class="card-title text-muted">Total Tokens</h6>
+                                    <h4 class="text-info" id="total-tokens">-</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h6 class="card-title text-muted">Est. Cost (30d)</h6>
+                                    <h4 class="text-warning" id="estimated-cost">-</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <button type="button" class="btn btn-outline-info btn-sm" id="view-usage-details">
+                            <i class="fas fa-list"></i> View Detailed Usage Logs
+                        </button>
+                    </div>
+                    {% endif %}
+                    
+                    <hr>
                     <h5>Change Password (Optional)</h5>
                     <p class="text-muted">Leave all password fields empty to keep your current password.</p>
                     
@@ -136,78 +243,76 @@
                 <p class="text-muted">Manage your API keys for CI/CD integration and automated canary management.</p>
                 
                 {% if api_keys %}
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
+                <div class="table-responsive" style="overflow-x: auto;">
+                    <table class="table table-hover" style="min-width: 900px; table-layout: fixed;">
+                        <thead class="table-light">
                             <tr>
-                                <th>Name</th>
-                                <th>Key</th>
-                                <th>Status</th>
-                                <th>Usage</th>
-                                <th>Created</th>
-                                <th>Last Used</th>
-                                <th>Actions</th>
+                                <th style="width: 120px;">Name</th>
+                                <th style="width: 280px;">Key</th>
+                                <th style="width: 80px;">Status</th>
+                                <th style="width: 70px;">Usage</th>
+                                <th style="width: 100px;">Created</th>
+                                <th style="width: 120px;">Last Used</th>
+                                <th style="width: 130px;">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for api_key in api_keys %}
                             <tr>
-                                <td>
-                                    <strong>{{ api_key.name }}</strong>
+                                <td style="word-wrap: break-word; padding: 12px 8px; vertical-align: middle;">
+                                    <strong style="font-size: 0.9em;">{{ api_key.name }}</strong>
                                 </td>
-                                <td>
-                                    <div class="input-group input-group-sm" style="max-width: 300px;">
+                                <td style="padding: 8px;">
+                                    <div class="input-group input-group-sm">
                                         <input type="password" class="form-control font-monospace api-key-display" 
                                                value="{{ api_key.key_value }}" readonly
-                                               autocomplete="off" data-lpignore="true" data-form-type="other">
-                                        <button class="btn btn-outline-secondary btn-toggle-key" type="button">
-                                            <i class="fas fa-eye"></i>
+                                               autocomplete="off" data-lpignore="true" data-form-type="other"
+                                               style="font-size: 0.75em; min-width: 200px;">
+                                        <button class="btn btn-outline-secondary btn-toggle-key" type="button" style="padding: 4px 8px;">
+                                            <i class="fas fa-eye" style="font-size: 0.8em;"></i>
                                         </button>
                                         <button class="btn btn-outline-primary btn-copy-key" type="button" 
-                                                data-key="{{ api_key.key_value }}">
-                                            <i class="fas fa-copy"></i>
+                                                data-key="{{ api_key.key_value }}" style="padding: 4px 8px;">
+                                            <i class="fas fa-copy" style="font-size: 0.8em;"></i>
                                         </button>
                                     </div>
                                 </td>
-                                <td>
+                                <td style="text-align: center; vertical-align: middle; padding: 8px;">
                                     {% if api_key.is_active %}
-                                    <span class="badge bg-success">Active</span>
+                                    <span class="badge bg-success" style="font-size: 0.7em;">Active</span>
                                     {% else %}
-                                    <span class="badge bg-secondary">Inactive</span>
+                                    <span class="badge bg-secondary" style="font-size: 0.7em;">Inactive</span>
                                     {% endif %}
                                 </td>
-                                <td>
-                                    <small class="text-muted">{{ api_key.usage_count }} uses</small>
+                                <td style="text-align: center; vertical-align: middle; padding: 8px;">
+                                    <small class="text-muted" style="font-size: 0.75em;">{{ api_key.usage_count }}</small>
                                 </td>
-                                <td>
-                                    <small class="text-muted">{{ (api_key.created_at | parse_iso | user_timezone).strftime('%Y-%m-%d') }}</small>
+                                <td style="text-align: center; vertical-align: middle; padding: 8px;">
+                                    <small class="text-muted" style="font-size: 0.7em;">{{ (api_key.created_at | parse_iso | user_timezone).strftime('%m/%d/%y') }}</small>
                                 </td>
-                                <td>
+                                <td style="text-align: center; vertical-align: middle; padding: 8px;">
                                     {% if api_key.last_used %}
-                                    <small class="text-muted">{{ (api_key.last_used | parse_iso | user_timezone).strftime('%Y-%m-%d %H:%M') }}</small>
+                                    <small class="text-muted" style="font-size: 0.7em;">{{ (api_key.last_used | parse_iso | user_timezone).strftime('%m/%d/%y') }}</small>
                                     {% else %}
-                                    <small class="text-muted">Never</small>
+                                    <small class="text-muted" style="font-size: 0.7em;">Never</small>
                                     {% endif %}
                                 </td>
-                                <td>
-                                    <div class="btn-group btn-group-sm">
-                                        <form method="POST" class="d-inline">
-                                            {{ form.hidden_tag() }}
-                                            <input type="hidden" name="api_key_id" value="{{ api_key.api_key_id }}">
-                                            <button type="submit" name="toggle_api_key" 
-                                                    class="btn btn-outline-{{ 'warning' if api_key.is_active else 'success' }} btn-sm"
-                                                    title="{{ 'Deactivate' if api_key.is_active else 'Activate' }}">
-                                                <i class="fas fa-{{ 'pause' if api_key.is_active else 'play' }}"></i>
-                                            </button>
-                                        </form>
+                                <td style="white-space: nowrap; text-align: center; vertical-align: middle; padding: 8px;">
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-info btn-sm view-api-key-logs" 
+                                                data-api-key-id="{{ api_key.api_key_id }}" 
+                                                data-api-key-name="{{ api_key.name }}"
+                                                title="View Usage Logs" style="padding: 4px 6px;">
+                                            <i class="fas fa-chart-line" style="font-size: 0.8em;"></i>
+                                        </button>
                                         <form method="POST" class="d-inline">
                                             {{ form.hidden_tag() }}
                                             <input type="hidden" name="api_key_id" value="{{ api_key.api_key_id }}">
                                             <button type="submit" name="delete_api_key" 
                                                     class="btn btn-outline-danger btn-sm"
                                                     onclick="return confirm('Are you sure? This will permanently delete the API key \"{{ api_key.name }}\".')"
-                                                    title="Delete">
-                                                <i class="fas fa-trash"></i>
+                                                    title="Delete" style="padding: 4px 6px;">
+                                                <i class="fas fa-trash" style="font-size: 0.8em;"></i>
                                             </button>
                                         </form>
                                     </div>
@@ -381,6 +486,82 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // API Key Management
     
+    // Handle API key logs viewing
+    document.querySelectorAll('.view-api-key-logs').forEach(button => {
+        button.addEventListener('click', async function() {
+            const apiKeyId = this.dataset.apiKeyId;
+            const apiKeyName = this.dataset.apiKeyName;
+            
+            try {
+                // For now, show a placeholder modal since we'd need to implement API key usage tracking
+                // This would require modifications to track usage per API key
+                showApiKeyLogsModal(apiKeyName, []);
+            } catch (error) {
+                console.error('Error fetching API key logs:', error);
+                alert('Error loading API key logs. Please try again.');
+            }
+        });
+    });
+
+    function showApiKeyLogsModal(apiKeyName, logs) {
+        let modal = document.getElementById('apiKeyLogsModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'apiKeyLogsModal';
+            modal.className = 'modal fade';
+            modal.innerHTML = `
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="fas fa-key me-2"></i>API Key Usage: <span id="api-key-name"></span>
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-info">
+                                <h6><i class="fas fa-info-circle"></i> API Key Usage Tracking</h6>
+                                <p class="mb-0">This shows usage statistics for your SilentCanary API key used in CI/CD integrations.</p>
+                            </div>
+                            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                                <table class="table table-sm table-striped">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>Timestamp</th>
+                                            <th>Endpoint</th>
+                                            <th>IP Address</th>
+                                            <th>Status</th>
+                                            <th>Canary</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="api-key-logs-tbody">
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted py-3">
+                                                API key usage logs will be shown here.<br>
+                                                <small>Usage tracking for CI/CD API keys is available in the webhook logs.</small>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+        
+        // Update modal title
+        document.getElementById('api-key-name').textContent = apiKeyName;
+        
+        // Show modal
+        const bootstrapModal = new bootstrap.Modal(modal);
+        bootstrapModal.show();
+    }
+    
     // Handle toggle visibility for each API key
     document.querySelectorAll('.btn-toggle-key').forEach(button => {
         button.addEventListener('click', function() {
@@ -423,6 +604,315 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     });
+
+    // Anthropic API Key functionality
+    const apiKeyInput = document.getElementById('anthropic-api-key-input');
+    const toggleVisibilityBtn = document.getElementById('toggle-api-key-visibility');
+    const visibilityIcon = document.getElementById('visibility-icon');
+    const validateBtn = document.getElementById('validate-api-key');
+    const validationResult = document.getElementById('api-key-validation-result');
+
+    // Toggle API key visibility
+    toggleVisibilityBtn.addEventListener('click', function() {
+        if (apiKeyInput.type === 'password') {
+            apiKeyInput.type = 'text';
+            visibilityIcon.className = 'fas fa-eye-slash';
+        } else {
+            apiKeyInput.type = 'password';
+            visibilityIcon.className = 'fas fa-eye';
+        }
+    });
+
+    // Show/hide validation and logs buttons based on input content
+    apiKeyInput.addEventListener('input', function() {
+        if (apiKeyInput.value.trim()) {
+            validateBtn.style.display = 'block';
+            viewLogsBtn.style.display = 'block';
+            validationResult.style.display = 'none';
+        } else {
+            validateBtn.style.display = 'none';
+            viewLogsBtn.style.display = 'none';
+            validationResult.style.display = 'none';
+        }
+    });
+
+    // API key validation
+    validateBtn.addEventListener('click', async function() {
+        const apiKey = apiKeyInput.value.trim();
+        
+        if (!apiKey) {
+            showValidationResult(false, 'Please enter an API key first');
+            return;
+        }
+
+        // Show loading state
+        validateBtn.disabled = true;
+        validateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+
+        try {
+            const response = await fetch('/validate_anthropic_key', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ api_key: apiKey })
+            });
+
+            const result = await response.json();
+            showValidationResult(result.valid, result.message);
+
+        } catch (error) {
+            console.error('Validation error:', error);
+            showValidationResult(false, 'Network error. Please try again.');
+        } finally {
+            // Reset button state
+            validateBtn.disabled = false;
+            validateBtn.innerHTML = '<i class="fas fa-check-circle"></i> Test';
+        }
+    });
+
+    function showValidationResult(isValid, message) {
+        validationResult.style.display = 'block';
+        validationResult.className = `mt-2 alert alert-${isValid ? 'success' : 'danger'} alert-dismissible fade show`;
+        validationResult.innerHTML = `
+            <i class="fas fa-${isValid ? 'check-circle' : 'exclamation-triangle'}"></i> ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+    }
+
+    // View API key logs functionality
+    const viewLogsBtn = document.getElementById('view-api-logs');
+    if (viewLogsBtn) {
+        viewLogsBtn.addEventListener('click', async function() {
+            // Show loading state
+            viewLogsBtn.disabled = true;
+            viewLogsBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            
+            try {
+                const response = await fetch('/api_key_logs', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showLogsModal(result.logs, result.total_lines);
+                } else {
+                    alert('Failed to fetch logs: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Log fetch error:', error);
+                alert('Network error fetching logs. Please try again.');
+            } finally {
+                // Reset button state
+                viewLogsBtn.disabled = false;
+                viewLogsBtn.innerHTML = '<i class="fas fa-file-alt"></i> View Logs';
+            }
+        });
+    }
+
+    function showLogsModal(logs, totalLines) {
+        // Create or update logs modal
+        let modal = document.getElementById('apiLogsModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'apiLogsModal';
+            modal.className = 'modal fade';
+            modal.innerHTML = `
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="fas fa-file-alt me-2"></i>API Key Debug Logs
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="text-muted mb-3">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Showing last <span id="log-count">0</span> API key related log entries from the past hour.
+                            </p>
+                            <div id="logs-container" style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.85em; background: #f8f9fa; padding: 1rem; border-radius: 0.375rem;">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-primary" onclick="location.reload()">Refresh Logs</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+        
+        // Update logs content
+        document.getElementById('log-count').textContent = logs.length;
+        const logsContainer = document.getElementById('logs-container');
+        
+        if (logs.length === 0) {
+            logsContainer.innerHTML = '<div class="text-muted text-center py-3">No API key related logs found in the past hour.</div>';
+        } else {
+            logsContainer.innerHTML = logs.map(log => 
+                `<div class="mb-1 p-1 border-bottom" style="word-wrap: break-word;">${escapeHtml(log)}</div>`
+            ).join('');
+            
+            // Auto-scroll to bottom
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+        
+        // Show modal
+        const bootstrapModal = new bootstrap.Modal(modal);
+        bootstrapModal.show();
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // API Usage Statistics functionality
+    async function loadUsageSummary() {
+        try {
+            const response = await fetch('/api_usage_summary?days=30');
+            const result = await response.json();
+            
+            if (result.success) {
+                const summary = result.summary;
+                
+                // Update summary cards
+                document.getElementById('total-calls').textContent = summary.total_calls || 0;
+                
+                const successRate = summary.total_calls > 0 
+                    ? Math.round((summary.successful_calls / summary.total_calls) * 100) 
+                    : 0;
+                document.getElementById('success-rate').textContent = `${successRate}%`;
+                
+                document.getElementById('total-tokens').textContent = (summary.total_tokens || 0).toLocaleString();
+                document.getElementById('estimated-cost').textContent = `$${(summary.estimated_cost || 0).toFixed(4)}`;
+                
+            } else {
+                console.error('Failed to load usage summary:', result.error);
+            }
+        } catch (error) {
+            console.error('Error loading usage summary:', error);
+        }
+    }
+
+    // Load usage summary on page load
+    if (document.getElementById('usage-summary')) {
+        loadUsageSummary();
+        
+        // Refresh button
+        document.getElementById('refresh-usage').addEventListener('click', function() {
+            loadUsageSummary();
+        });
+        
+        // View detailed logs
+        document.getElementById('view-usage-details').addEventListener('click', async function() {
+            try {
+                const response = await fetch('/api_usage_logs?limit=100');
+                const result = await response.json();
+                
+                if (result.success) {
+                    showUsageLogsModal(result.logs);
+                } else {
+                    alert('Failed to fetch usage logs: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Error fetching usage logs:', error);
+                alert('Network error fetching usage logs. Please try again.');
+            }
+        });
+    }
+
+    function showUsageLogsModal(logs) {
+        let modal = document.getElementById('usageLogsModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'usageLogsModal';
+            modal.className = 'modal fade';
+            modal.innerHTML = `
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="fas fa-chart-line me-2"></i>API Usage Details
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                                <table class="table table-sm table-striped">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>Time</th>
+                                            <th>Feature</th>
+                                            <th>Model</th>
+                                            <th>Tokens</th>
+                                            <th>Cost</th>
+                                            <th>Status</th>
+                                            <th>Response Time</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="usage-logs-tbody">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+        
+        // Populate table
+        const tbody = document.getElementById('usage-logs-tbody');
+        tbody.innerHTML = '';
+        
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">No API usage data found</td></tr>';
+        } else {
+            logs.forEach(log => {
+                const row = document.createElement('tr');
+                
+                const timestamp = new Date(log.timestamp).toLocaleString();
+                const tokens = log.total_tokens ? log.total_tokens.toLocaleString() : '-';
+                const cost = log.estimated_cost ? `$${log.estimated_cost.toFixed(4)}` : '-';
+                const status = log.success ? 
+                    '<span class="badge bg-success">Success</span>' : 
+                    '<span class="badge bg-danger">Failed</span>';
+                const responseTime = log.response_time_ms ? `${log.response_time_ms}ms` : '-';
+                
+                row.innerHTML = `
+                    <td class="small">${timestamp}</td>
+                    <td><span class="badge bg-primary">${log.feature_used || 'unknown'}</span></td>
+                    <td class="small">${log.model || '-'}</td>
+                    <td class="text-end">${tokens}</td>
+                    <td class="text-end">${cost}</td>
+                    <td>${status}</td>
+                    <td class="text-end">${responseTime}</td>
+                `;
+                
+                if (!log.success && log.error_message) {
+                    row.title = log.error_message;
+                    row.style.cursor = 'help';
+                }
+                
+                tbody.appendChild(row);
+            });
+        }
+        
+        // Show modal
+        const bootstrapModal = new bootstrap.Modal(modal);
+        bootstrapModal.show();
+    }
 });
 </script>
 {% endblock %}

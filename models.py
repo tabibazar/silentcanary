@@ -36,10 +36,11 @@ canary_logs_table = dynamodb.Table('SilentCanary_CanaryLogs')
 smart_alerts_table = dynamodb.Table('SilentCanary_SmartAlerts')
 api_keys_table = dynamodb.Table('SilentCanary_APIKeys')
 subscriptions_table = dynamodb.Table('SilentCanary_Subscriptions')
+api_usage_table = dynamodb.Table('SilentCanary_APIUsage')
 
 class User:
     def __init__(self, user_id=None, username=None, email=None, password_hash=None, 
-                 is_verified=False, user_timezone='UTC', created_at=None, last_login=None, api_key=None):
+                 is_verified=False, user_timezone='UTC', created_at=None, last_login=None, api_key=None, anthropic_api_key=None):
         self.user_id = user_id or str(uuid.uuid4())
         self.username = username
         self.email = email
@@ -49,6 +50,7 @@ class User:
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
         self.last_login = last_login
         self.api_key = api_key
+        self.anthropic_api_key = anthropic_api_key
     
     def set_password(self, password):
         """Set password hash"""
@@ -120,6 +122,9 @@ class User:
                 
             if self.api_key is not None:
                 item['api_key'] = self.api_key
+                
+            if self.anthropic_api_key is not None:
+                item['anthropic_api_key'] = self.anthropic_api_key
             
             users_table.put_item(Item=item)
             return True
@@ -152,7 +157,8 @@ class User:
                     user_timezone=item.get('timezone', 'UTC'),
                     created_at=item['created_at'],
                     last_login=item.get('last_login'),
-                    api_key=item.get('api_key')
+                    api_key=item.get('api_key'),
+                    anthropic_api_key=item.get('anthropic_api_key')
                 )
             return None
         except ClientError as e:
@@ -178,7 +184,8 @@ class User:
                     user_timezone=item.get('timezone', 'UTC'),
                     created_at=item['created_at'],
                     last_login=item.get('last_login'),
-                    api_key=item.get('api_key')
+                    api_key=item.get('api_key'),
+                    anthropic_api_key=item.get('anthropic_api_key')
                 )
             return None
         except ClientError as e:
@@ -204,7 +211,8 @@ class User:
                     user_timezone=item.get('timezone', 'UTC'),
                     created_at=item['created_at'],
                     last_login=item.get('last_login'),
-                    api_key=item.get('api_key')
+                    api_key=item.get('api_key'),
+                    anthropic_api_key=item.get('anthropic_api_key')
                 )
             return None
         except ClientError as e:
@@ -872,6 +880,128 @@ class CanaryLog:
             return None
 
 
+class ApiUsageLog:
+    def __init__(self, log_id=None, user_id=None, api_type='anthropic', endpoint=None, 
+                 model=None, input_tokens=None, output_tokens=None, total_tokens=None,
+                 estimated_cost=None, success=None, error_message=None, response_time_ms=None,
+                 timestamp=None, feature_used=None, canary_id=None):
+        self.log_id = log_id or str(uuid.uuid4())
+        self.user_id = user_id
+        self.api_type = api_type  # 'anthropic', 'openai', etc.
+        self.endpoint = endpoint  # 'chat', 'validation', 'smart_alert', etc.
+        self.model = model
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.total_tokens = total_tokens
+        self.estimated_cost = estimated_cost  # In USD
+        self.success = success
+        self.error_message = error_message
+        self.response_time_ms = response_time_ms
+        self.timestamp = timestamp or datetime.now(timezone.utc).isoformat()
+        self.feature_used = feature_used  # 'chat', 'smart_alert', 'validation', etc.
+        self.canary_id = canary_id  # If related to specific canary
+    
+    def save(self):
+        """Save API usage log to DynamoDB"""
+        try:
+            item = {
+                'log_id': self.log_id,
+                'user_id': self.user_id,
+                'api_type': self.api_type,
+                'timestamp': self.timestamp
+            }
+            
+            # Add optional fields if they exist
+            optional_fields = ['endpoint', 'model', 'input_tokens', 'output_tokens', 
+                             'total_tokens', 'estimated_cost', 'success', 'error_message',
+                             'response_time_ms', 'feature_used', 'canary_id']
+            
+            for field in optional_fields:
+                value = getattr(self, field)
+                if value is not None:
+                    item[field] = value
+            
+            api_usage_table.put_item(Item=item)
+            return True
+        except ClientError as e:
+            print(f"Error saving API usage log: {e}")
+            return False
+    
+    @staticmethod
+    def get_by_user_id(user_id, limit=50):
+        """Get API usage logs for a user"""
+        try:
+            response = api_usage_table.query(
+                IndexName='user-id-index',
+                KeyConditionExpression=Key('user_id').eq(user_id),
+                ScanIndexForward=False,  # Most recent first
+                Limit=limit
+            )
+            
+            logs = []
+            for item in response.get('Items', []):
+                log = ApiUsageLog(
+                    log_id=item.get('log_id'),
+                    user_id=item.get('user_id'),
+                    api_type=item.get('api_type'),
+                    endpoint=item.get('endpoint'),
+                    model=item.get('model'),
+                    input_tokens=item.get('input_tokens'),
+                    output_tokens=item.get('output_tokens'),
+                    total_tokens=item.get('total_tokens'),
+                    estimated_cost=item.get('estimated_cost'),
+                    success=item.get('success'),
+                    error_message=item.get('error_message'),
+                    response_time_ms=item.get('response_time_ms'),
+                    timestamp=item.get('timestamp'),
+                    feature_used=item.get('feature_used'),
+                    canary_id=item.get('canary_id')
+                )
+                logs.append(log)
+            
+            return logs
+        except ClientError as e:
+            print(f"Error getting API usage logs: {e}")
+            return []
+    
+    @staticmethod
+    def get_user_usage_summary(user_id, days=30):
+        """Get usage summary for a user"""
+        try:
+            from datetime import datetime, timezone, timedelta
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            
+            response = api_usage_table.query(
+                IndexName='user-id-index',
+                KeyConditionExpression=Key('user_id').eq(user_id),
+                FilterExpression=Attr('timestamp').gte(cutoff_date)
+            )
+            
+            items = response.get('Items', [])
+            
+            summary = {
+                'total_calls': len(items),
+                'successful_calls': len([i for i in items if i.get('success', False)]),
+                'failed_calls': len([i for i in items if i.get('success', False) == False]),
+                'total_tokens': sum(i.get('total_tokens', 0) for i in items),
+                'estimated_cost': sum(float(i.get('estimated_cost', 0)) for i in items),
+                'features_used': {},
+                'models_used': {}
+            }
+            
+            # Count feature usage
+            for item in items:
+                feature = item.get('feature_used', 'unknown')
+                summary['features_used'][feature] = summary['features_used'].get(feature, 0) + 1
+                
+                model = item.get('model', 'unknown')
+                summary['models_used'][model] = summary['models_used'].get(model, 0) + 1
+            
+            return summary
+        except ClientError as e:
+            print(f"Error getting usage summary: {e}")
+            return {}
+
 class SmartAlert:
     """Smart alerting with ML-based anomaly detection for irregular check-in patterns"""
     
@@ -951,6 +1081,7 @@ class SmartAlert:
         """Analyze check-in patterns and build ML model for anomaly detection"""
         import statistics
         from collections import defaultdict
+        from decimal import Decimal
         
         try:
             # Get canary to analyze
@@ -995,12 +1126,15 @@ class SmartAlert:
                     interval = (checkin_time - checkin_times[i-1]).total_seconds() / 60
                     interval_patterns.append(interval)
             
-            # Calculate statistics for patterns
+            # Calculate statistics for patterns - convert floats to Decimal for DynamoDB
+            avg_interval = statistics.mean(interval_patterns) if interval_patterns else canary.interval_minutes
+            interval_std = statistics.stdev(interval_patterns) if len(interval_patterns) > 1 else 0
+            
             pattern_data = {
                 'hourly_distribution': {str(h): len(hourly_patterns[h]) for h in range(24)},
                 'daily_distribution': {str(d): len(daily_patterns[d]) for d in range(7)},
-                'avg_interval': statistics.mean(interval_patterns) if interval_patterns else canary.interval_minutes,
-                'interval_std': statistics.stdev(interval_patterns) if len(interval_patterns) > 1 else 0,
+                'avg_interval': Decimal(str(round(avg_interval, 2))),
+                'interval_std': Decimal(str(round(interval_std, 2))),
                 'total_checkins': len(checkin_times),
                 'learning_start': start_time.isoformat(),
                 'learning_end': end_time.isoformat(),
@@ -1044,6 +1178,10 @@ class SmartAlert:
         # Check if interval is significantly different from learned pattern
         expected_interval = self.pattern_data.get('avg_interval', canary.interval_minutes)
         interval_std = self.pattern_data.get('interval_std', 0)
+        
+        # Convert Decimal to float for calculations
+        expected_interval = float(expected_interval)
+        interval_std = float(interval_std)
         
         # Define anomaly threshold based on sensitivity (more conservative)
         # Higher sensitivity = lower threshold, but with reasonable minimums
