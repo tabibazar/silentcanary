@@ -786,25 +786,253 @@ def create_canary():
         if form.tags.data:
             tags = [tag.strip() for tag in form.tags.data.split(',') if tag.strip()]
         
+        # Check if custom alert email is different from user's email
+        alert_email = form.alert_email.data if form.alert_email.data else None
+        needs_email_verification = (
+            alert_email and 
+            alert_email.strip().lower() != current_user.email.lower() and
+            form.alert_type.data == 'email'
+        )
+        
         canary = Canary(
             name=form.name.data,
             user_id=current_user.user_id,
             interval_minutes=form.interval_minutes.data,
             grace_minutes=form.grace_minutes.data,
             alert_type=form.alert_type.data,
-            alert_email=form.alert_email.data if form.alert_email.data else None,
+            alert_email=alert_email,
             slack_webhook=form.slack_webhook.data if form.slack_webhook.data else None,
             sla_threshold=form.sla_threshold.data,
+            status='pending_verification' if needs_email_verification else 'waiting',
             tags=tags
         )
         
         if canary.save():
-            flash(f'Canary "{canary.name}" created successfully!')
+            if needs_email_verification:
+                # Create email verification record
+                from models import EmailVerification
+                verification = EmailVerification(
+                    canary_id=canary.canary_id,
+                    user_id=current_user.user_id,
+                    email=alert_email
+                )
+                
+                if verification.save():
+                    # Send verification email
+                    if send_verification_email(verification, canary):
+                        flash(f'Canary "{canary.name}" created! A verification email has been sent to {alert_email}. Please verify your email to activate the canary.', 'warning')
+                    else:
+                        flash(f'Canary created but failed to send verification email. Please contact support.', 'warning')
+                else:
+                    flash(f'Canary created but email verification setup failed. Please contact support.', 'error')
+            else:
+                flash(f'Canary "{canary.name}" created successfully!')
+            
             return redirect(url_for('dashboard'))
         else:
             flash('Failed to create canary. Please try again.')
     
     return render_template('create_canary.html', form=form)
+
+def send_verification_email(verification, canary):
+    """Send email verification email for canary alert email"""
+    try:
+        from flask_mail import Message
+        
+        msg = Message(
+            subject='Verify Your Email for SilentCanary Alert',
+            recipients=[verification.email],
+            sender=app.config['MAIL_DEFAULT_SENDER']
+        )
+        
+        verification_url = url_for('verify_canary_email', verification_id=verification.verification_id, _external=True)
+        
+        msg.html = f'''
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+                <h1 style="margin: 0; font-size: 28px;">🐦 SilentCanary</h1>
+                <p style="margin: 10px 0 0 0; font-size: 16px;">Email Verification Required</p>
+            </div>
+            
+            <div style="padding: 30px; background: #f8f9fa;">
+                <h2 style="color: #333; margin-top: 0;">Verify Your Email Address</h2>
+                
+                <p style="color: #666; line-height: 1.6;">
+                    You've set up a new SilentCanary monitor called "<strong>{canary.name}</strong>" with this email address 
+                    for alerts. To prevent spam and ensure security, we need to verify that you own this email address.
+                </p>
+                
+                <div style="background: white; border: 2px solid #e9ecef; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+                    <p style="margin: 0; color: #333; font-size: 18px;"><strong>Verification Code:</strong></p>
+                    <p style="margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: #667eea; letter-spacing: 3px;">{verification.verification_code}</p>
+                </div>
+                
+                <p style="color: #666; line-height: 1.6;">
+                    <strong>Option 1:</strong> Click the button below to verify automatically:
+                </p>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{verification_url}" 
+                       style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; 
+                              border-radius: 5px; font-weight: bold; display: inline-block;">
+                        ✅ Verify Email Address
+                    </a>
+                </div>
+                
+                <p style="color: #666; line-height: 1.6;">
+                    <strong>Option 2:</strong> Or manually enter the verification code when prompted.
+                </p>
+                
+                <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+                    <p style="margin: 0; color: #856404; font-size: 14px;">
+                        ⏰ <strong>This verification expires in 24 hours.</strong> 
+                        Your canary will remain inactive until verified.
+                    </p>
+                </div>
+                
+                <p style="color: #888; font-size: 14px; line-height: 1.4;">
+                    If you didn't request this verification, please ignore this email. 
+                    The canary will remain inactive and no alerts will be sent to this address.
+                </p>
+            </div>
+            
+            <div style="background: #e9ecef; padding: 20px; text-align: center; color: #6c757d; font-size: 14px;">
+                <p style="margin: 0;">SilentCanary - Reliable monitoring for your services</p>
+                <p style="margin: 5px 0 0 0;">
+                    <a href="https://silentcanary.com" style="color: #667eea;">silentcanary.com</a>
+                </p>
+            </div>
+        </div>
+        '''
+        
+        mail.send(msg)
+        print(f"📧 Verification email sent to {verification.email} for canary {canary.name}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send verification email: {e}")
+        return False
+
+@app.route('/verify-email/<verification_id>')
+def verify_canary_email(verification_id):
+    """Handle email verification link clicks"""
+    try:
+        from models import EmailVerification, Canary
+        
+        verification = EmailVerification.get_by_verification_id(verification_id)
+        if not verification:
+            flash('Invalid or expired verification link.', 'error')
+            return redirect(url_for('index'))
+        
+        # Verify the email
+        success, message = verification.verify(verification.verification_code)
+        
+        if success:
+            # Activate the canary
+            canary = Canary.get_by_id(verification.canary_id)
+            if canary:
+                canary.status = 'waiting'
+                canary.save()
+                
+                flash(f'✅ Email verified successfully! Your canary "{canary.name}" is now active and will send alerts to {verification.email}.', 'success')
+            else:
+                flash('Email verified but canary not found. Please contact support.', 'warning')
+        else:
+            flash(f'Email verification failed: {message}', 'error')
+    
+    except Exception as e:
+        print(f"Error in email verification: {e}")
+        flash('An error occurred during verification. Please try again.', 'error')
+    
+    return redirect(url_for('dashboard'))
+
+@app.route('/verify-email-code', methods=['POST'])
+@login_required
+def verify_email_code():
+    """Handle manual verification code entry"""
+    try:
+        data = request.get_json()
+        if not data or 'canary_id' not in data or 'code' not in data:
+            return jsonify({'success': False, 'error': 'Missing canary_id or verification code'}), 400
+        
+        from models import EmailVerification, Canary
+        
+        verification = EmailVerification.get_by_canary_id(data['canary_id'])
+        if not verification:
+            return jsonify({'success': False, 'error': 'No verification found for this canary'}), 404
+        
+        # Check if user owns this canary
+        canary = Canary.get_by_id(data['canary_id'])
+        if not canary or canary.user_id != current_user.user_id:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        
+        # Verify the code
+        success, message = verification.verify(data['code'].strip())
+        
+        if success:
+            # Activate the canary
+            canary.status = 'waiting'
+            canary.save()
+            
+            return jsonify({
+                'success': True, 
+                'message': f'Email verified successfully! Your canary "{canary.name}" is now active.'
+            })
+        else:
+            return jsonify({'success': False, 'error': message})
+    
+    except Exception as e:
+        print(f"Error in manual verification: {e}")
+        return jsonify({'success': False, 'error': 'An error occurred during verification'}), 500
+
+@app.route('/resend-verification', methods=['POST'])
+@login_required
+def resend_verification():
+    """Resend verification email for a canary"""
+    try:
+        data = request.get_json()
+        if not data or 'canary_id' not in data:
+            return jsonify({'success': False, 'error': 'Missing canary_id'}), 400
+        
+        from models import EmailVerification, Canary
+        
+        # Check if user owns this canary
+        canary = Canary.get_by_id(data['canary_id'])
+        if not canary or canary.user_id != current_user.user_id:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        
+        if canary.status != 'pending_verification':
+            return jsonify({'success': False, 'error': 'This canary is not pending verification'}), 400
+        
+        # Get existing verification
+        verification = EmailVerification.get_by_canary_id(data['canary_id'])
+        if not verification:
+            return jsonify({'success': False, 'error': 'No verification found for this canary'}), 404
+        
+        # Check if not already verified
+        if verification.is_verified:
+            return jsonify({'success': False, 'error': 'Email is already verified'}), 400
+        
+        # Generate new verification code and extend expiration
+        from datetime import datetime, timezone, timedelta
+        verification.verification_code = verification._generate_verification_code()
+        verification.expires_at = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+        
+        if verification.save():
+            # Send new verification email
+            if send_verification_email(verification, canary):
+                return jsonify({
+                    'success': True, 
+                    'message': f'New verification email sent to {verification.email}'
+                })
+            else:
+                return jsonify({'success': False, 'error': 'Failed to send verification email'}), 500
+        else:
+            return jsonify({'success': False, 'error': 'Failed to update verification'}), 500
+    
+    except Exception as e:
+        print(f"Error in resend verification: {e}")
+        return jsonify({'success': False, 'error': 'An error occurred'}), 500
 
 @app.route('/checkin/<token>', methods=['GET', 'POST'])
 def checkin(token):
@@ -2356,6 +2584,12 @@ def help_cicd_integration():
 
 def send_notifications(canary, log_entry=None):
     """Send notifications based on canary alert type and log timestamps."""
+    
+    # Skip notifications for canaries pending email verification
+    if canary.status == 'pending_verification':
+        print(f"⏸️ Skipping notifications for canary {canary.name} - pending email verification")
+        return
+    
     subject = f'SilentCanary Alert: {canary.name} has failed'
     
     # Get user for email fallback

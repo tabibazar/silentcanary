@@ -1737,3 +1737,133 @@ class APIKeyUsageLog:
         except Exception as e:
             print(f"Error fetching API key usage logs: {e}")
             return []
+
+class EmailVerification:
+    """Model for email verification during canary creation"""
+    
+    def __init__(self, verification_id=None, canary_id=None, user_id=None, email=None, 
+                 verification_code=None, is_verified=False, created_at=None, verified_at=None, expires_at=None):
+        self.verification_id = verification_id or str(uuid.uuid4())
+        self.canary_id = canary_id
+        self.user_id = user_id
+        self.email = email
+        self.verification_code = verification_code or self._generate_verification_code()
+        self.is_verified = is_verified
+        self.created_at = created_at or datetime.now(timezone.utc).isoformat()
+        self.verified_at = verified_at
+        # Email verification expires in 24 hours
+        if expires_at:
+            self.expires_at = expires_at
+        else:
+            expires_time = datetime.now(timezone.utc) + timedelta(hours=24)
+            self.expires_at = expires_time.isoformat()
+    
+    def _generate_verification_code(self):
+        """Generate a secure 6-digit verification code"""
+        import secrets
+        return ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+    
+    def save(self):
+        """Save email verification to DynamoDB"""
+        try:
+            # Use APIUsage table with email verification data structure
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            item = {
+                'log_id': self.verification_id,  # Using log_id as primary key
+                'user_id': self.user_id,
+                'api_type': 'email_verification',
+                'endpoint': self.email,  # Store email in endpoint field
+                'model': self.canary_id,  # Store canary_id in model field
+                'feature_used': self.verification_code,  # Store verification code
+                'success': self.is_verified,
+                'timestamp': self.created_at,
+                'response_time_ms': int(datetime.fromisoformat(self.expires_at.replace('Z', '+00:00')).timestamp() * 1000) if self.expires_at else None,
+                'error_message': self.verified_at
+            }
+            
+            api_usage_table.put_item(Item=item)
+            return True
+        except Exception as e:
+            print(f"Error saving email verification: {e}")
+            return False
+    
+    def verify(self, code):
+        """Verify the email with the provided code"""
+        if self.is_verified:
+            return True, "Email already verified"
+        
+        # Check if verification has expired
+        if self.expires_at:
+            expires_dt = datetime.fromisoformat(self.expires_at.replace('Z', '+00:00'))
+            if datetime.now(timezone.utc) > expires_dt:
+                return False, "Verification code has expired"
+        
+        # Check if code matches
+        if self.verification_code != code:
+            return False, "Invalid verification code"
+        
+        # Mark as verified
+        self.is_verified = True
+        self.verified_at = datetime.now(timezone.utc).isoformat()
+        
+        if self.save():
+            return True, "Email verified successfully"
+        else:
+            return False, "Failed to save verification status"
+    
+    @staticmethod
+    def get_by_canary_id(canary_id):
+        """Get email verification by canary ID"""
+        try:
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            response = api_usage_table.scan(
+                FilterExpression='api_type = :api_type AND model = :canary_id',
+                ExpressionAttributeValues={
+                    ':api_type': 'email_verification',
+                    ':canary_id': canary_id
+                }
+            )
+            
+            items = response.get('Items', [])
+            if items:
+                item = items[0]  # Get the first matching item
+                return EmailVerification(
+                    verification_id=item['log_id'],
+                    canary_id=item['model'],
+                    user_id=item['user_id'],
+                    email=item['endpoint'],
+                    verification_code=item['feature_used'],
+                    is_verified=item['success'],
+                    created_at=item['timestamp'],
+                    verified_at=item.get('error_message'),
+                    expires_at=datetime.fromtimestamp(item['response_time_ms'] / 1000, tz=timezone.utc).isoformat() if item.get('response_time_ms') else None
+                )
+            return None
+        except Exception as e:
+            print(f"Error fetching email verification: {e}")
+            return None
+    
+    @staticmethod  
+    def get_by_verification_id(verification_id):
+        """Get email verification by verification ID"""
+        try:
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            response = api_usage_table.get_item(Key={'log_id': verification_id})
+            
+            item = response.get('Item')
+            if item and item.get('api_type') == 'email_verification':
+                return EmailVerification(
+                    verification_id=item['log_id'],
+                    canary_id=item['model'],
+                    user_id=item['user_id'],
+                    email=item['endpoint'],
+                    verification_code=item['feature_used'],
+                    is_verified=item['success'],
+                    created_at=item['timestamp'],
+                    verified_at=item.get('error_message'),
+                    expires_at=datetime.fromtimestamp(item['response_time_ms'] / 1000, tz=timezone.utc).isoformat() if item.get('response_time_ms') else None
+                )
+            return None
+        except Exception as e:
+            print(f"Error fetching email verification by ID: {e}")
+            return None
