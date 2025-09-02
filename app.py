@@ -1830,44 +1830,47 @@ def validate_anthropic_key():
 def api_key_logs():
     """Get recent API key related logs for debugging"""
     try:
-        import subprocess
-        import json
+        from models import ApiUsageLog
         
-        # Get recent logs from kubernetes pods
-        result = subprocess.run([
-            'kubectl', 'logs', '-n', 'silentcanary', '-l', 'app=silentcanary', 
-            '--since=1h', '--tail=500'
-        ], capture_output=True, text=True, timeout=10)
+        # Get recent API usage logs for this user
+        logs = ApiUsageLog.get_by_user_id(current_user.user_id, limit=50)
         
-        if result.returncode == 0:
-            all_logs = result.stdout
-            # Filter for API key related logs
-            api_logs = []
-            for line in all_logs.split('\n'):
-                if any(keyword in line.lower() for keyword in ['anthropic', 'api_key', 'validat', 'call_claude_api']):
-                    api_logs.append(line)
+        # Format logs for display
+        formatted_logs = []
+        for log in logs:
+            timestamp = log.timestamp
+            if log.success:
+                status = "✅ SUCCESS"
+                message = f"{log.feature_used} - {log.model} - {log.total_tokens or 0} tokens - ${log.estimated_cost or 0:.4f}"
+            else:
+                status = "❌ FAILED"
+                message = f"{log.feature_used} - Error: {log.error_message or 'Unknown error'}"
             
-            return jsonify({
-                'success': True,
-                'logs': api_logs[-50:],  # Last 50 relevant log entries
-                'total_lines': len(api_logs)
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Failed to fetch logs',
-                'details': result.stderr
-            })
-            
-    except subprocess.TimeoutExpired:
+            log_line = f"{timestamp} {status} {message}"
+            formatted_logs.append(log_line)
+        
+        # Add some synthetic debug info if no logs exist
+        if not formatted_logs:
+            formatted_logs = [
+                "No API usage logs found for this user yet.",
+                "Logs will appear here when you use AI features like:",
+                "- Smart Alert explanations",
+                "- AI-powered canary analysis", 
+                "- Predictive monitoring insights",
+                "",
+                "To test: Try validating your API key using the 'Test' button."
+            ]
+        
         return jsonify({
-            'success': False,
-            'error': 'Timeout fetching logs'
+            'success': True,
+            'logs': formatted_logs,
+            'total_lines': len(formatted_logs)
         })
+        
     except Exception as e:
         return jsonify({
             'success': False,
-            'error': f'Error fetching logs: {str(e)}'
+            'error': f'Error fetching API usage logs: {str(e)}'
         })
 
 @app.route('/api_usage_summary', methods=['GET'])
