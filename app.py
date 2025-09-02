@@ -1606,9 +1606,8 @@ def smart_alert_timeline(canary_id):
                 timeline_data['summary'] = f"{normal_count} of {total_checkins} check-ins are normal. {anomaly_count} check-ins show unusual timing patterns."
     
     # Add AI enhancement if user has API key
-    user = User.get_by_id(canary.user_id)
-    if user and user.anthropic_api_key:
-        timeline_data = enhance_smart_alert_timeline(timeline_data, canary, smart_alert, user.anthropic_api_key)
+    if current_user.anthropic_api_key:
+        timeline_data = enhance_smart_alert_timeline(timeline_data, canary, smart_alert, current_user.anthropic_api_key)
     
     return jsonify(timeline_data)
 
@@ -1737,9 +1736,8 @@ def smart_alert_logic(canary_id):
         logic_data['explanation'] = "Alert thresholds will be calculated once sufficient check-in data is collected and patterns are learned."
     
     # Add AI enhancement if user has API key
-    user = User.get_by_id(canary.user_id)
-    if user and user.anthropic_api_key:
-        logic_data = enhance_smart_alert_logic(logic_data, canary, smart_alert, user.anthropic_api_key)
+    if current_user.anthropic_api_key:
+        logic_data = enhance_smart_alert_logic(logic_data, canary, smart_alert, current_user.anthropic_api_key)
     
     return jsonify(logic_data)
 
