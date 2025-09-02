@@ -2896,7 +2896,7 @@ def check_failed_canaries():
 
 # AI Integration Functions
 def call_claude_api(prompt, user_api_key, max_tokens=1000, feature_used='unknown', canary_id=None, user_id=None):
-    """Call Claude API with user's own API key and log usage"""
+    """Call Claude API with user's own API key, retry logic, and usage logging"""
     if not user_api_key:
         print("call_claude_api: No API key provided")  # Debug log
         return None, "No API key provided"
@@ -2912,69 +2912,104 @@ def call_claude_api(prompt, user_api_key, max_tokens=1000, feature_used='unknown
     total_tokens = None
     estimated_cost = None
     
-    try:
-        from anthropic import Anthropic
-        
-        client = Anthropic(api_key=user_api_key)
-        print("call_claude_api: Client created, making API call...")  # Debug log
-        
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        
-        print(f"call_claude_api: Response received: {response}")  # Debug log
-        
-        # Extract usage information
-        if hasattr(response, 'usage'):
-            input_tokens = response.usage.input_tokens
-            output_tokens = response.usage.output_tokens
-            total_tokens = input_tokens + output_tokens
+    # Retry configuration
+    max_retries = 3
+    base_delay = 1  # Start with 1 second
+    
+    for attempt in range(max_retries + 1):
+        try:
+            from anthropic import Anthropic
             
-            # Estimate cost for Claude 3.5 Sonnet (approximate pricing)
-            # Input: $3.00 per 1M tokens, Output: $15.00 per 1M tokens
-            input_cost = (input_tokens / 1_000_000) * 3.00
-            output_cost = (output_tokens / 1_000_000) * 15.00
-            estimated_cost = input_cost + output_cost
+            if attempt > 0:
+                delay = base_delay * (2 ** (attempt - 1))  # Exponential backoff: 1s, 2s, 4s
+                print(f"call_claude_api: Attempt {attempt + 1}, waiting {delay}s after overload...")
+                time.sleep(delay)
+            
+            client = Anthropic(api_key=user_api_key)
+            print("call_claude_api: Client created, making API call...")  # Debug log
+            
+            response = client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            # If we get here, the request succeeded
+            break
+            
+        except Exception as e:
+            error_message = str(e)
+            print(f"call_claude_api: Attempt {attempt + 1} failed: {e}")
+            
+            # Check if this is a 529 overload error that we should retry
+            is_overload = (hasattr(e, 'status_code') and e.status_code == 529) or \
+                         ('overload' in error_message.lower() or '529' in error_message)
+            
+            # If not the last attempt and it's a retryable error, continue to next attempt
+            if attempt < max_retries and is_overload:
+                print(f"call_claude_api: Retryable overload error, will retry (attempt {attempt + 1}/{max_retries})")
+                continue
+            else:
+                # Last attempt or non-retryable error, break and handle below
+                print(f"call_claude_api: Final attempt failed or non-retryable error")
+                break
+    else:
+        # This only executes if we never broke out of the loop (all retries failed)
+        response = None
+    
+    # Process response if successful
+    if 'response' in locals() and response:
+        try:
+            print(f"call_claude_api: Response received: {response}")  # Debug log
+            
+            # Extract usage information
+            if hasattr(response, 'usage'):
+                input_tokens = response.usage.input_tokens
+                output_tokens = response.usage.output_tokens
+                total_tokens = input_tokens + output_tokens
+                
+                # Estimate cost for Claude 3.5 Sonnet (approximate pricing)
+                # Input: $3.00 per 1M tokens, Output: $15.00 per 1M tokens
+                input_cost = (input_tokens / 1_000_000) * 3.00
+                output_cost = (output_tokens / 1_000_000) * 15.00
+                estimated_cost = input_cost + output_cost
+            
+            response_text = response.content[0].text
+            success = True
+            
+        except Exception as e:
+            print(f"call_claude_api: Error processing response: {e}")
+            error_message = f"Error processing API response: {str(e)}"
+    
+    # Handle final error state (all retries failed)
+    if not success and error_message:
+        print(f"call_claude_api: All attempts failed with error: {error_message}")
         
-        response_text = response.content[0].text
-        success = True
-        
-        return response_text, None
-        
-    except Exception as e:
-        error_message = str(e)
-        print(f"call_claude_api: Exception: {e}")  # Debug log
-        print(f"call_claude_api: Exception type: {type(e)}")  # Debug log
-        
-        # Handle specific Anthropic error types
-        if hasattr(e, 'status_code'):
-            print(f"call_claude_api: Status code: {e.status_code}")  # Debug log
-            if e.status_code == 401:
+        # Provide user-friendly error messages
+        if hasattr(locals().get('e'), 'status_code'):
+            status_code = locals()['e'].status_code
+            if status_code == 401:
                 error_message = "Invalid API key"
-            elif e.status_code == 403:
-                error_message = "Access denied - check API key permissions"
-            elif e.status_code == 429:
+            elif status_code == 403:
+                error_message = "Access denied - check API key permissions"  
+            elif status_code == 429:
                 error_message = "Rate limited - try again in a moment"
-            elif e.status_code == 404:
+            elif status_code == 529:
+                error_message = "Anthropic servers overloaded - retried 3 times, please try again later"
+            elif status_code == 404:
                 error_message = "API service not found"
-        
-        # Handle generic errors
-        if "authentication" in error_message.lower() or "invalid" in error_message.lower():
+        elif "overload" in error_message.lower() or "529" in error_message:
+            error_message = "Anthropic servers overloaded - retried 3 times, please try again later"
+        elif "authentication" in error_message.lower() or "invalid" in error_message.lower():
             error_message = "Invalid API key"
         elif "rate" in error_message.lower() or "limit" in error_message.lower():
             error_message = "Rate limited - try again in a moment"
         else:
-            error_message = f"API error: {str(e)[:100]}"
-            
-        return None, error_message
+            error_message = f"API error after retries: {str(error_message)[:100]}"
         
-    finally:
-        # Log the API usage
+        # Log usage for failed requests
         try:
             response_time_ms = int((time.time() - start_time) * 1000)
-            
             from models import ApiUsageLog
             usage_log = ApiUsageLog(
                 user_id=user_id,
@@ -2992,9 +3027,41 @@ def call_claude_api(prompt, user_api_key, max_tokens=1000, feature_used='unknown
                 canary_id=canary_id
             )
             usage_log.save()
-            print(f"call_claude_api: Usage logged - tokens: {total_tokens}, cost: ${estimated_cost:.4f}" if total_tokens else "call_claude_api: Usage logged - error case")
+            print(f"call_claude_api: Usage logged - error case: {error_message}")
         except Exception as log_error:
             print(f"call_claude_api: Failed to log usage: {log_error}")
+        
+        return None, error_message
+    
+    # Log usage for successful requests and return
+    try:
+        response_time_ms = int((time.time() - start_time) * 1000)
+        from models import ApiUsageLog
+        usage_log = ApiUsageLog(
+            user_id=user_id,
+            api_type='anthropic',
+            endpoint='messages',
+            model='claude-3-5-sonnet-20241022',
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            estimated_cost=estimated_cost,
+            success=success,
+            error_message=error_message,
+            response_time_ms=response_time_ms,
+            feature_used=feature_used,
+            canary_id=canary_id
+        )
+        usage_log.save()
+        print(f"call_claude_api: Usage logged - tokens: {total_tokens}, cost: ${estimated_cost:.4f}" if total_tokens else "call_claude_api: Usage logged - success case")
+    except Exception as log_error:
+        print(f"call_claude_api: Failed to log usage: {log_error}")
+    
+    # Return successful response
+    if success:
+        return response_text, None
+    else:
+        return None, "Unknown error occurred"
 
 def validate_anthropic_api_key(api_key):
     """Test if Anthropic API key is valid with a simple call"""
