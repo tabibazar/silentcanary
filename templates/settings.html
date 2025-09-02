@@ -493,12 +493,25 @@ document.addEventListener('DOMContentLoaded', function() {
             const apiKeyName = this.dataset.apiKeyName;
             
             try {
-                // For now, show a placeholder modal since we'd need to implement API key usage tracking
-                // This would require modifications to track usage per API key
-                showApiKeyLogsModal(apiKeyName, []);
+                // Show loading state
+                this.disabled = true;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                
+                const response = await fetch(`/api_key_usage/${apiKeyId}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    showApiKeyLogsModal(result.api_key_name, result.logs);
+                } else {
+                    alert('Error loading API key logs: ' + result.error);
+                }
             } catch (error) {
                 console.error('Error fetching API key logs:', error);
                 alert('Error loading API key logs. Please try again.');
+            } finally {
+                // Reset button state
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-chart-line"></i>';
             }
         });
     });
@@ -535,12 +548,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         </tr>
                                     </thead>
                                     <tbody id="api-key-logs-tbody">
-                                        <tr>
-                                            <td colspan="5" class="text-center text-muted py-3">
-                                                API key usage logs will be shown here.<br>
-                                                <small>Usage tracking for CI/CD API keys is available in the webhook logs.</small>
-                                            </td>
-                                        </tr>
+                                        <!-- Logs will be populated here -->
                                     </tbody>
                                 </table>
                             </div>
@@ -556,6 +564,27 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Update modal title
         document.getElementById('api-key-name').textContent = apiKeyName;
+        
+        // Populate logs table
+        const tbody = document.getElementById('api-key-logs-tbody');
+        tbody.innerHTML = '';
+        
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No usage logs found for this API key yet.<br><small>Logs will appear when this API key is used for CI/CD webhook calls.</small></td></tr>';
+        } else {
+            logs.forEach(log => {
+                const row = document.createElement('tr');
+                const statusClass = log.status === 'Success' ? 'text-success' : 'text-danger';
+                row.innerHTML = `
+                    <td class="small">${log.timestamp}</td>
+                    <td><code class="small">${log.endpoint}</code></td>
+                    <td class="small">${log.ip_address}</td>
+                    <td><span class="badge ${log.status === 'Success' ? 'bg-success' : 'bg-danger'}">${log.status}</span></td>
+                    <td class="small">${log.canary}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
         
         // Show modal
         const bootstrapModal = new bootstrap.Modal(modal);

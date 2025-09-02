@@ -1871,6 +1871,62 @@ def api_key_logs():
             'error': f'Error fetching API usage logs: {str(e)}'
         })
 
+@app.route('/api_key_usage/<api_key_id>', methods=['GET'])
+@login_required  
+def get_api_key_usage_logs(api_key_id):
+    """Get usage logs for a specific API key"""
+    try:
+        from models import APIKey, APIKeyUsageLog
+        
+        # Verify the API key belongs to the current user
+        api_key = APIKey.get_by_id(api_key_id)
+        if not api_key or api_key.user_id != current_user.user_id:
+            return jsonify({
+                'success': False,
+                'error': 'API key not found or access denied'
+            }), 404
+        
+        # Get usage logs for this API key
+        usage_logs = APIKeyUsageLog.get_by_api_key_id(api_key_id, limit=100)
+        
+        # Format logs for display
+        formatted_logs = []
+        for log in usage_logs:
+            # Parse timestamp for display
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                formatted_time = dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+            except:
+                formatted_time = log.timestamp
+            
+            # Get canary name if canary_id exists
+            canary_name = 'N/A'
+            if log.canary_id:
+                canary = Canary.get_by_id(log.canary_id)
+                canary_name = canary.name if canary else f'Canary {log.canary_id[:8]}'
+            
+            formatted_logs.append({
+                'timestamp': formatted_time,
+                'endpoint': log.endpoint,
+                'ip_address': log.ip_address,
+                'status': log.status.title(),
+                'canary': canary_name
+            })
+        
+        return jsonify({
+            'success': True,
+            'logs': formatted_logs,
+            'total': len(formatted_logs),
+            'api_key_name': api_key.name
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error fetching API key usage logs: {str(e)}'
+        })
+
 @app.route('/api_usage_summary', methods=['GET'])
 @login_required
 def api_usage_summary():
@@ -2117,7 +2173,7 @@ def deployment_webhook():
         api_key = request.headers.get('X-API-Key')
         if api_key:
             # Validate API key (implement API key validation)
-            user_id = validate_api_key(api_key)
+            user_id = validate_api_key(api_key, endpoint='deployment_webhook')
             if not user_id:
                 return jsonify({'error': 'Invalid API key'}), 401
         elif not user_id:
@@ -2184,7 +2240,7 @@ def create_canary_from_api():
         if not api_key:
             return jsonify({'error': 'X-API-Key header required'}), 401
             
-        user_id = validate_api_key(api_key)
+        user_id = validate_api_key(api_key, endpoint='create_canary_from_api')
         if not user_id:
             return jsonify({'error': 'Invalid API key'}), 401
         
@@ -2222,7 +2278,7 @@ def update_canary_deployment(canary_id):
         if not api_key:
             return jsonify({'error': 'X-API-Key header required'}), 401
             
-        user_id = validate_api_key(api_key)
+        user_id = validate_api_key(api_key, endpoint='update_canary_deployment', canary_id=canary_id)
         if not user_id:
             return jsonify({'error': 'Invalid API key'}), 401
         
@@ -2449,7 +2505,7 @@ def api_canaries_status():
             'message': str(e)
         }), 500
 
-def validate_api_key(api_key):
+def validate_api_key(api_key, endpoint=None, canary_id=None):
     """Validate API key and return associated user_id, with usage tracking"""
     from models import APIKey
     
@@ -2457,8 +2513,13 @@ def validate_api_key(api_key):
         # First check new APIKey model
         api_key_obj = APIKey.get_by_key_value(api_key)
         if api_key_obj and api_key_obj.is_active:
-            # Record usage
-            api_key_obj.record_usage()
+            # Record usage with context
+            api_key_obj.record_usage(
+                endpoint=endpoint or request.endpoint,
+                ip_address=request.remote_addr,
+                canary_id=canary_id,
+                status='success'
+            )
             return api_key_obj.user_id
         
         # Fallback to old API key format for backwards compatibility

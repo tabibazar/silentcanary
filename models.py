@@ -1566,10 +1566,25 @@ class APIKey:
             print(f"Error deleting API key: {e}")
             return False
     
-    def record_usage(self):
-        """Record usage of this API key"""
+    def record_usage(self, endpoint=None, ip_address=None, canary_id=None, status='success'):
+        """Record usage of this API key with detailed logging"""
         self.last_used = datetime.now(timezone.utc).isoformat()
         self.usage_count += 1
+        
+        # Log detailed usage
+        try:
+            usage_log = APIKeyUsageLog(
+                api_key_id=self.api_key_id,
+                user_id=self.user_id,
+                endpoint=endpoint or 'unknown',
+                ip_address=ip_address or 'unknown',
+                canary_id=canary_id,
+                status=status
+            )
+            usage_log.save()
+        except Exception as e:
+            print(f"Failed to log API key usage: {e}")
+        
         return self.save()
     
     @staticmethod
@@ -1649,3 +1664,76 @@ class APIKey:
         except ClientError as e:
             print(f"Error fetching API key: {e}")
             return None
+
+class APIKeyUsageLog:
+    """Model for tracking detailed API key usage logs"""
+    
+    def __init__(self, log_id=None, api_key_id=None, user_id=None, endpoint=None,
+                 ip_address=None, canary_id=None, status='success', timestamp=None):
+        self.log_id = log_id or str(uuid.uuid4())
+        self.api_key_id = api_key_id
+        self.user_id = user_id
+        self.endpoint = endpoint
+        self.ip_address = ip_address
+        self.canary_id = canary_id
+        self.status = status
+        self.timestamp = timestamp or datetime.now(timezone.utc).isoformat()
+    
+    def save(self):
+        """Save usage log to DynamoDB"""
+        try:
+            item = {
+                'log_id': self.log_id,
+                'api_key_id': self.api_key_id,
+                'user_id': self.user_id,
+                'endpoint': self.endpoint,
+                'ip_address': self.ip_address,
+                'timestamp': self.timestamp,
+                'status': self.status
+            }
+            
+            # Only add canary_id if it exists
+            if self.canary_id:
+                item['canary_id'] = self.canary_id
+            
+            # Store in APIUsage table (reusing existing table structure)
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            api_usage_table.put_item(Item=item)
+            return True
+        except Exception as e:
+            print(f"Error saving API key usage log: {e}")
+            return False
+    
+    @staticmethod
+    def get_by_api_key_id(api_key_id, limit=50):
+        """Get usage logs for a specific API key"""
+        try:
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            # We'll need to scan since we don't have an index on api_key_id
+            # In production, you'd want to add a GSI for this
+            response = api_usage_table.scan(
+                FilterExpression='api_key_id = :api_key_id',
+                ExpressionAttributeValues={':api_key_id': api_key_id},
+                Limit=limit
+            )
+            
+            logs = []
+            for item in response.get('Items', []):
+                logs.append(APIKeyUsageLog(
+                    log_id=item['log_id'],
+                    api_key_id=item['api_key_id'],
+                    user_id=item['user_id'],
+                    endpoint=item['endpoint'],
+                    ip_address=item['ip_address'],
+                    canary_id=item.get('canary_id'),
+                    status=item['status'],
+                    timestamp=item['timestamp']
+                ))
+            
+            # Sort by timestamp (most recent first)
+            logs.sort(key=lambda x: x.timestamp, reverse=True)
+            return logs
+            
+        except Exception as e:
+            print(f"Error fetching API key usage logs: {e}")
+            return []
