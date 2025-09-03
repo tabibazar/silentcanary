@@ -259,7 +259,7 @@
                                             <input type="hidden" name="api_key_id" value="{{ api_key.api_key_id }}">
                                             <button type="submit" name="delete_api_key" 
                                                     class="btn btn-outline-danger btn-sm"
-                                                    onclick="return confirm('Are you sure? This will permanently delete the API key \"{{ api_key.name }}\".')"
+                                                    onclick="return confirmDelete('{{ api_key.name }}')"
                                                     title="Delete" style="padding: 4px 6px;">
                                                 <i class="fas fa-trash" style="font-size: 0.8em;"></i>
                                             </button>
@@ -366,7 +366,17 @@
 
 {% block scripts %}
 <script>
-function confirmDelete() {
+function confirmDelete(apiKeyName) {
+    if (typeof apiKeyName === 'undefined') {
+        // Account deletion - original function
+        return confirmAccountDelete();
+    } else {
+        // API key deletion - new function
+        return confirm('Are you sure? This will permanently delete the API key "' + apiKeyName + '".');
+    }
+}
+
+function confirmAccountDelete() {
     const username = '{{ current_user.username }}';
     const userInput = prompt(`This action cannot be undone. To confirm account deletion, please type "${username}" (without quotes):`);
     
