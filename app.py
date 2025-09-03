@@ -24,7 +24,11 @@ load_dotenv()
 # Stripe removed - using Buy Me Coffee donation model
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'asdfkjahc rha384y92834yc cx832b48234918xb487214jhasf')
+# Security fix: Remove hardcoded fallback secret key
+secret_key = os.environ.get('SECRET_KEY')
+if not secret_key:
+    raise RuntimeError("SECRET_KEY environment variable must be set for security")
+app.config['SECRET_KEY'] = secret_key
 app.config['PREFERRED_URL_SCHEME'] = 'https'
 
 # We'll add route debugging at the end of the file
