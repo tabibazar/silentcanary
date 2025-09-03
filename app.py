@@ -204,6 +204,52 @@ def health():
 
 # Debug endpoints removed for security - Phase 4
 
+# Security Headers - Phase 5
+@app.after_request
+def add_security_headers(response):
+    """Add comprehensive security headers to all responses"""
+    # Content Security Policy - Prevent XSS and injection attacks
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "font-src 'self' https://cdnjs.cloudflare.com; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    
+    # Strict Transport Security - Force HTTPS
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    
+    # X-Frame-Options - Prevent clickjacking
+    response.headers['X-Frame-Options'] = 'DENY'
+    
+    # X-Content-Type-Options - Prevent MIME type sniffing
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    
+    # X-XSS-Protection - Enable XSS filtering
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    
+    # Referrer Policy - Control referrer information
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    
+    # Permissions Policy - Restrict browser features
+    response.headers['Permissions-Policy'] = (
+        'geolocation=(), microphone=(), camera=(), '
+        'magnetometer=(), gyroscope=(), payment=()'
+    )
+    
+    # Cache Control for sensitive pages
+    if '/settings' in request.path or '/dashboard' in request.path:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    
+    return response
+
 @app.route('/')
 def index():
     if current_user.is_authenticated:
