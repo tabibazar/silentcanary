@@ -202,32 +202,7 @@ def health():
     except Exception as e:
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 503
 
-@app.route('/debug/auth')
-def debug_auth():
-    """Debug authentication status"""
-    print(f"🔍 Debug auth check - is_authenticated: {current_user.is_authenticated}")
-    if current_user.is_authenticated:
-        print(f"🔍 Current user ID: {current_user.user_id}")
-        return jsonify({
-            'authenticated': True,
-            'user_id': current_user.user_id,
-            'username': current_user.username
-        })
-    else:
-        print("🔍 User not authenticated")
-        return jsonify({'authenticated': False})
-
-@app.route('/debug/upgrade/<plan>')  
-def debug_upgrade_route(plan):
-    """Test upgrade route without auth"""
-    print(f"🧪 Debug upgrade route called with plan: {plan}")
-    return jsonify({'plan': plan, 'status': 'route_working'})
-
-@app.route('/debug/test')
-def debug_test():
-    """Simple test route to verify deployment"""
-    print("🧪 Debug test route called")
-    return jsonify({'status': 'test_working', 'timestamp': datetime.now().isoformat()})
+# Debug endpoints removed for security - Phase 4
 
 @app.route('/')
 def index():
@@ -1085,13 +1060,7 @@ def checkin(token):
 def settings():
     form = SettingsForm()
     
-    # Debug: Log all form data
-    if request.method == 'POST':
-        import sys
-        print(f"Settings POST - Form data: {dict(request.form)}", file=sys.stderr, flush=True)
-        print(f"Form fields: create_api_key={request.form.get('create_api_key')}, delete_api_key={request.form.get('delete_api_key')}", file=sys.stderr, flush=True)
-        app.logger.info(f"Settings POST - Form data: {dict(request.form)}")
-        app.logger.info(f"Form fields: create_api_key={request.form.get('create_api_key')}, delete_api_key={request.form.get('delete_api_key')}")
+# Debug logging removed for security - Phase 4
     
     # Populate timezone choices
     common_timezones = [
@@ -1133,27 +1102,15 @@ def settings():
         elif 'delete_api_key' in request.form:
             from models import APIKey
             api_key_id = request.form.get('api_key_id')
-            import sys
-            print(f"Delete API key request - ID: {api_key_id}, User: {current_user.user_id}", file=sys.stderr, flush=True)
-            app.logger.info(f"Delete API key request - ID: {api_key_id}, User: {current_user.user_id}")
             if api_key_id:
                 api_key = APIKey.get_by_id(api_key_id)
-                print(f"Retrieved API key: {api_key.name if api_key else 'None'}", file=sys.stderr, flush=True)
-                app.logger.info(f"Retrieved API key: {api_key.name if api_key else 'None'}")
                 if api_key and api_key.user_id == current_user.user_id:
-                    print(f"Authorization check passed, attempting delete", file=sys.stderr, flush=True)
-                    app.logger.info(f"Authorization check passed, attempting delete")
                     if api_key.delete():
                         flash(f'API key "{api_key.name}" deleted successfully.', 'warning')
                     else:
                         flash('Failed to delete API key. Please try again.', 'error')
                 else:
-                    print(f"Authorization failed - API key exists: {api_key is not None}, User match: {api_key.user_id == current_user.user_id if api_key else False}", file=sys.stderr, flush=True)
-                    app.logger.error(f"Authorization failed - API key exists: {api_key is not None}, User match: {api_key.user_id == current_user.user_id if api_key else False}")
                     flash('API key not found or access denied.', 'error')
-            else:
-                print("No API key ID provided in request", file=sys.stderr, flush=True)
-                app.logger.error("No API key ID provided in request")
             return redirect(url_for('settings'))
             
         elif request.form.get('toggle_api_key'):
@@ -1437,39 +1394,7 @@ def canary_analytics(canary_id):
                          trends=trends,
                          sla_status=sla_status)
 
-@app.route('/test_failure_data/<canary_id>')
-@login_required
-def test_failure_data(canary_id):
-    """Generate test failure data for analytics (development only)"""
-    canary = Canary.get_by_id(canary_id)
-    if not canary or canary.user_id != current_user.user_id:
-        flash('Canary not found or access denied')
-        return redirect(url_for('dashboard'))
-    
-    # Generate some test failure logs across different hours and days
-    import random
-    from datetime import timedelta
-    
-    base_time = datetime.now(timezone.utc) - timedelta(days=7)
-    
-    for i in range(10):  # Create 10 test failures
-        # Random hour between 0-23 and random day within the past week
-        random_hours = random.randint(0, 23)
-        random_days = random.randint(0, 6)
-        test_time = base_time + timedelta(days=random_days, hours=random_hours)
-        
-        # Create a test log entry with the specific timestamp
-        test_log = CanaryLog(
-            canary_id=canary_id,
-            event_type='miss',
-            status='failed',
-            message=f'Test failure at {test_time}',
-            timestamp=test_time.isoformat()
-        )
-        test_log.save()
-    
-    flash(f'Generated 10 test failure entries for {canary.name}', 'success')
-    return redirect(url_for('canary_analytics', canary_id=canary_id))
+# test_failure_data endpoint removed for security - Phase 4
 
 @app.route('/export_canary_data/<canary_id>/<format>')
 @login_required

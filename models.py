@@ -1558,16 +1558,10 @@ class APIKey:
     def delete(self):
         """Delete API key from DynamoDB"""
         try:
-            import sys
-            print(f"Attempting to delete API key: {self.api_key_id} for user: {self.user_id}", file=sys.stderr, flush=True)
-            result = api_keys_table.delete_item(Key={'api_key_id': self.api_key_id})
-            print(f"Delete operation result: {result}", file=sys.stderr, flush=True)
+            api_keys_table.delete_item(Key={'api_key_id': self.api_key_id})
             return True
         except ClientError as e:
-            print(f"Error deleting API key {self.api_key_id}: {e}", file=sys.stderr, flush=True)
-            return False
-        except Exception as e:
-            print(f"Unexpected error deleting API key {self.api_key_id}: {e}", file=sys.stderr, flush=True)
+            print(f"Error deleting API key {self.api_key_id}: {e}")
             return False
     
     def record_usage(self, endpoint=None, ip_address=None, canary_id=None, status='success'):
