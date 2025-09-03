@@ -309,7 +309,10 @@ def login():
             user.update_last_login()
             login_user(user)
             next_page = request.args.get('next')
-            return redirect(next_page) if next_page else redirect(url_for('dashboard'))
+            # Security fix: Prevent open redirect attacks
+            if next_page and next_page.startswith('/') and not next_page.startswith('//'):
+                return redirect(next_page)
+            return redirect(url_for('dashboard'))
         flash('Invalid email or password')
     
     return render_template('login.html', form=form)
