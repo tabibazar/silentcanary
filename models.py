@@ -90,8 +90,8 @@ class User:
     def generate_api_key(self):
         """Generate a new API key for this user"""
         import secrets
-        # Security fix: Use cryptographically secure random generation
-        self.api_key = secrets.token_urlsafe(32)
+        # Security fix: Use cryptographically secure random generation with sc- prefix
+        self.api_key = f"sc-{secrets.token_urlsafe(32)}"
         return self.save()
     
     def regenerate_api_key(self):
