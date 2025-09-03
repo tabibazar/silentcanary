@@ -29,7 +29,7 @@ def test_email_config():
             print("   API keys should start with 'SG.'")
             return False
         else:
-            print(f"✅ SENDGRID_API_KEY found: {api_key[:10]}...")
+            print("✅ SENDGRID_API_KEY found and appears valid")
         
         print()
         

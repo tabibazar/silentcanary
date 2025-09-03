@@ -27,7 +27,7 @@ def test_email_only():
     app.config['MAIL_PASSWORD'] = os.environ.get('SENDGRID_API_KEY')
     app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'auth@avriz.com')
     
-    print(f"SendGrid API Key: {'*' * 60}{os.environ.get('SENDGRID_API_KEY', '')[-10:] if os.environ.get('SENDGRID_API_KEY') else 'NOT SET'}")
+    print(f"SendGrid API Key: {'✅ Set' if os.environ.get('SENDGRID_API_KEY') else '❌ NOT SET'}")
     print(f"Mail sender: {app.config['MAIL_DEFAULT_SENDER']}")
     
     with app.app_context():

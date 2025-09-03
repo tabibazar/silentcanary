@@ -68,6 +68,42 @@ def log_all_requests():
     return None  # Continue processing
 mail = Mail(app)
 
+# Email templating function
+def send_templated_email(recipients, subject, template_name, **template_vars):
+    """
+    Send an email using consistent SilentCanary templates
+    
+    Args:
+        recipients: List of email addresses or single email string
+        subject: Email subject line
+        template_name: Name of template file (without .html extension)
+        **template_vars: Variables to pass to the template
+    
+    Returns:
+        bool: True if email was sent successfully, False otherwise
+    """
+    try:
+        if isinstance(recipients, str):
+            recipients = [recipients]
+            
+        # Render the template
+        html_content = render_template(f'emails/{template_name}.html', **template_vars)
+        
+        # Create and send the message
+        msg = Message(
+            subject=subject,
+            sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
+            recipients=recipients,
+            html=html_content
+        )
+        
+        mail.send(msg)
+        return True
+        
+    except Exception as e:
+        print(f"Error sending templated email: {e}")
+        return False
+
 # Initialize scheduler
 scheduler = BackgroundScheduler()
 
@@ -116,16 +152,49 @@ def validate_integer_required(form, field):
     if field.data is None:
         raise ValidationError('This field is required.')
 
+def validate_secure_email(form, field):
+    """Enhanced email validator with security checks"""
+    if not field.data:
+        return
+    
+    email = field.data.lower().strip()
+    
+    # Check for suspicious patterns
+    suspicious_patterns = [
+        '...',  # Multiple consecutive dots
+        '..',   # Double dots
+        '+--',  # Suspicious plus patterns
+        '--+',  # Suspicious dash patterns
+        'javascript:',  # XSS attempt
+        'data:',        # Data URI scheme
+        'vbscript:',    # VBScript attempt
+    ]
+    
+    for pattern in suspicious_patterns:
+        if pattern in email:
+            raise ValidationError('Invalid email format detected.')
+    
+    # Check for excessively long local or domain parts
+    if '@' in email:
+        local, domain = email.split('@', 1)
+        if len(local) > 64 or len(domain) > 255:
+            raise ValidationError('Email address too long.')
+        
+        # Check for suspicious characters in local part
+        import re
+        if not re.match(r'^[a-zA-Z0-9._%+-]+$', local):
+            raise ValidationError('Invalid characters in email address.')
+
 # Forms
 class RegistrationForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired(), Length(min=4, max=20)])
-    email = StringField('Email', validators=[DataRequired(), Email()])
+    email = StringField('Email', validators=[DataRequired(), Email(), validate_secure_email])
     password = PasswordField('Password', validators=[DataRequired(), Length(min=8)])
     password2 = PasswordField('Repeat Password', validators=[DataRequired(), EqualTo('password')])
     submit = SubmitField('Register')
 
 class LoginForm(FlaskForm):
-    email = StringField('Email', validators=[DataRequired(), Email()])
+    email = StringField('Email', validators=[DataRequired(), Email(), validate_secure_email])
     password = PasswordField('Password', validators=[DataRequired()])
     submit = SubmitField('Sign In')
 
@@ -144,7 +213,7 @@ class CanaryForm(FlaskForm):
         ('slack', 'Slack'),
         ('both', 'Email + Slack')
     ], validators=[DataRequired()], default='email')
-    alert_email = StringField('Alert Email', validators=[Optional(), Email()])
+    alert_email = StringField('Alert Email', validators=[Optional(), Email(), validate_secure_email])
     slack_webhook = StringField('Slack Webhook URL', validators=[Optional()])
     sla_threshold = FloatField('SLA Threshold (%)', validators=[
         DataRequired(),
@@ -167,7 +236,7 @@ class SettingsForm(FlaskForm):
     delete_account = SubmitField('Delete Account')
 
 class ForgotPasswordForm(FlaskForm):
-    email = StringField('Email', validators=[DataRequired(), Email()])
+    email = StringField('Email', validators=[DataRequired(), Email(), validate_secure_email])
     submit = SubmitField('Send Reset Link')
 
 class ResetPasswordForm(FlaskForm):
@@ -177,7 +246,7 @@ class ResetPasswordForm(FlaskForm):
 
 class ContactForm(FlaskForm):
     name = StringField('Name', validators=[DataRequired(), Length(min=1, max=100)])
-    email = StringField('Email', validators=[DataRequired(), Email()])
+    email = StringField('Email', validators=[DataRequired(), Email(), validate_secure_email])
     subject = StringField('Subject', validators=[DataRequired(), Length(min=1, max=200)])
     category = SelectField('Category', choices=[
         ('general', 'General Question'),
@@ -290,28 +359,14 @@ def register():
                 token = serializer.dumps({'user_id': user.user_id}, salt='email-verification')
                 verification_link = url_for('verify_email', token=token, _external=True)
                 
-                msg = Message(
+                # Send welcome email using template
+                send_templated_email(
+                    recipients=user.email,
                     subject='Welcome to SilentCanary - Please verify your email',
-                    sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
-                    recipients=[user.email],
-                    html=f'''
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                        <div style="text-align: center; margin-bottom: 20px;">
-                            <img src="https://silentcanary.com/static/favicon.ico" alt="SilentCanary" style="width: 32px; height: 32px; vertical-align: middle;">
-                            <h2 style="display: inline-block; margin-left: 10px; color: #28a745;">Welcome to SilentCanary!</h2>
-                        </div>
-                    <p>Hello {user.username},</p>
-                    <p>Thank you for registering with SilentCanary!</p>
-                    <p>Please verify your email address to complete your account setup:</p>
-                    <p><a href="{verification_link}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Verify Email Address</a></p>
-                    <p>This link will expire in 1 hour.</p>
-                    <p>If you didn't create this account, please ignore this email.</p>
-                    <hr>
-                    <p><small>SilentCanary - Dead Man's Snitch Monitoring</small></p>
-                    </div>
-                    '''
+                    template_name='welcome_verify',
+                    username=user.username,
+                    verification_link=verification_link
                 )
-                mail.send(msg)
                 flash('Registration successful! Please check your email to verify your account.')
             except Exception as e:
                 print(f"Registration email error: {e}")
@@ -363,23 +418,14 @@ def forgot_password():
             # Send reset email
             try:
                 reset_link = url_for('reset_password', token=token, _external=True)
-                msg = Message(
-                    subject='SilentCanary Password Reset',
-                    sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
-                    recipients=[user.email],
-                    html=f'''
-                    <h2>Password Reset Request</h2>
-                    <p>Hello {user.username},</p>
-                    <p>You requested a password reset for your SilentCanary account.</p>
-                    <p>Click the link below to reset your password:</p>
-                    <p><a href="{reset_link}">Reset Password</a></p>
-                    <p>This link will expire in 1 hour.</p>
-                    <p>If you didn't request this reset, please ignore this email.</p>
-                    <hr>
-                    <p><small>SilentCanary</small></p>
-                    '''
+                # Send password reset email using template
+                send_templated_email(
+                    recipients=user.email,
+                    subject='SilentCanary - Password Reset Request',
+                    template_name='password_reset',
+                    username=user.username,
+                    reset_link=reset_link
                 )
-                mail.send(msg)
                 flash('Password reset link sent to your email')
             except Exception as e:
                 flash('Failed to send reset email. Please try again.')
@@ -645,11 +691,18 @@ def admin_update_email(user_id):
             flash('Email address is required', 'error')
             return redirect(url_for('admin'))
         
-        # Basic email validation
+        # Enhanced email validation
         import re
-        if not re.match(r'^[^@]+@[^@]+\.[^@]+$', new_email):
-            flash('Invalid email format', 'error')
-            return redirect(url_for('admin'))
+        from email_validator import validate_email, EmailNotValidError
+        try:
+            # Use email-validator library for thorough validation
+            validated_email = validate_email(new_email)
+            new_email = validated_email.email  # Use normalized form
+        except (EmailNotValidError, ImportError):
+            # Fallback to more robust regex if email-validator is not available
+            if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', new_email):
+                flash('Invalid email format', 'error')
+                return redirect(url_for('admin'))
         
         # Get user to update
         user = User.get_by_id(user_id)
@@ -689,62 +742,26 @@ def contact():
     if form.validate_on_submit():
         try:
             # Send email notification to support team
-            msg = Message(
+            send_templated_email(
+                recipients='support@silentcanary.com',
                 subject=f'[SilentCanary Contact] {form.category.data.title()}: {form.subject.data}',
-                sender=('SilentCanary Contact Form', app.config['MAIL_DEFAULT_SENDER']),
-                recipients=['support@silentcanary.com'],
-                reply_to=form.email.data,
-                html=f'''
-                <h2>New Contact Form Submission</h2>
-                <p><strong>From:</strong> {form.name.data} ({form.email.data})</p>
-                <p><strong>Category:</strong> {dict(form.category.choices)[form.category.data]}</p>
-                <p><strong>Subject:</strong> {form.subject.data}</p>
-                
-                <h3>Message:</h3>
-                <p>{form.message.data.replace(chr(10), '<br>')}</p>
-                
-                <hr>
-                <p><small>Submitted via SilentCanary contact form at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC</small></p>
-                '''
+                template_name='contact_form',
+                name=form.name.data,
+                email=form.email.data,
+                form_subject=form.subject.data,
+                message=form.message.data,
+                timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
             )
-            
-            mail.send(msg)
             
             # Send confirmation to user
-            confirmation_msg = Message(
+            send_templated_email(
+                recipients=form.email.data,
                 subject='Your SilentCanary support request has been received',
-                sender=('SilentCanary Support', app.config['MAIL_DEFAULT_SENDER']),
-                recipients=[form.email.data],
-                html=f'''
-                <h2>Thanks for contacting SilentCanary!</h2>
-                <p>Hi {form.name.data},</p>
-                
-                <p>We've received your message and will get back to you soon. Here's what you submitted:</p>
-                
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
-                    <p><strong>Category:</strong> {dict(form.category.choices)[form.category.data]}</p>
-                    <p><strong>Subject:</strong> {form.subject.data}</p>
-                    <p><strong>Your message:</strong></p>
-                    <p style="white-space: pre-wrap;">{form.message.data}</p>
-                </div>
-                
-                <p><strong>Response Times:</strong></p>
-                <ul>
-                    <li>Critical issues: 2-4 hours</li>
-                    <li>General support: 24 hours</li>
-                    <li>Sales inquiries: 4 hours</li>
-                </ul>
-                
-                <p>In the meantime, you can check our <a href="https://silentcanary.com/help">documentation</a> for instant answers to common questions.</p>
-                
-                <p>Best regards,<br>The SilentCanary Team</p>
-                
-                <hr>
-                <p><small>© 2025 <a href="https://silentcanary.com">SilentCanary.com</a></small></p>
-                '''
+                template_name='contact_confirmation',
+                name=form.name.data,
+                form_subject=form.subject.data,
+                message=form.message.data
             )
-            
-            mail.send(confirmation_msg)
             
             flash('✅ Message sent successfully! We\'ll get back to you soon.', 'success')
             return redirect(url_for('contact'))
@@ -1185,28 +1202,14 @@ def settings():
             # Send verification email
             try:
                 verification_link = url_for('verify_email', token=token, _external=True)
-                msg = Message(
-                    subject='SilentCanary - Verify Your Email',
-                    sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
-                    recipients=[current_user.email],
-                    html=f'''
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                        <div style="text-align: center; margin-bottom: 20px;">
-                            <img src="https://silentcanary.com/static/favicon.ico" alt="SilentCanary" style="width: 32px; height: 32px; vertical-align: middle;">
-                            <h2 style="display: inline-block; margin-left: 10px; color: #007bff;">Email Verification</h2>
-                        </div>
-                    <p>Hello {current_user.username},</p>
-                    <p>Please verify your email address to complete your SilentCanary account setup.</p>
-                    <p>Click the link below to verify your email:</p>
-                    <p><a href="{verification_link}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Verify Email Address</a></p>
-                    <p>This link will expire in 1 hour.</p>
-                    <p>If you didn't request this verification, please ignore this email.</p>
-                    <hr>
-                    <p><small>SilentCanary</small></p>
-                    </div>
-                    '''
+                # Send email verification using template
+                send_templated_email(
+                    recipients=current_user.email,
+                    subject='SilentCanary - Verify Your Email Address',
+                    template_name='email_verification',
+                    username=current_user.username,
+                    verification_link=verification_link
                 )
-                mail.send(msg)
                 flash('Verification email sent! Check your inbox and click the link to verify your email.')
             except Exception as e:
                 flash('Failed to send verification email. Please try again.')
@@ -2593,31 +2596,13 @@ def send_notifications(canary, log_entry=None):
     # Get user for email fallback
     user = User.get_by_id(canary.user_id)
     
-    # Email message with HTML formatting
-    html_message = f'''
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="text-align: center; margin-bottom: 20px;">
-            <img src="https://silentcanary.com/static/favicon.ico" alt="SilentCanary" style="width: 32px; height: 32px; vertical-align: middle;">
-            <h2 style="display: inline-block; margin-left: 10px; color: #dc3545;">🚨 SilentCanary Alert</h2>
-        </div>
-    <p>Your canary "<strong>{canary.name}</strong>" has failed to check in!</p>
+    # Get additional context for the email template
+    dashboard_link = url_for('dashboard', _external=True)
+    canary_logs_link = url_for('canary_logs', canary_id=canary.canary_id, _external=True)
     
-    <h3>Details:</h3>
-    <ul>
-        <li><strong>Last check-in:</strong> {canary.last_checkin or 'Never'}</li>
-        <li><strong>Expected check-in:</strong> {canary.next_expected or 'N/A'}</li>
-        <li><strong>Grace period:</strong> {canary.grace_minutes} minutes</li>
-        <li><strong>Check-in interval:</strong> {canary.interval_minutes} minutes</li>
-    </ul>
-    
-    <p>Please investigate your monitoring target immediately.</p>
-    
-    <p><strong>Dashboard:</strong> <a href="https://silentcanary.com/dashboard">View Dashboard</a></p>
-    
-    <hr>
-    <p><small>This alert was sent by <a href="https://silentcanary.com">SilentCanary</a></small></p>
-    </div>
-    '''
+    # Check if smart alerts are enabled
+    smart_alert = SmartAlert.get_by_canary_id(canary.canary_id)
+    smart_alert_enabled = smart_alert and smart_alert.is_enabled
     
     # Slack message with markdown formatting
     slack_message = f"""🚨 *SilentCanary Alert*
@@ -2641,18 +2626,29 @@ Please investigate your monitoring target immediately.
             recipient = canary.alert_email or (user.email if user else None)
             if recipient:
                 try:
-                    msg = Message(
+                    # Send canary alert using template
+                    success = send_templated_email(
+                        recipients=recipient,
                         subject=subject,
-                        sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
-                        recipients=[recipient],
-                        html=html_message
+                        template_name='canary_alert',
+                        canary_name=canary.name,
+                        environment=getattr(canary, 'environment', None),
+                        service_name=getattr(canary, 'service_name', None),
+                        interval_minutes=canary.interval_minutes,
+                        last_checkin=canary.last_checkin or 'Never',
+                        status=canary.status,
+                        dashboard_link=dashboard_link,
+                        canary_logs_link=canary_logs_link,
+                        smart_alert_enabled=smart_alert_enabled
                     )
-                    mail.send(msg)
-                    print(f"📧 Email notification sent to {recipient}")
                     
-                    # Log successful email notification
-                    if log_entry:
-                        log_entry.update_email_notification('sent')
+                    if success:
+                        print(f"📧 Email notification sent to {recipient}")
+                        # Log successful email notification
+                        if log_entry:
+                            log_entry.update_email_notification('sent')
+                    else:
+                        raise Exception("Template email sending failed")
                         
                 except Exception as e:
                     print(f"❌ Email notification failed: {e}")
@@ -2985,17 +2981,28 @@ def send_smart_alert_notifications(canary, log_entry, smart_alert):
             recipient = canary.alert_email or (user.email if user else None)
             if recipient:
                 try:
-                    msg = Message(
+                    # Use same template but with smart alert context
+                    success = send_templated_email(
+                        recipients=recipient,
                         subject=subject,
-                        sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
-                        recipients=[recipient],
-                        html=html_message
+                        template_name='canary_alert',
+                        canary_name=canary.name,
+                        environment=getattr(canary, 'environment', None),
+                        service_name=getattr(canary, 'service_name', None),
+                        interval_minutes=canary.interval_minutes,
+                        last_checkin=canary.last_checkin or 'Never',
+                        status='Smart Alert Triggered',
+                        dashboard_link=f"https://silentcanary.com/dashboard",
+                        canary_logs_link=f"https://silentcanary.com/canary_logs/{canary.canary_id}",
+                        smart_alert_enabled=True
                     )
-                    mail.send(msg)
-                    print(f"📧 Smart alert email sent to {recipient}")
                     
-                    if log_entry:
-                        log_entry.update_email_notification('sent')
+                    if success:
+                        print(f"📧 Smart alert email sent to {recipient}")
+                        if log_entry:
+                            log_entry.update_email_notification('sent')
+                    else:
+                        raise Exception("Smart alert template email failed")
                         
                 except Exception as e:
                     print(f"❌ Smart alert email failed: {e}")
@@ -3133,7 +3140,7 @@ def call_claude_api(prompt, user_api_key, max_tokens=1000, feature_used='unknown
         print("call_claude_api: No API key provided")  # Debug log
         return None, "No API key provided"
     
-    print(f"call_claude_api: Using API key: {user_api_key[:15]}...")  # Debug log
+    print("call_claude_api: Using user-provided API key")  # Debug log
     
     start_time = time.time()
     success = False
@@ -3302,7 +3309,7 @@ def validate_anthropic_api_key(api_key):
     
     # Clean the API key
     api_key = api_key.strip()
-    print(f"Validating API key: {api_key[:15]}...")  # Debug log
+    print("Validating Anthropic API key format")  # Debug log
     
     # Check format - should start with sk-ant-
     if not api_key.startswith('sk-ant-'):

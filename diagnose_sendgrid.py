@@ -22,7 +22,7 @@ def check_sendgrid_api():
         print("❌ SENDGRID_API_KEY doesn't appear to be valid (should start with 'SG.')")
         return False
     
-    print(f"✅ API Key format looks correct: {api_key[:10]}...")
+    print("✅ API Key format looks correct")
     
     # Test API connectivity
     headers = {

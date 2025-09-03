@@ -1,0 +1,29 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Welcome to SilentCanary - Email Verification{% endblock %}
+
+{% block content %}
+<h2>Welcome to SilentCanary!</h2>
+
+<p>Hello <strong>{{ username }}</strong>,</p>
+
+<p>Thank you for registering with SilentCanary! We're excited to have you on board.</p>
+
+<p>To complete your account setup and start monitoring your deployments, please verify your email address by clicking the button below:</p>
+
+<p style="text-align: center;">
+    <a href="{{ verification_link }}" class="btn btn-success">Verify Email Address</a>
+</p>
+
+<div class="alert alert-info">
+    <strong>Why verify your email?</strong><br>
+    Email verification helps us ensure you receive important alerts about your canaries and keeps your account secure.
+</div>
+
+<p>If you didn't create this account, you can safely ignore this email.</p>
+
+<p>If you're having trouble with the button above, copy and paste this link into your browser:</p>
+<p><code class="code">{{ verification_link }}</code></p>
+
+<p>Best regards,<br>The SilentCanary Team</p>
+{% endblock %}

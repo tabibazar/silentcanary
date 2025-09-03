@@ -1,0 +1,27 @@
+{% extends "emails/base.html" %}
+
+{% block title %}SilentCanary - New Contact Form Submission{% endblock %}
+
+{% block content %}
+<h2>New Contact Form Submission</h2>
+
+<p><strong>Contact Details:</strong></p>
+<ul>
+    <li><strong>Name:</strong> {{ name }}</li>
+    <li><strong>Email:</strong> {{ email }}</li>
+    <li><strong>Subject:</strong> {{ form_subject }}</li>
+</ul>
+
+<p><strong>Message:</strong></p>
+<div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; border-left: 4px solid #007bff;">
+    {{ message | nl2br }}
+</div>
+
+<p><strong>Submitted:</strong> {{ timestamp }}</p>
+
+<p style="text-align: center;">
+    <a href="mailto:{{ email }}?subject=Re: {{ form_subject }}" class="btn">Reply to {{ name }}</a>
+</p>
+
+<p>This message was sent from the SilentCanary contact form.</p>
+{% endblock %}

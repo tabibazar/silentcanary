@@ -18,7 +18,7 @@ def test_sendgrid_api():
         print("❌ SENDGRID_API_KEY not found in environment")
         return False
     
-    print(f"Testing SendGrid Web API with key: {api_key[:10]}...")
+    print("Testing SendGrid Web API with configured key")
     print(f"Sender email: {sender_email}")
     
     # Get test email

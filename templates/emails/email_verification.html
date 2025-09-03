@@ -1,0 +1,43 @@
+{% extends "emails/base.html" %}
+
+{% block title %}SilentCanary - Verify Your Email Address{% endblock %}
+
+{% block content %}
+<h2>Email Verification Required</h2>
+
+<p>Hello <strong>{{ username }}</strong>,</p>
+
+<p>To continue using SilentCanary, please verify your email address.</p>
+
+{% if verification_code %}
+<p>Enter this verification code on the verification page:</p>
+<p style="text-align: center;">
+    <code class="code" style="font-size: 18px; padding: 15px; background-color: #007bff; color: white; border-radius: 8px;">{{ verification_code }}</code>
+</p>
+{% endif %}
+
+{% if verification_link %}
+<p>Or click the button below to verify automatically:</p>
+<p style="text-align: center;">
+    <a href="{{ verification_link }}" class="btn btn-success">Verify Email</a>
+</p>
+{% endif %}
+
+<div class="alert alert-warning">
+    <strong>Security Notice:</strong><br>
+    {% if verification_code %}
+    This verification code will expire in 15 minutes.
+    {% else %}
+    This verification link will expire in 24 hours.
+    {% endif %}
+</div>
+
+{% if verification_link %}
+<p>If you're having trouble with the button above, copy and paste this link into your browser:</p>
+<p><code class="code">{{ verification_link }}</code></p>
+{% endif %}
+
+<p>If you didn't request this verification, you can safely ignore this email.</p>
+
+<p>Best regards,<br>The SilentCanary Team</p>
+{% endblock %}
