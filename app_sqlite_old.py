@@ -639,6 +639,8 @@ if __name__ == '__main__':
         scheduler.start()
     
     try:
-        app.run(debug=True, port=5000, host='127.0.0.1')
+        # Security fix: Control debug mode via environment variable
+        debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 'yes')
+        app.run(debug=debug_mode, port=5000, host='127.0.0.1')
     except (KeyboardInterrupt, SystemExit):
         scheduler.shutdown()
