@@ -1529,10 +1529,9 @@ class APIKey:
     @staticmethod
     def generate_key_value(user_id):
         """Generate a new API key value"""
-        import base64
-        secret = f"secret_{uuid.uuid4().hex[:16]}"
-        credentials = f"{user_id}:{secret}"
-        return base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
+        import secrets
+        # Security fix: Use cryptographically secure random generation with sc- prefix
+        return f"sc-{secrets.token_urlsafe(32)}"
     
     def save(self):
         """Save API key to DynamoDB"""
@@ -1559,10 +1558,16 @@ class APIKey:
     def delete(self):
         """Delete API key from DynamoDB"""
         try:
-            api_keys_table.delete_item(Key={'api_key_id': self.api_key_id})
+            import sys
+            print(f"Attempting to delete API key: {self.api_key_id} for user: {self.user_id}", file=sys.stderr, flush=True)
+            result = api_keys_table.delete_item(Key={'api_key_id': self.api_key_id})
+            print(f"Delete operation result: {result}", file=sys.stderr, flush=True)
             return True
         except ClientError as e:
-            print(f"Error deleting API key: {e}")
+            print(f"Error deleting API key {self.api_key_id}: {e}", file=sys.stderr, flush=True)
+            return False
+        except Exception as e:
+            print(f"Unexpected error deleting API key {self.api_key_id}: {e}", file=sys.stderr, flush=True)
             return False
     
     def record_usage(self, endpoint=None, ip_address=None, canary_id=None, status='success'):

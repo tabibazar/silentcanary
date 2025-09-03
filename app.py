@@ -1085,6 +1085,14 @@ def checkin(token):
 def settings():
     form = SettingsForm()
     
+    # Debug: Log all form data
+    if request.method == 'POST':
+        import sys
+        print(f"Settings POST - Form data: {dict(request.form)}", file=sys.stderr, flush=True)
+        print(f"Form fields: create_api_key={request.form.get('create_api_key')}, delete_api_key={request.form.get('delete_api_key')}", file=sys.stderr, flush=True)
+        app.logger.info(f"Settings POST - Form data: {dict(request.form)}")
+        app.logger.info(f"Form fields: create_api_key={request.form.get('create_api_key')}, delete_api_key={request.form.get('delete_api_key')}")
+    
     # Populate timezone choices
     common_timezones = [
         'UTC', 'US/Eastern', 'US/Central', 'US/Mountain', 'US/Pacific', 
@@ -1122,18 +1130,30 @@ def settings():
                 flash('Failed to create API key. Please try again.', 'error')
             return redirect(url_for('settings'))
             
-        elif request.form.get('delete_api_key'):
+        elif 'delete_api_key' in request.form:
             from models import APIKey
             api_key_id = request.form.get('api_key_id')
+            import sys
+            print(f"Delete API key request - ID: {api_key_id}, User: {current_user.user_id}", file=sys.stderr, flush=True)
+            app.logger.info(f"Delete API key request - ID: {api_key_id}, User: {current_user.user_id}")
             if api_key_id:
                 api_key = APIKey.get_by_id(api_key_id)
+                print(f"Retrieved API key: {api_key.name if api_key else 'None'}", file=sys.stderr, flush=True)
+                app.logger.info(f"Retrieved API key: {api_key.name if api_key else 'None'}")
                 if api_key and api_key.user_id == current_user.user_id:
+                    print(f"Authorization check passed, attempting delete", file=sys.stderr, flush=True)
+                    app.logger.info(f"Authorization check passed, attempting delete")
                     if api_key.delete():
                         flash(f'API key "{api_key.name}" deleted successfully.', 'warning')
                     else:
                         flash('Failed to delete API key. Please try again.', 'error')
                 else:
+                    print(f"Authorization failed - API key exists: {api_key is not None}, User match: {api_key.user_id == current_user.user_id if api_key else False}", file=sys.stderr, flush=True)
+                    app.logger.error(f"Authorization failed - API key exists: {api_key is not None}, User match: {api_key.user_id == current_user.user_id if api_key else False}")
                     flash('API key not found or access denied.', 'error')
+            else:
+                print("No API key ID provided in request", file=sys.stderr, flush=True)
+                app.logger.error("No API key ID provided in request")
             return redirect(url_for('settings'))
             
         elif request.form.get('toggle_api_key'):
