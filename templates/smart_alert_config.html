@@ -32,6 +32,16 @@
                         <i class="fas fa-check-circle"></i> Smart alerting is <strong>enabled</strong> for this canary
                     </div>
                     
+                    {% if canary.interval_minutes > 43200 %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> 
+                        <strong>Long-Interval Job Detected:</strong> This canary has a check-in interval of {{ canary.interval_minutes // 1440 }} days. 
+                        Smart alerting is now supported for jobs up to one year with extended learning periods. 
+                        Select an appropriate learning period above that provides sufficient historical data for pattern analysis.
+                        <a href="{{ url_for('help_smart_alerts') }}" class="alert-link" target="_blank">Learn more</a>
+                    </div>
+                    {% endif %}
+                    
                     <div class="row">
                         <div class="col-md-6">
                             <table class="table table-sm">
@@ -174,9 +184,11 @@
                         </form>
                         
                         {% if smart_alert.pattern_data %}
-                        <form method="POST" action="{{ url_for('relearn_patterns', canary_id=canary.canary_id) }}" class="d-inline ms-2">
-                            <button type="submit" class="btn btn-outline-primary btn-sm">
-                                <i class="fas fa-sync-alt"></i> Re-learn Patterns
+                        <form method="POST" action="{{ url_for('relearn_patterns', canary_id=canary.canary_id) }}" class="d-inline ms-2" id="relearn-form">
+                            <button type="submit" class="btn btn-outline-primary btn-sm" id="relearn-btn"
+                                    onclick="return confirmRelearn(this)">
+                                <i class="fas fa-sync-alt" id="relearn-icon"></i> 
+                                <span id="relearn-text">Re-learn Patterns</span>
                             </button>
                         </form>
                         {% endif %}
@@ -226,12 +238,56 @@
                             <div class="mb-3">
                                 <label for="learning_period" class="form-label">Learning Period (days)</label>
                                 <select class="form-select" id="learning_period" name="learning_period">
+                                    {% set interval_days = (canary.interval_minutes / 1440) | round(1) %}
+                                    
+                                    {# Standard options for frequent jobs (< 7 days interval) #}
+                                    {% if interval_days < 7 %}
                                     <option value="3" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 3 }}>3 days</option>
                                     <option value="7" {{ 'selected' if not smart_alert or smart_alert.learning_period_days == 7 }}>7 days (recommended)</option>
                                     <option value="14" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 14 }}>14 days</option>
                                     <option value="30" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 30 }}>30 days</option>
+                                    {% endif %}
+                                    
+                                    {# Extended options for weekly to monthly jobs (7-30 days interval) #}
+                                    {% if interval_days >= 7 and interval_days < 30 %}
+                                    <option value="7" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 7 }}>7 days</option>
+                                    <option value="14" {{ 'selected' if not smart_alert or smart_alert.learning_period_days == 14 }}>14 days (recommended)</option>
+                                    <option value="30" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 30 }}>30 days</option>
+                                    <option value="60" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 60 }}>60 days</option>
+                                    <option value="90" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 90 }}>90 days</option>
+                                    {% endif %}
+                                    
+                                    {# Extended options for monthly jobs (30-90 days interval) #}
+                                    {% if interval_days >= 30 and interval_days < 90 %}
+                                    <option value="30" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 30 }}>30 days</option>
+                                    <option value="60" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 60 }}>60 days</option>
+                                    <option value="90" {{ 'selected' if not smart_alert or smart_alert.learning_period_days == 90 }}>90 days (recommended)</option>
+                                    <option value="120" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 120 }}>120 days</option>
+                                    <option value="180" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 180 }}>180 days</option>
+                                    {% endif %}
+                                    
+                                    {# Extended options for quarterly jobs (90-180 days interval) #}
+                                    {% if interval_days >= 90 and interval_days < 180 %}
+                                    <option value="90" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 90 }}>90 days</option>
+                                    <option value="120" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 120 }}>120 days</option>
+                                    <option value="180" {{ 'selected' if not smart_alert or smart_alert.learning_period_days == 180 }}>180 days (recommended)</option>
+                                    <option value="270" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 270 }}>270 days</option>
+                                    <option value="365" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 365 }}>365 days</option>
+                                    {% endif %}
+                                    
+                                    {# Extended options for semi-annual and annual jobs (180+ days interval) #}
+                                    {% if interval_days >= 180 %}
+                                    <option value="180" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 180 }}>180 days</option>
+                                    <option value="270" {{ 'selected' if smart_alert and smart_alert.learning_period_days == 270 }}>270 days</option>
+                                    <option value="365" {{ 'selected' if not smart_alert or smart_alert.learning_period_days == 365 }}>365 days (recommended)</option>
+                                    {% endif %}
                                 </select>
-                                <div class="form-text">How many days of check-in history to analyze for pattern learning.</div>
+                                <div class="form-text">
+                                    How many days of check-in history to analyze for pattern learning.
+                                    {% if interval_days > 30 %}
+                                    <br><small class="text-info">For jobs with {{ interval_days }} day intervals, longer learning periods provide better pattern analysis.</small>
+                                    {% endif %}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -421,12 +477,13 @@ async function loadPatternInsights() {
         
         document.getElementById('pattern-insights').innerHTML = insightsHtml;
         
-        // Update pattern confidence display if available
-        if (insights.confidence > 0) {
-            const confidenceBar = document.getElementById('confidence-bar');
-            const confidenceText = document.getElementById('confidence-text');
-            
-            if (confidenceBar && confidenceText) {
+        // Update pattern confidence display
+        const confidenceBar = document.getElementById('confidence-bar');
+        const confidenceText = document.getElementById('confidence-text');
+        
+        if (confidenceBar && confidenceText) {
+            if (insights.confidence !== null && insights.confidence !== undefined) {
+                // Valid confidence value available
                 confidenceBar.style.width = insights.confidence + '%';
                 confidenceText.textContent = `Pattern Confidence: ${insights.confidence}%`;
                 
@@ -434,6 +491,11 @@ async function loadPatternInsights() {
                 confidenceBar.className = 'progress-bar ' + 
                     (insights.confidence > 80 ? 'bg-success' : 
                      insights.confidence > 60 ? 'bg-warning' : 'bg-danger');
+            } else {
+                // No confidence data available - show insufficient data message
+                confidenceBar.style.width = '0%';
+                confidenceBar.className = 'progress-bar bg-secondary';
+                confidenceText.textContent = 'Pattern Confidence: Insufficient data (need 3+ check-ins)';
             }
         }
         
@@ -780,5 +842,26 @@ document.addEventListener('DOMContentLoaded', function() {
     setInterval(loadAlertLogicExplanation, 45000); // Alert logic every 45 seconds
 });
 {% endif %}
+
+// Function to handle re-learn patterns button with visual feedback
+function confirmRelearn(button) {
+    if (confirm('Are you sure you want to re-learn patterns? This will analyze recent check-ins and update the ML model.')) {
+        // Show loading state
+        const icon = document.getElementById('relearn-icon');
+        const text = document.getElementById('relearn-text');
+        const btn = document.getElementById('relearn-btn');
+        
+        if (icon && text && btn) {
+            btn.disabled = true;
+            icon.className = 'fas fa-spinner fa-spin';
+            text.textContent = 'Re-learning...';
+            btn.classList.remove('btn-outline-primary');
+            btn.classList.add('btn-primary');
+        }
+        
+        return true; // Allow form submission
+    }
+    return false; // Prevent form submission
+}
 </script>
 {% endblock %}

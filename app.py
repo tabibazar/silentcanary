@@ -210,11 +210,11 @@ class CanaryForm(FlaskForm):
     ], default=5)
     alert_type = SelectField('Alert Type', choices=[
         ('email', 'Email'),
-        ('slack', 'Slack'),
-        ('both', 'Email + Slack')
+        ('slack', 'Webhook'),
+        ('both', 'Email + Webhook')
     ], validators=[DataRequired()], default='email')
     alert_email = StringField('Alert Email', validators=[Optional(), Email(), validate_secure_email])
-    slack_webhook = StringField('Slack Webhook URL', validators=[Optional()])
+    slack_webhook = StringField('Slack-compatible Webhook URL', validators=[Optional()])
     sla_threshold = FloatField('SLA Threshold (%)', validators=[
         DataRequired(),
         NumberRange(min=0.0, max=100.0, message='SLA threshold must be between 0 and 100')
@@ -882,75 +882,20 @@ def create_canary():
 def send_verification_email(verification, canary):
     """Send email verification email for canary alert email"""
     try:
-        from flask_mail import Message
-        
-        msg = Message(
-            subject='Verify Your Email for SilentCanary Alert',
-            recipients=[verification.email],
-            sender=app.config['MAIL_DEFAULT_SENDER']
-        )
-        
         verification_url = url_for('verify_canary_email', verification_id=verification.verification_id, _external=True)
         
-        msg.html = f'''
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
-                <h1 style="margin: 0; font-size: 28px;">🐦 SilentCanary</h1>
-                <p style="margin: 10px 0 0 0; font-size: 16px;">Email Verification Required</p>
-            </div>
-            
-            <div style="padding: 30px; background: #f8f9fa;">
-                <h2 style="color: #333; margin-top: 0;">Verify Your Email Address</h2>
-                
-                <p style="color: #666; line-height: 1.6;">
-                    You've set up a new SilentCanary monitor called "<strong>{canary.name}</strong>" with this email address 
-                    for alerts. To prevent spam and ensure security, we need to verify that you own this email address.
-                </p>
-                
-                <div style="background: white; border: 2px solid #e9ecef; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
-                    <p style="margin: 0; color: #333; font-size: 18px;"><strong>Verification Code:</strong></p>
-                    <p style="margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: #667eea; letter-spacing: 3px;">{verification.verification_code}</p>
-                </div>
-                
-                <p style="color: #666; line-height: 1.6;">
-                    <strong>Option 1:</strong> Click the button below to verify automatically:
-                </p>
-                
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="{verification_url}" 
-                       style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; 
-                              border-radius: 5px; font-weight: bold; display: inline-block;">
-                        ✅ Verify Email Address
-                    </a>
-                </div>
-                
-                <p style="color: #666; line-height: 1.6;">
-                    <strong>Option 2:</strong> Or manually enter the verification code when prompted.
-                </p>
-                
-                <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
-                    <p style="margin: 0; color: #856404; font-size: 14px;">
-                        ⏰ <strong>This verification expires in 24 hours.</strong> 
-                        Your canary will remain inactive until verified.
-                    </p>
-                </div>
-                
-                <p style="color: #888; font-size: 14px; line-height: 1.4;">
-                    If you didn't request this verification, please ignore this email. 
-                    The canary will remain inactive and no alerts will be sent to this address.
-                </p>
-            </div>
-            
-            <div style="background: #e9ecef; padding: 20px; text-align: center; color: #6c757d; font-size: 14px;">
-                <p style="margin: 0;">SilentCanary - Reliable monitoring for your services</p>
-                <p style="margin: 5px 0 0 0;">
-                    <a href="https://silentcanary.com" style="color: #667eea;">silentcanary.com</a>
-                </p>
-            </div>
-        </div>
-        '''
+        # Use templated email instead of hardcoded HTML
+        success = send_templated_email(
+            recipients=verification.email,
+            subject='Verify Your Email for SilentCanary Alert',
+            template_name='canary_verification',
+            canary_name=canary.name,
+            verification_code=verification.verification_code,
+            verification_url=verification_url
+        )
         
-        mail.send(msg)
+        if not success:
+            raise Exception("Failed to send canary verification email")
         print(f"📧 Verification email sent to {verification.email} for canary {canary.name}")
         return True
         
@@ -1312,11 +1257,22 @@ def edit_canary(canary_id):
     form = CanaryForm()
     
     if form.validate_on_submit():
+        # Check if alert email has changed and needs verification
+        old_alert_email = canary.alert_email
+        new_alert_email = form.alert_email.data if form.alert_email.data else None
+        needs_email_verification = False
+        
+        # Check if email verification is needed
+        if new_alert_email and new_alert_email != old_alert_email:
+            # Email verification is needed if the new email is different from user's email
+            if new_alert_email != current_user.email:
+                needs_email_verification = True
+        
         canary.name = form.name.data
         canary.interval_minutes = form.interval_minutes.data
         canary.grace_minutes = form.grace_minutes.data
         canary.alert_type = form.alert_type.data
-        canary.alert_email = form.alert_email.data if form.alert_email.data else None
+        canary.alert_email = new_alert_email
         canary.slack_webhook = form.slack_webhook.data if form.slack_webhook.data else None
         canary.sla_threshold = Decimal(str(form.sla_threshold.data))
         
@@ -1325,6 +1281,10 @@ def edit_canary(canary_id):
         if form.tags.data:
             tags = [tag.strip() for tag in form.tags.data.split(',') if tag.strip()]
         canary.tags = tags
+        
+        # If email verification is needed, set status to pending
+        if needs_email_verification:
+            canary.status = 'pending_verification'
         
         # Recalculate next expected check-in if interval changed
         if canary.last_checkin:
@@ -1335,7 +1295,25 @@ def edit_canary(canary_id):
             canary.next_expected = (last_checkin_dt + timedelta(minutes=canary.interval_minutes)).isoformat()
         
         if canary.save():
-            flash(f'Canary "{canary.name}" updated successfully')
+            if needs_email_verification:
+                # Create email verification record
+                from models import EmailVerification
+                verification = EmailVerification(
+                    canary_id=canary.canary_id,
+                    user_id=current_user.user_id,
+                    email=new_alert_email
+                )
+                
+                if verification.save():
+                    # Send verification email
+                    if send_verification_email(verification, canary):
+                        flash(f'Canary "{canary.name}" updated! A verification email has been sent to {new_alert_email}. Please verify your email to reactivate the canary.', 'warning')
+                    else:
+                        flash(f'Canary updated but failed to send verification email. Please contact support.', 'warning')
+                else:
+                    flash(f'Canary updated but email verification setup failed. Please contact support.', 'error')
+            else:
+                flash(f'Canary "{canary.name}" updated successfully')
         else:
             flash('Failed to update canary')
         return redirect(url_for('dashboard'))
@@ -1590,7 +1568,7 @@ def enable_smart_alert(canary_id):
     
     try:
         sensitivity = max(0.5, min(1.0, float(sensitivity)))
-        learning_period = max(1, min(30, int(learning_period)))
+        learning_period = max(1, min(365, int(learning_period)))
     except (ValueError, TypeError):
         flash('Invalid configuration values')
         return redirect(url_for('smart_alert_config', canary_id=canary_id))
@@ -1643,19 +1621,30 @@ def disable_smart_alert(canary_id):
 @login_required
 def relearn_patterns(canary_id):
     """Re-learn patterns for smart alerting"""
+    print(f"🔄 Re-learn patterns requested by user {current_user.username} for canary {canary_id}")
+    
     canary = Canary.get_by_id(canary_id)
     if not canary or canary.user_id != current_user.user_id:
+        print(f"❌ Access denied for re-learn patterns - user {current_user.username}, canary {canary_id}")
         flash('Access denied')
         return redirect(url_for('dashboard'))
     
     smart_alert = SmartAlert.get_by_canary_id(canary_id)
     if smart_alert and smart_alert.is_enabled:
-        if smart_alert.learn_patterns():
-            flash(f'Patterns re-learned successfully for "{canary.name}"!', 'success')
-        else:
-            flash('Insufficient data to learn patterns. More check-ins are needed.', 'warning')
+        print(f"🧠 Starting pattern re-learning for canary '{canary.name}' ({canary_id})")
+        try:
+            if smart_alert.learn_patterns():
+                print(f"✅ Pattern re-learning succeeded for canary '{canary.name}'")
+                flash(f'Patterns re-learned successfully for "{canary.name}"!', 'success')
+            else:
+                print(f"⚠️ Pattern re-learning failed - insufficient data for canary '{canary.name}'")
+                flash('Insufficient data to learn patterns. More check-ins are needed.', 'warning')
+        except Exception as e:
+            print(f"❌ Exception during pattern re-learning for canary '{canary.name}': {e}")
+            flash('Error occurred while re-learning patterns. Please try again.', 'warning')
     else:
-        flash('Smart alerting is not enabled for this canary')
+        print(f"❌ Smart alerting not enabled for canary '{canary.name}' ({canary_id})")
+        flash('Smart alerting is not enabled for this canary', 'warning')
     
     return redirect(url_for('smart_alert_config', canary_id=canary_id))
 
@@ -1697,11 +1686,15 @@ def smart_alert_insights(canary_id):
         'timing_patterns': [],
         'anomaly_indicators': [],
         'next_expected': None,
-        'confidence': 0
+        'confidence': None
     }
     
     if smart_alert.pattern_data:
         pattern_data = smart_alert.pattern_data
+        total_checkins = pattern_data.get('total_checkins', 0)
+        
+        # Calculate confidence based on available data
+        confidence_calculated = False
         
         # Generate timing pattern insights
         if pattern_data.get('avg_interval'):
@@ -1714,8 +1707,22 @@ def smart_alert_insights(canary_id):
             if std_dev > 0:
                 insights['timing_patterns'].append(f"Your timing varies by ±{std_dev:.1f} minutes normally")
             
-            if pattern_data.get('total_checkins', 0) > 0:
-                insights['timing_patterns'].append(f"Analysis based on {pattern_data['total_checkins']} check-ins")
+            if total_checkins > 0:
+                insights['timing_patterns'].append(f"Analysis based on {total_checkins} check-ins")
+            
+            # Calculate confidence based on data quality
+            if total_checkins >= 3:
+                # Base confidence on number of check-ins and consistency
+                base_confidence = min(90, 30 + (total_checkins * 8))  # 30% base + up to 60% for data
+                
+                # Adjust for timing consistency
+                if avg_interval > 0 and std_dev >= 0:
+                    variability_factor = std_dev / avg_interval
+                    consistency_bonus = max(0, 20 - (variability_factor * 20))  # Up to 20% bonus for consistency
+                    insights['confidence'] = min(95, int(base_confidence + consistency_bonus))
+                else:
+                    insights['confidence'] = int(base_confidence)
+                confidence_calculated = True
         
         # Check for recent anomalies
         recent_logs_data = CanaryLog.get_by_canary_id(canary_id, limit=5)
@@ -1737,9 +1744,16 @@ def smart_alert_insights(canary_id):
                 last_checkin = datetime.fromisoformat(canary.last_checkin.replace('Z', '+00:00'))
                 next_expected = last_checkin + timedelta(minutes=expected_interval)
                 insights['next_expected'] = next_expected.strftime('%Y-%m-%d %H:%M UTC')
-                insights['confidence'] = min(95, max(50, 100 - (std_dev / avg_interval * 100)))
             except:
                 pass
+        
+        # If we haven't calculated confidence yet, provide a basic estimate
+        if not confidence_calculated:
+            if total_checkins >= 3:
+                insights['confidence'] = min(70, 20 + (total_checkins * 5))
+            elif total_checkins > 0:
+                insights['confidence'] = 15
+            # else confidence remains None for insufficient data
     
     return jsonify(insights)
 
@@ -2661,31 +2675,31 @@ Please investigate your monitoring target immediately.
                 if log_entry:
                     log_entry.update_email_notification('not_required')
         
-        # Send Slack notification
+        # Send webhook notification
         if canary.alert_type in ['slack', 'both'] and canary.slack_webhook:
             try:
                 payload = {"text": slack_message}
                 response = requests.post(canary.slack_webhook, json=payload)
                 if response.status_code == 200:
-                    print(f"💬 Slack notification sent")
+                    print(f"💬 Webhook notification sent")
                     
                     # Log successful Slack notification
                     if log_entry:
                         log_entry.update_slack_notification('sent')
                         
                 else:
-                    print(f"❌ Slack notification failed: {response.status_code}")
+                    print(f"❌ Webhook notification failed: {response.status_code}")
                     # Log failed Slack notification
                     if log_entry:
                         log_entry.update_slack_notification('failed')
                         
             except Exception as e:
-                print(f"❌ Slack notification error: {e}")
+                print(f"❌ Webhook notification error: {e}")
                 # Log failed Slack notification
                 if log_entry:
                     log_entry.update_slack_notification('failed')
         elif canary.alert_type in ['slack', 'both']:
-            # Slack was requested but no webhook available
+            # Webhook was requested but no webhook available
             if log_entry:
                 log_entry.update_slack_notification('not_configured')
         
@@ -2924,55 +2938,6 @@ def send_smart_alert_notifications(canary, log_entry, smart_alert):
     # Get user for email fallback
     user = User.get_by_id(canary.user_id)
     
-    # Create enhanced message for smart alerts
-    pattern_info = ""
-    if smart_alert.pattern_data:
-        avg_interval = smart_alert.pattern_data.get('avg_interval', canary.interval_minutes)
-        expected_interval = smart_alert.pattern_data.get('expected_interval', canary.interval_minutes)
-        pattern_info = f"""
-        <h3>🧠 Smart Alert Details:</h3>
-        <ul>
-            <li><strong>Expected average interval:</strong> {avg_interval:.1f} minutes</li>
-            <li><strong>Configured interval:</strong> {expected_interval} minutes</li>
-            <li><strong>Sensitivity:</strong> {float(smart_alert.sensitivity) * 100:.1f}%</li>
-            <li><strong>Analysis period:</strong> {smart_alert.learning_period_days} days</li>
-        </ul>
-        <p><em>This alert was triggered by machine learning analysis of your check-in patterns, indicating behavior that deviates from your normal schedule.</em></p>
-        """
-    
-    # Email message with ML context
-    html_message = f'''
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="text-align: center; margin-bottom: 20px;">
-            <img src="https://silentcanary.com/static/favicon.ico" alt="SilentCanary" style="width: 32px; height: 32px; vertical-align: middle;">
-            <h2 style="display: inline-block; margin-left: 10px; color: #ffc107;">🧠 SilentCanary Smart Alert</h2>
-        </div>
-    <p>Our machine learning system detected an anomaly in your canary "<strong>{canary.name}</strong>" check-in patterns!</p>
-    
-    <h3>Current Status:</h3>
-    <ul>
-        <li><strong>Last check-in:</strong> {canary.last_checkin or 'Never'}</li>
-        <li><strong>Next expected:</strong> {canary.next_expected or 'N/A'}</li>
-        <li><strong>Current status:</strong> {canary.status}</li>
-    </ul>
-    
-    {pattern_info}
-    
-    <h3>🔧 What to do:</h3>
-    <ol>
-        <li>Check if your process is running normally</li>
-        <li>Verify if this timing change is expected</li>
-        <li>If this is normal behavior, you can adjust sensitivity in Smart Alert settings</li>
-        <li>Consider if external factors might be affecting your schedule</li>
-    </ol>
-    
-    <p><strong>Dashboard:</strong> <a href="https://silentcanary.com/dashboard">View Dashboard</a></p>
-    <p><strong>Smart Alerts:</strong> <a href="https://silentcanary.com/smart_alert/{canary.canary_id}">Configure Smart Alerts</a></p>
-    
-    <hr>
-    <small>This is a smart alert - meaning it was triggered by pattern analysis, not just a simple timeout. Learn more at <a href="https://silentcanary.com">SilentCanary.com</a></small>
-    </div>
-    '''
     
     # Send notifications based on alert type
     try:
@@ -2994,7 +2959,12 @@ def send_smart_alert_notifications(canary, log_entry, smart_alert):
                         status='Smart Alert Triggered',
                         dashboard_link=f"https://silentcanary.com/dashboard",
                         canary_logs_link=f"https://silentcanary.com/canary_logs/{canary.canary_id}",
-                        smart_alert_enabled=True
+                        smart_alert_link=f"https://silentcanary.com/smart_alert/{canary.canary_id}",
+                        smart_alert_enabled=True,
+                        avg_interval=smart_alert.pattern_data.get('avg_interval', canary.interval_minutes),
+                        expected_interval=smart_alert.pattern_data.get('expected_interval', canary.interval_minutes),
+                        sensitivity=f"{float(smart_alert.sensitivity) * 100:.1f}",
+                        learning_period_days=smart_alert.learning_period_days
                     )
                     
                     if success:
@@ -3009,7 +2979,7 @@ def send_smart_alert_notifications(canary, log_entry, smart_alert):
                     if log_entry:
                         log_entry.update_email_notification('failed', str(e))
         
-        # Send Slack notification with ML context
+        # Send webhook notification with ML context
         if canary.alert_type in ['slack', 'both'] and canary.slack_webhook:
             try:
                 slack_message = {
@@ -3053,16 +3023,16 @@ def send_smart_alert_notifications(canary, log_entry, smart_alert):
                 
                 response = requests.post(canary.slack_webhook, json=slack_message, timeout=10)
                 if response.status_code == 200:
-                    print(f"💬 Smart alert Slack notification sent")
+                    print(f"💬 Smart alert webhook notification sent")
                     if log_entry:
                         log_entry.update_slack_notification('sent')
                 else:
-                    print(f"❌ Smart alert Slack notification failed: {response.status_code}")
+                    print(f"❌ Smart alert webhook notification failed: {response.status_code}")
                     if log_entry:
                         log_entry.update_slack_notification('failed', f'HTTP {response.status_code}')
                         
             except Exception as e:
-                print(f"❌ Smart alert Slack notification failed: {e}")
+                print(f"❌ Smart alert webhook notification failed: {e}")
                 if log_entry:
                     log_entry.update_slack_notification('failed', str(e))
                     
