@@ -194,7 +194,7 @@
                         
                         <form method="POST" action="{{ url_for('delete_pattern_data', canary_id=canary.canary_id) }}" class="d-inline ms-2" id="delete-pattern-form">
                             <button type="submit" class="btn btn-outline-warning btn-sm" id="delete-pattern-btn"
-                                    onclick="return confirmDeletePattern(this)">
+                                    onclick="return confirmDeletePattern(event)">
                                 <i class="fas fa-trash-alt" id="delete-pattern-icon"></i> 
                                 <span id="delete-pattern-text">Delete Pattern Data</span>
                             </button>
@@ -572,16 +572,6 @@ async function loadCheckinTimeline() {
                 </div>`;
             }
             
-            // Add AI insights if available
-            if (timeline.ai_insight) {
-                timelineHtml += `<div class="alert alert-info mt-3">
-                    <h6><i class="fas fa-robot text-primary"></i> AI Insight</h6>
-                    <p class="small mb-0">${timeline.ai_insight}</p>
-                    <small class="text-muted d-block mt-1">
-                        <i class="fas fa-key"></i> Powered by your Anthropic API key
-                    </small>
-                </div>`;
-            }
         } else {
             timelineHtml = '<p class="text-muted">No recent check-ins available for analysis.</p>';
         }
@@ -882,41 +872,119 @@ function confirmRelearn(button) {
     return false; // Prevent form submission
 }
 
-// Function to handle delete pattern data button with visual feedback
-function confirmDeletePattern(button) {
+// Function to handle delete pattern data button with immediate UI feedback
+async function confirmDeletePattern(button) {
     console.log('Delete pattern button clicked');
     
     if (confirm('Are you sure you want to delete all pattern data? This will clear learned patterns but keep smart alerts enabled. New patterns will be learned from future check-ins.')) {
         console.log('User confirmed deletion');
         
-        try {
-            // Show loading state immediately with optimized DOM updates
-            const icon = document.getElementById('delete-pattern-icon');
-            const text = document.getElementById('delete-pattern-text');
-            const btn = document.getElementById('delete-pattern-btn');
-            
-            if (icon && text && btn) {
-                // Use requestAnimationFrame for smooth DOM updates
-                requestAnimationFrame(() => {
-                    btn.disabled = true;
-                    btn.className = 'btn btn-warning btn-sm'; // Replace all classes at once
-                    icon.className = 'fas fa-spinner fa-spin';
-                    text.textContent = 'Deleting...';
-                    console.log('Visual state updated');
-                });
-            } else {
-                console.error('Could not find delete button elements');
-            }
-        } catch (e) {
-            console.error('Error updating delete button state:', e);
-        }
+        // Prevent form submission, we'll handle this via AJAX
+        event.preventDefault();
         
-        console.log('Allowing form submission');
-        return true; // Allow form submission
+        const icon = document.getElementById('delete-pattern-icon');
+        const text = document.getElementById('delete-pattern-text');
+        const btn = document.getElementById('delete-pattern-btn');
+        
+        try {
+            // Show loading state
+            if (icon && text && btn) {
+                btn.disabled = true;
+                btn.className = 'btn btn-warning btn-sm';
+                icon.className = 'fas fa-spinner fa-spin';
+                text.textContent = 'Deleting...';
+                console.log('Visual state updated');
+            }
+            
+            // Make AJAX request to delete pattern data
+            const response = await fetch(`/delete_pattern_data/{{ canary.canary_id }}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                }
+            });
+            
+            if (response.ok) {
+                console.log('Pattern data deleted successfully');
+                
+                // Immediately clear UI elements to show data is gone
+                clearPatternDataUI();
+                
+                // Show success message (we'll reload the page to get the flash message)
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+                
+            } else {
+                throw new Error('Failed to delete pattern data');
+            }
+            
+        } catch (error) {
+            console.error('Error deleting pattern data:', error);
+            
+            // Reset button state on error
+            if (icon && text && btn) {
+                btn.disabled = false;
+                btn.className = 'btn btn-outline-warning btn-sm';
+                icon.className = 'fas fa-trash-alt';
+                text.textContent = 'Delete Pattern Data';
+            }
+            
+            alert('Error deleting pattern data. Please try again.');
+        }
     } else {
         console.log('User cancelled deletion');
-        return false; // Prevent form submission
     }
+    
+    return false; // Prevent default form submission
+}
+
+// Function to immediately clear pattern data from UI
+function clearPatternDataUI() {
+    console.log('Clearing pattern data from UI');
+    
+    // Clear pattern insights
+    const patternInsights = document.getElementById('pattern-insights');
+    if (patternInsights) {
+        patternInsights.innerHTML = '<p class="text-muted small mb-0">No pattern data available - data has been cleared</p>';
+    }
+    
+    // Reset confidence bar to 0%
+    const confidenceBar = document.getElementById('confidence-bar');
+    const confidenceText = document.getElementById('confidence-text');
+    if (confidenceBar && confidenceText) {
+        confidenceBar.style.width = '0%';
+        confidenceBar.className = 'progress-bar bg-secondary';
+        confidenceText.textContent = 'Pattern Confidence: Data cleared - will rebuild with new check-ins';
+    }
+    
+    // Clear timeline
+    const timeline = document.getElementById('checkin-timeline');
+    if (timeline) {
+        timeline.innerHTML = '<p class="text-muted">Pattern data cleared - timeline will rebuild with new check-ins</p>';
+    }
+    
+    // Update learning status
+    const statusElement = document.getElementById('learning-status');
+    if (statusElement) {
+        statusElement.innerHTML = '<span class="badge bg-secondary"><i class="fas fa-clock"></i> Restarting</span>';
+    }
+    
+    // Update progress content
+    const progressContent = document.getElementById('learning-progress-content');
+    if (progressContent) {
+        progressContent.innerHTML = `
+            <p class="text-muted small mb-0">
+                Pattern data has been cleared. Smart alerts will begin learning from new check-ins.
+            </p>
+        `;
+    }
+    
+    // Hide the buttons since there's no pattern data now
+    const deleteBtn = document.getElementById('delete-pattern-btn');
+    const relearnBtn = document.getElementById('relearn-btn');
+    if (deleteBtn) deleteBtn.style.display = 'none';
+    if (relearnBtn) relearnBtn.style.display = 'none';
 }
 </script>
 {% endblock %}
