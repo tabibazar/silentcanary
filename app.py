@@ -1648,6 +1648,42 @@ def relearn_patterns(canary_id):
     
     return redirect(url_for('smart_alert_config', canary_id=canary_id))
 
+@app.route('/delete_pattern_data/<canary_id>', methods=['POST'])
+@login_required
+def delete_pattern_data(canary_id):
+    """Delete pattern data for smart alerting while keeping smart alerts enabled"""
+    print(f"🗑️ Delete pattern data requested by user {current_user.username} for canary {canary_id}")
+    
+    canary = Canary.get_by_id(canary_id)
+    if not canary or canary.user_id != current_user.user_id:
+        print(f"❌ Access denied for delete pattern data - user {current_user.username}, canary {canary_id}")
+        flash('Access denied', 'warning')
+        return redirect(url_for('dashboard'))
+    
+    smart_alert = SmartAlert.get_by_canary_id(canary_id)
+    if smart_alert and smart_alert.is_enabled:
+        try:
+            # Clear pattern data but keep smart alert enabled
+            old_pattern_count = smart_alert.pattern_data.get('total_checkins', 0) if smart_alert.pattern_data else 0
+            smart_alert.pattern_data = None
+            smart_alert.last_analysis = None
+            smart_alert.last_alert_sent = None
+            
+            if smart_alert.save():
+                print(f"✅ Pattern data deleted for canary '{canary.name}' ({old_pattern_count} check-ins cleared)")
+                flash(f'Pattern data deleted for "{canary.name}". Smart alerts remain enabled and will learn new patterns from future check-ins.', 'success')
+            else:
+                print(f"❌ Failed to save after deleting pattern data for canary '{canary.name}'")
+                flash('Failed to delete pattern data. Please try again.', 'warning')
+        except Exception as e:
+            print(f"❌ Exception during pattern data deletion for canary '{canary.name}': {e}")
+            flash('Error occurred while deleting pattern data. Please try again.', 'warning')
+    else:
+        print(f"❌ Smart alerting not enabled for canary '{canary.name}' ({canary_id})")
+        flash('Smart alerting is not enabled for this canary', 'warning')
+    
+    return redirect(url_for('smart_alert_config', canary_id=canary_id))
+
 @app.route('/smart_alert_progress/<canary_id>', methods=['GET'])
 @login_required
 def smart_alert_progress(canary_id):

@@ -191,6 +191,14 @@
                                 <span id="relearn-text">Re-learn Patterns</span>
                             </button>
                         </form>
+                        
+                        <form method="POST" action="{{ url_for('delete_pattern_data', canary_id=canary.canary_id) }}" class="d-inline ms-2" id="delete-pattern-form">
+                            <button type="submit" class="btn btn-outline-warning btn-sm" id="delete-pattern-btn"
+                                    onclick="return confirmDeletePattern(this)">
+                                <i class="fas fa-trash-alt" id="delete-pattern-icon"></i> 
+                                <span id="delete-pattern-text">Delete Pattern Data</span>
+                            </button>
+                        </form>
                         {% endif %}
                     </div>
                 {% else %}
@@ -857,6 +865,27 @@ function confirmRelearn(button) {
             text.textContent = 'Re-learning...';
             btn.classList.remove('btn-outline-primary');
             btn.classList.add('btn-primary');
+        }
+        
+        return true; // Allow form submission
+    }
+    return false; // Prevent form submission
+}
+
+// Function to handle delete pattern data button with visual feedback
+function confirmDeletePattern(button) {
+    if (confirm('Are you sure you want to delete all pattern data? This will clear learned patterns but keep smart alerts enabled. New patterns will be learned from future check-ins.')) {
+        // Show loading state
+        const icon = document.getElementById('delete-pattern-icon');
+        const text = document.getElementById('delete-pattern-text');
+        const btn = document.getElementById('delete-pattern-btn');
+        
+        if (icon && text && btn) {
+            btn.disabled = true;
+            icon.className = 'fas fa-spinner fa-spin';
+            text.textContent = 'Deleting...';
+            btn.classList.remove('btn-outline-warning');
+            btn.classList.add('btn-warning');
         }
         
         return true; // Allow form submission
