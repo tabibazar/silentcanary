@@ -874,23 +874,39 @@ function confirmRelearn(button) {
 
 // Function to handle delete pattern data button with visual feedback
 function confirmDeletePattern(button) {
+    console.log('Delete pattern button clicked');
+    
     if (confirm('Are you sure you want to delete all pattern data? This will clear learned patterns but keep smart alerts enabled. New patterns will be learned from future check-ins.')) {
-        // Show loading state
-        const icon = document.getElementById('delete-pattern-icon');
-        const text = document.getElementById('delete-pattern-text');
-        const btn = document.getElementById('delete-pattern-btn');
+        console.log('User confirmed deletion');
         
-        if (icon && text && btn) {
-            btn.disabled = true;
-            icon.className = 'fas fa-spinner fa-spin';
-            text.textContent = 'Deleting...';
-            btn.classList.remove('btn-outline-warning');
-            btn.classList.add('btn-warning');
+        try {
+            // Show loading state immediately with optimized DOM updates
+            const icon = document.getElementById('delete-pattern-icon');
+            const text = document.getElementById('delete-pattern-text');
+            const btn = document.getElementById('delete-pattern-btn');
+            
+            if (icon && text && btn) {
+                // Use requestAnimationFrame for smooth DOM updates
+                requestAnimationFrame(() => {
+                    btn.disabled = true;
+                    btn.className = 'btn btn-warning btn-sm'; // Replace all classes at once
+                    icon.className = 'fas fa-spinner fa-spin';
+                    text.textContent = 'Deleting...';
+                    console.log('Visual state updated');
+                });
+            } else {
+                console.error('Could not find delete button elements');
+            }
+        } catch (e) {
+            console.error('Error updating delete button state:', e);
         }
         
+        console.log('Allowing form submission');
         return true; // Allow form submission
+    } else {
+        console.log('User cancelled deletion');
+        return false; // Prevent form submission
     }
-    return false; // Prevent form submission
 }
 </script>
 {% endblock %}
