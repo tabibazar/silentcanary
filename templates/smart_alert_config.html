@@ -483,7 +483,10 @@ async function loadPatternInsights() {
             </div>`;
         }
         
-        document.getElementById('pattern-insights').innerHTML = insightsHtml;
+        const patternInsightsElement = document.getElementById('pattern-insights');
+        if (patternInsightsElement) {
+            patternInsightsElement.innerHTML = insightsHtml;
+        }
         
         // Update pattern confidence display
         const confidenceBar = document.getElementById('confidence-bar');
@@ -509,8 +512,10 @@ async function loadPatternInsights() {
         
     } catch (error) {
         console.error('Error loading pattern insights:', error);
-        document.getElementById('pattern-insights').innerHTML = 
-            '<p class="text-muted small mb-0">Pattern insights unavailable</p>';
+        const patternInsightsElement = document.getElementById('pattern-insights');
+        if (patternInsightsElement) {
+            patternInsightsElement.innerHTML = '<p class="text-muted small mb-0">Pattern insights unavailable</p>';
+        }
     }
 }
 
@@ -581,12 +586,17 @@ async function loadCheckinTimeline() {
             timelineHtml = '<p class="text-muted">No recent check-ins available for analysis.</p>';
         }
         
-        document.getElementById('checkin-timeline').innerHTML = timelineHtml;
+        const timelineElement = document.getElementById('checkin-timeline');
+        if (timelineElement) {
+            timelineElement.innerHTML = timelineHtml;
+        }
         
     } catch (error) {
         console.error('Error loading check-in timeline:', error);
-        document.getElementById('checkin-timeline').innerHTML = 
-            '<p class="text-danger">Error loading check-in timeline</p>';
+        const timelineElement = document.getElementById('checkin-timeline');
+        if (timelineElement) {
+            timelineElement.innerHTML = '<p class="text-danger">Error loading check-in timeline</p>';
+        }
     }
 }
 
