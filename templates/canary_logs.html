@@ -121,7 +121,12 @@
                                                         </span>
                                                         {% if log.email_sent_at %}
                                                             <small class="text-muted">
-                                                                {{ (log.email_sent_at | user_timezone).strftime('%H:%M:%S') }}
+                                                                {% set email_time = log.email_sent_at | user_timezone %}
+                                                                {% if email_time is string %}
+                                                                    {{ email_time }}
+                                                                {% else %}
+                                                                    {{ email_time.strftime('%H:%M:%S') }}
+                                                                {% endif %}
                                                             </small>
                                                         {% endif %}
                                                     </small>
@@ -140,7 +145,12 @@
                                                         </span>
                                                         {% if log.slack_sent_at %}
                                                             <small class="text-muted">
-                                                                {{ (log.slack_sent_at | user_timezone).strftime('%H:%M:%S') }}
+                                                                {% set slack_time = log.slack_sent_at | user_timezone %}
+                                                                {% if slack_time is string %}
+                                                                    {{ slack_time }}
+                                                                {% else %}
+                                                                    {{ slack_time.strftime('%H:%M:%S') }}
+                                                                {% endif %}
                                                             </small>
                                                         {% endif %}
                                                     </small>

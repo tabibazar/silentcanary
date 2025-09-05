@@ -73,7 +73,11 @@ class User:
         
         # Handle both datetime objects and ISO strings
         if isinstance(dt, str):
-            dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+            try:
+                dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+            except ValueError:
+                # If string is not a valid datetime (e.g., error message), return as-is
+                return dt
         
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
