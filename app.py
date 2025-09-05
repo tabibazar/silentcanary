@@ -1717,6 +1717,15 @@ def smart_alert_insights(canary_id):
     if not smart_alert or not smart_alert.is_enabled:
         return jsonify({'error': 'Smart alerting not enabled'}), 404
     
+    # Check if pattern data exists - if not, return empty state with message
+    if not smart_alert.pattern_data or not smart_alert.last_analysis:
+        return jsonify({
+            'timing_patterns': ['Pattern data has been cleared. Smart alerts will learn new patterns from future check-ins.'],
+            'anomaly_indicators': [],
+            'next_expected': None,
+            'confidence': 0
+        })
+    
     # Get pattern insights
     insights = {
         'timing_patterns': [],
@@ -1805,6 +1814,13 @@ def smart_alert_timeline(canary_id):
     if not smart_alert or not smart_alert.is_enabled:
         return jsonify({'error': 'Smart alerting not enabled'}), 404
     
+    # Check if pattern data exists - if not, return minimal data
+    if not smart_alert.pattern_data or not smart_alert.last_analysis:
+        return jsonify({
+            'checkins': [],
+            'summary': 'Pattern data has been cleared. Check-ins will be analyzed once new patterns are learned.'
+        })
+    
     # Get recent check-ins
     recent_logs_data = CanaryLog.get_by_canary_id(canary_id, limit=10)
     recent_logs = recent_logs_data.get('logs', [])
@@ -1815,9 +1831,9 @@ def smart_alert_timeline(canary_id):
     }
     
     if recent_logs:
-        pattern_data = smart_alert.pattern_data or {}
-        expected_interval = float(pattern_data.get('expected_interval', 60))  # Default 1 hour
-        interval_std = float(pattern_data.get('interval_std', 30))  # Default 30 min std
+        pattern_data = smart_alert.pattern_data
+        expected_interval = float(pattern_data.get('expected_interval', 60))
+        interval_std = float(pattern_data.get('interval_std', 30))
         
         prev_checkin = None
         anomaly_count = 0
