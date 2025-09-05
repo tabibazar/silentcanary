@@ -1088,56 +1088,233 @@ class SmartAlert:
             if not canary:
                 return False
             
-            # Get check-in logs for learning period
+            # Get check-in logs for learning period (optimized retrieval)
             end_time = datetime.now(timezone.utc)
             start_time = end_time - timedelta(days=self.learning_period_days)
             
-            logs_result = CanaryLog.get_by_canary_id(self.canary_id, limit=1000)
-            logs = logs_result['logs']
+            # Optimize: Use incremental learning if we have recent patterns
+            use_incremental = False
+            existing_checkin_times = []
             
-            # Filter to successful check-ins within learning period
-            checkin_times = []
-            for log in logs:
-                if log.event_type == 'ping' and log.status == 'success':
-                    log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
-                    if start_time <= log_time <= end_time:
-                        checkin_times.append(log_time)
+            if self.pattern_data and self.last_analysis:
+                try:
+                    last_analysis_time = datetime.fromisoformat(self.last_analysis.replace('Z', '+00:00'))
+                    # If last analysis was recent (< 6 hours), do incremental update
+                    if (end_time - last_analysis_time).total_seconds() < 21600:  # 6 hours
+                        use_incremental = True
+                        # Start from last analysis time for new data
+                        incremental_start = last_analysis_time
+                except:
+                    pass
             
-            if len(checkin_times) < 3:  # Need minimum data
+            if use_incremental:
+                # Fetch only new logs since last analysis + preserve existing pattern data
+                logs_result = CanaryLog.get_by_canary_id(self.canary_id, limit=200)  # Smaller limit for incremental
+                logs = logs_result['logs']
+                
+                # Get existing checkin times from pattern metadata if available
+                existing_total = self.pattern_data.get('total_checkins', 0)
+                
+                # Filter new logs since last analysis
+                new_checkin_times = []
+                for log in logs:
+                    if log.event_type == 'ping' and log.status == 'success':
+                        log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                        if incremental_start < log_time <= end_time and start_time <= log_time:
+                            new_checkin_times.append(log_time)
+                
+                # If we have few new checkins, don't update patterns unnecessarily
+                if len(new_checkin_times) < 2 and existing_total > 10:
+                    return True  # Skip update, existing patterns are sufficient
+                    
+                checkin_times = new_checkin_times
+                
+            else:
+                # Full analysis: fetch comprehensive data
+                # Use larger limit but with better filtering
+                logs_result = CanaryLog.get_by_canary_id(self.canary_id, limit=1500)
+                logs = logs_result['logs']
+                
+                # Filter to successful check-ins within learning period
+                checkin_times = []
+                for log in logs:
+                    if log.event_type == 'ping' and log.status == 'success':
+                        log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                        if start_time <= log_time <= end_time:
+                            checkin_times.append(log_time)
+            
+            # Adjust minimum data requirements based on update type
+            min_required = 2 if use_incremental else 3
+            if len(checkin_times) < min_required:
+                # For incremental updates with insufficient new data, return existing patterns
+                if use_incremental and self.pattern_data:
+                    return True  # Keep existing patterns
                 return False
             
-            # Analyze patterns by day of week and hour
-            hourly_patterns = defaultdict(list)
-            daily_patterns = defaultdict(list)
+            # Enhanced pattern analysis with seasonal detection
+            # Initialize pattern containers - support both incremental and full updates
+            if use_incremental and self.pattern_data:
+                # Start with existing pattern distributions
+                existing_hourly = self.pattern_data.get('hourly_distribution', {})
+                existing_daily = self.pattern_data.get('daily_distribution', {})
+                existing_monthly = self.pattern_data.get('monthly_distribution', {})
+                
+                hourly_patterns = defaultdict(list)
+                daily_patterns = defaultdict(list) 
+                monthly_patterns = defaultdict(list)
+                
+                # Pre-populate with existing counts
+                for h in range(24):
+                    existing_count = int(existing_hourly.get(str(h), 0))
+                    hourly_patterns[h] = [1] * existing_count
+                    
+                for d in range(7):
+                    existing_count = int(existing_daily.get(str(d), 0))
+                    daily_patterns[d] = [1] * existing_count
+                    
+                for m in range(1, 13):
+                    existing_count = int(existing_monthly.get(str(m), 0))
+                    monthly_patterns[m] = [1] * existing_count
+                    
+            else:
+                # Full analysis - start fresh
+                hourly_patterns = defaultdict(list)
+                daily_patterns = defaultdict(list)
+                monthly_patterns = defaultdict(list)
+            
+            seasonal_patterns = defaultdict(list)  # Always recalculate seasonal patterns
             interval_patterns = []
             
             checkin_times.sort()
             
+            # Analyze check-in patterns with enhanced categorization
             for i, checkin_time in enumerate(checkin_times):
                 hour = checkin_time.hour
-                day = checkin_time.weekday()
+                day = checkin_time.weekday()  # 0=Monday, 6=Sunday
+                month = checkin_time.month
                 
+                # Traditional patterns
                 hourly_patterns[hour].append(1)
                 daily_patterns[day].append(1)
+                monthly_patterns[month].append(1)
                 
-                # Calculate intervals between check-ins
+                # Seasonal patterns (business vs personal schedules)
+                is_weekend = day >= 5  # Saturday=5, Sunday=6
+                season_key = 'weekend' if is_weekend else 'weekday'
+                seasonal_patterns[season_key].append(1)
+                
+                # Calculate intervals between check-ins with trend analysis
                 if i > 0:
                     interval = (checkin_time - checkin_times[i-1]).total_seconds() / 60
-                    interval_patterns.append(interval)
+                    interval_patterns.append({
+                        'interval': interval,
+                        'timestamp': checkin_time,
+                        'is_weekend': is_weekend,
+                        'hour': hour,
+                        'day': day
+                    })
             
-            # Calculate statistics for patterns - convert floats to Decimal for DynamoDB
-            avg_interval = statistics.mean(interval_patterns) if interval_patterns else canary.interval_minutes
-            interval_std = statistics.stdev(interval_patterns) if len(interval_patterns) > 1 else 0
+            # Calculate enhanced statistics for patterns (optimized for incremental updates)
+            if use_incremental and self.pattern_data:
+                # Merge new interval data with existing statistics
+                existing_avg = float(self.pattern_data.get('avg_interval', canary.interval_minutes))
+                existing_count = self.pattern_data.get('total_checkins', 0) - 1  # Subtract 1 for intervals
+                new_intervals = [p['interval'] for p in interval_patterns]
+                
+                if new_intervals and existing_count > 0:
+                    # Weighted average calculation
+                    total_existing_sum = existing_avg * existing_count
+                    new_sum = sum(new_intervals)
+                    new_count = len(new_intervals)
+                    
+                    avg_interval = (total_existing_sum + new_sum) / (existing_count + new_count)
+                    # Simplified std calculation for incremental updates
+                    all_intervals = new_intervals  # For std calculation, use available data
+                    interval_std = statistics.stdev(all_intervals) if len(all_intervals) > 1 else float(self.pattern_data.get('interval_std', 0))
+                else:
+                    avg_interval = existing_avg
+                    interval_std = float(self.pattern_data.get('interval_std', 0))
+                    
+                # For seasonal patterns, merge with existing data
+                existing_seasonal = self.pattern_data.get('seasonal_patterns', {})
+                existing_weekday_count = existing_seasonal.get('weekday_count', 0)
+                existing_weekend_count = existing_seasonal.get('weekend_count', 0)
+                existing_business_hours = existing_seasonal.get('business_hours_count', 0)
+                existing_after_hours = existing_seasonal.get('after_hours_count', 0)
+                
+            else:
+                # Full calculation
+                avg_interval = statistics.mean([p['interval'] for p in interval_patterns]) if interval_patterns else canary.interval_minutes
+                interval_std = statistics.stdev([p['interval'] for p in interval_patterns]) if len(interval_patterns) > 1 else 0
+                existing_weekday_count = existing_weekend_count = 0
+                existing_business_hours = existing_after_hours = 0
+            
+            # Analyze weekday vs weekend patterns
+            weekday_intervals = [p['interval'] for p in interval_patterns if not p['is_weekend']]
+            weekend_intervals = [p['interval'] for p in interval_patterns if p['is_weekend']]
+            
+            # Use incremental data if available, otherwise calculate fresh
+            total_weekday_count = existing_weekday_count + len([p for p in interval_patterns if not p['is_weekend']])
+            total_weekend_count = existing_weekend_count + len([p for p in interval_patterns if p['is_weekend']])
+            
+            if use_incremental and self.pattern_data:
+                existing_seasonal = self.pattern_data.get('seasonal_patterns', {})
+                existing_weekday_avg = float(existing_seasonal.get('weekday_avg_interval', avg_interval))
+                existing_weekend_avg = float(existing_seasonal.get('weekend_avg_interval', avg_interval))
+                
+                # Weighted average for incremental updates
+                if weekday_intervals and existing_weekday_count > 0:
+                    weekday_avg = ((existing_weekday_avg * existing_weekday_count) + sum(weekday_intervals)) / (existing_weekday_count + len(weekday_intervals))
+                elif weekday_intervals:
+                    weekday_avg = statistics.mean(weekday_intervals)
+                else:
+                    weekday_avg = existing_weekday_avg
+                    
+                if weekend_intervals and existing_weekend_count > 0:
+                    weekend_avg = ((existing_weekend_avg * existing_weekend_count) + sum(weekend_intervals)) / (existing_weekend_count + len(weekend_intervals))
+                elif weekend_intervals:
+                    weekend_avg = statistics.mean(weekend_intervals)
+                else:
+                    weekend_avg = existing_weekend_avg
+            else:
+                weekday_avg = statistics.mean(weekday_intervals) if weekday_intervals else avg_interval
+                weekend_avg = statistics.mean(weekend_intervals) if weekend_intervals else avg_interval
+            
+            # Detect business hour patterns (9 AM - 5 PM) - optimized counting
+            business_hour_checkins = existing_business_hours + sum(1 for p in interval_patterns if 9 <= p['hour'] <= 17)
+            after_hours_checkins = existing_after_hours + len(interval_patterns) - sum(1 for p in interval_patterns if 9 <= p['hour'] <= 17)
+            
+            # Trend analysis for gradual schedule changes
+            trend_data = self._analyze_trends(interval_patterns)
+            
+            # Calculate total checkins for confidence scoring
+            if use_incremental and self.pattern_data:
+                total_checkins = self.pattern_data.get('total_checkins', 0) + len(checkin_times)
+            else:
+                total_checkins = len(checkin_times)
             
             pattern_data = {
                 'hourly_distribution': {str(h): len(hourly_patterns[h]) for h in range(24)},
                 'daily_distribution': {str(d): len(daily_patterns[d]) for d in range(7)},
+                'monthly_distribution': {str(m): len(monthly_patterns[m]) for m in range(1, 13)},
+                'seasonal_patterns': {
+                    'weekday_count': total_weekday_count,
+                    'weekend_count': total_weekend_count,
+                    'weekday_avg_interval': Decimal(str(round(weekday_avg, 2))),
+                    'weekend_avg_interval': Decimal(str(round(weekend_avg, 2))),
+                    'business_hours_count': business_hour_checkins,
+                    'after_hours_count': after_hours_checkins
+                },
+                'trend_analysis': trend_data,
                 'avg_interval': Decimal(str(round(avg_interval, 2))),
                 'interval_std': Decimal(str(round(interval_std, 2))),
-                'total_checkins': len(checkin_times),
+                'total_checkins': total_checkins,
                 'learning_start': start_time.isoformat(),
                 'learning_end': end_time.isoformat(),
-                'expected_interval': canary.interval_minutes
+                'expected_interval': canary.interval_minutes,
+                'pattern_confidence': min(1.0, total_checkins / 20),  # Confidence increases with more data
+                'last_update_type': 'incremental' if use_incremental else 'full',
+                'optimization_enabled': True  # Flag to indicate this uses optimized storage
             }
             
             self.pattern_data = pattern_data
@@ -1150,7 +1327,7 @@ class SmartAlert:
             return False
     
     def is_anomaly(self, current_time=None):
-        """Check if current timing represents an anomaly based on learned patterns"""
+        """Check if current timing represents an anomaly based on learned patterns with seasonal awareness"""
         if not self.pattern_data or not self.is_enabled:
             return False
         
@@ -1174,8 +1351,30 @@ class SmartAlert:
         last_checkin = datetime.fromisoformat(canary.last_checkin.replace('Z', '+00:00'))
         time_since_last = (current_time - last_checkin).total_seconds() / 60
         
-        # Check if interval is significantly different from learned pattern
+        # Enhanced seasonal pattern analysis
+        current_is_weekend = current_time.weekday() >= 5  # Saturday=5, Sunday=6
+        current_is_business_hours = 9 <= current_time.hour <= 17
+        seasonal_patterns = self.pattern_data.get('seasonal_patterns', {})
+        
+        # Use seasonal-aware expected intervals when available
         expected_interval = self.pattern_data.get('avg_interval', canary.interval_minutes)
+        
+        # Apply seasonal adjustments if we have sufficient seasonal data
+        if seasonal_patterns:
+            weekday_count = seasonal_patterns.get('weekday_count', 0)
+            weekend_count = seasonal_patterns.get('weekend_count', 0)
+            
+            # Only use seasonal patterns if we have reasonable data for both contexts
+            if weekday_count >= 3 and weekend_count >= 3:
+                if current_is_weekend:
+                    seasonal_interval = seasonal_patterns.get('weekend_avg_interval')
+                    if seasonal_interval:
+                        expected_interval = float(seasonal_interval)
+                else:
+                    seasonal_interval = seasonal_patterns.get('weekday_avg_interval')
+                    if seasonal_interval:
+                        expected_interval = float(seasonal_interval)
+        
         interval_std = self.pattern_data.get('interval_std', 0)
         
         # Convert Decimal to float for calculations
@@ -1197,9 +1396,11 @@ class SmartAlert:
             threshold_percentage = max(0.3, 1.0 - (sensitivity_factor * 0.4))  # 0.3 to 0.6 range
             threshold = expected_interval * (1 + threshold_percentage)
         
-        # Check hour/day patterns for additional context
+        # Enhanced pattern anomaly detection with seasonal awareness
         hour_anomaly = self._check_hour_anomaly(current_time)
         day_anomaly = self._check_day_anomaly(current_time)
+        seasonal_anomaly = self._check_seasonal_anomaly(current_time)
+        trend_anomaly = self._check_trend_anomaly(time_since_last, expected_interval)
         
         # Combine different anomaly indicators with conservative logic
         time_anomaly = time_since_last > threshold
@@ -1208,7 +1409,13 @@ class SmartAlert:
         # AND we have sufficient confidence in our patterns
         pattern_confidence = self.pattern_data.get('total_checkins', 0) >= 10
         extreme_sensitivity = sensitivity_factor >= 0.9
-        pattern_anomaly = (hour_anomaly or day_anomaly) and pattern_confidence and extreme_sensitivity
+        pattern_anomaly = (hour_anomaly or day_anomaly or seasonal_anomaly) and pattern_confidence and extreme_sensitivity
+        
+        # Trend-based anomalies are more nuanced - they adjust expectations based on detected trends
+        # This helps prevent false positives when schedules are naturally evolving
+        if trend_anomaly:
+            # If we detect a trend violation, it's a strong signal even at lower sensitivity
+            pattern_anomaly = True
         
         # Primary trigger should be time-based anomaly
         # Pattern anomalies are secondary and require high confidence
@@ -1251,20 +1458,140 @@ class SmartAlert:
         # Consider it anomalous if this day has < 5% of normal activity
         return day_frequency < 0.05
     
+    def _check_seasonal_anomaly(self, current_time):
+        """Check if current timing violates weekday/weekend or business hours patterns"""
+        seasonal_patterns = self.pattern_data.get('seasonal_patterns', {})
+        if not seasonal_patterns:
+            return False
+        
+        current_is_weekend = current_time.weekday() >= 5  # Saturday=5, Sunday=6
+        current_is_business_hours = 9 <= current_time.hour <= 17
+        
+        # Check weekday/weekend pattern violations
+        weekday_count = seasonal_patterns.get('weekday_count', 0)
+        weekend_count = seasonal_patterns.get('weekend_count', 0)
+        total_checkins = self.pattern_data.get('total_checkins', 1)
+        
+        # Only apply seasonal logic if we have sufficient data for both contexts
+        if weekday_count >= 5 and weekend_count >= 5:
+            if current_is_weekend:
+                weekend_frequency = weekend_count / total_checkins
+                # Anomalous if weekend check-in but pattern shows < 15% weekend activity
+                if weekend_frequency < 0.15:
+                    return True
+            else:
+                weekday_frequency = weekday_count / total_checkins
+                # Anomalous if weekday check-in but pattern shows < 15% weekday activity
+                if weekday_frequency < 0.15:
+                    return True
+        
+        # Check business hours pattern violations
+        business_hours_count = seasonal_patterns.get('business_hours_count', 0)
+        after_hours_count = seasonal_patterns.get('after_hours_count', 0)
+        
+        # Only apply if we have reasonable data for both contexts
+        if business_hours_count >= 3 and after_hours_count >= 3:
+            if current_is_business_hours:
+                business_frequency = business_hours_count / total_checkins
+                # Anomalous if business hours check-in but pattern shows < 10% business activity
+                if business_frequency < 0.10:
+                    return True
+            else:
+                after_hours_frequency = after_hours_count / total_checkins
+                # Anomalous if after hours check-in but pattern shows < 10% after hours activity
+                if after_hours_frequency < 0.10:
+                    return True
+        
+        return False
+    
+    def _check_trend_anomaly(self, current_interval, expected_interval):
+        """Check if current interval violates detected trends"""
+        trend_analysis = self.pattern_data.get('trend_analysis', {})
+        if not trend_analysis or not trend_analysis.get('trend_detected'):
+            return False
+        
+        trend_direction = trend_analysis.get('trend_direction', 'stable')
+        trend_strength = float(trend_analysis.get('trend_strength', 0))
+        trend_confidence = float(trend_analysis.get('trend_confidence', 0))
+        
+        # Only apply trend logic if we have reasonable confidence (> 0.6) and strength (> 10%)
+        if trend_confidence < 0.6 or trend_strength < 10:
+            return False
+        
+        # Adjust expected interval based on trend direction
+        if trend_direction == 'increasing':
+            # If trend is increasing, expect slightly longer intervals
+            adjusted_expected = expected_interval * (1 + (trend_strength / 200))  # Half the trend strength
+            # Anomalous if actual interval is significantly shorter than trend expectation
+            return current_interval < (adjusted_expected * 0.7)  # 30% tolerance
+        
+        elif trend_direction == 'decreasing':
+            # If trend is decreasing, expect slightly shorter intervals
+            adjusted_expected = expected_interval * (1 - (trend_strength / 200))  # Half the trend strength
+            # Anomalous if actual interval is significantly longer than trend expectation
+            return current_interval > (adjusted_expected * 1.3)  # 30% tolerance
+        
+        return False  # Stable trends don't trigger anomalies
+    
+    def get_cached_patterns(self):
+        """Get cached pattern data with performance optimization"""
+        if not self.pattern_data:
+            return None
+        
+        # Check if patterns are recent enough to use from cache
+        if self.last_analysis:
+            try:
+                last_analysis_time = datetime.fromisoformat(self.last_analysis.replace('Z', '+00:00'))
+                age_hours = (datetime.now(timezone.utc) - last_analysis_time).total_seconds() / 3600
+                
+                # Use cached patterns if they're less than 12 hours old and have good confidence
+                pattern_confidence = self.pattern_data.get('pattern_confidence', 0)
+                if age_hours < 12 and pattern_confidence > 0.3:
+                    return {
+                        'cached': True,
+                        'age_hours': round(age_hours, 1),
+                        'confidence': pattern_confidence,
+                        'patterns': self.pattern_data
+                    }
+            except:
+                pass
+        
+        return None
+    
     def should_update_patterns(self):
-        """Determine if patterns should be updated based on time and new data availability"""
+        """Determine if patterns should be updated based on time and new data availability (optimized)"""
         if not self.is_enabled:
             return False
         
-        # Update patterns frequently for real-time learning
+        # Check if we have cached patterns that are still valid
+        cached_patterns = self.get_cached_patterns()
+        if cached_patterns:
+            # If patterns are very recent (< 2 hours) and high confidence, skip update
+            if cached_patterns['age_hours'] < 2 and cached_patterns['confidence'] > 0.7:
+                return False
+        
+        # Dynamic update frequency based on pattern maturity and confidence
         if self.last_analysis:
             try:
                 last_analysis_time = datetime.fromisoformat(self.last_analysis.replace('Z', '+00:00'))
                 time_since_analysis = datetime.now(timezone.utc) - last_analysis_time
                 
-                # Update less frequently to avoid over-analysis
-                # Update every 30 minutes if patterns exist, or every 10 minutes if no patterns yet
-                update_interval = timedelta(minutes=30) if self.pattern_data else timedelta(minutes=10)
+                # Adaptive update intervals based on pattern confidence
+                pattern_confidence = self.pattern_data.get('pattern_confidence', 0) if self.pattern_data else 0
+                total_checkins = self.pattern_data.get('total_checkins', 0) if self.pattern_data else 0
+                
+                if pattern_confidence > 0.8 and total_checkins > 50:
+                    # High confidence patterns: update less frequently (2 hours)
+                    update_interval = timedelta(hours=2)
+                elif pattern_confidence > 0.5 and total_checkins > 20:
+                    # Medium confidence patterns: moderate frequency (1 hour)
+                    update_interval = timedelta(hours=1)
+                elif self.pattern_data:
+                    # Low confidence or few data points: update more frequently (30 minutes)
+                    update_interval = timedelta(minutes=30)
+                else:
+                    # No patterns yet: update frequently to build baseline (10 minutes)
+                    update_interval = timedelta(minutes=10)
                 
                 return time_since_analysis > update_interval
             except:
@@ -1284,57 +1611,79 @@ class SmartAlert:
                     'progress': 0
                 }
             
-            # Get check-in logs for learning period
-            end_time = datetime.now(timezone.utc)
-            start_time = end_time - timedelta(days=self.learning_period_days)
+            # If pattern data was deleted, show zero progress until new patterns are learned
+            if not self.pattern_data or not self.last_analysis:
+                return {
+                    'status': 'waiting',
+                    'message': 'Pattern data cleared. Waiting for new check-ins to start learning patterns.',
+                    'progress': 0,
+                    'confidence': 0,
+                    'min_required': 3,
+                    'learned_patterns': 0,
+                    'recent_checkins': 0,
+                    'last_updated': None,
+                    'learning_period_days': self.learning_period_days
+                }
             
-            logs_result = CanaryLog.get_by_canary_id(self.canary_id, limit=1000)
-            logs = logs_result['logs']
+            # If we have pattern data, use the existing pattern information
+            if self.pattern_data:
+                total_checkins = self.pattern_data.get('total_checkins', 0)
+                pattern_confidence = self.pattern_data.get('pattern_confidence', 0)
+                min_required = 3
+                
+                # Calculate progress based on learned patterns, not current logs
+                if total_checkins == 0:
+                    progress = 0
+                    status = 'waiting'
+                    message = 'Waiting for check-ins to start learning'
+                elif total_checkins < min_required:
+                    progress = (total_checkins / min_required) * 90
+                    status = 'learning'
+                    message = f'Learning: {total_checkins}/{min_required} check-ins analyzed'
+                else:
+                    progress = 100
+                    status = 'ready'
+                    message = f'Patterns learned from {total_checkins} check-ins'
+                
+                # Get recent check-ins for display (last 24 hours)
+                end_time = datetime.now(timezone.utc)
+                recent_start = end_time - timedelta(hours=24)
+                
+                logs_result = CanaryLog.get_by_canary_id(self.canary_id, limit=100)
+                logs = logs_result['logs']
+                
+                recent_checkins = 0
+                for log in logs:
+                    if log.event_type == 'ping' and log.status == 'success':
+                        log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+                        if recent_start <= log_time <= end_time:
+                            recent_checkins += 1
+                
+                # Calculate pattern confidence
+                confidence = min(100, (total_checkins / 20) * 100)
+                
+                return {
+                    'status': status,
+                    'message': message,
+                    'progress': round(progress, 1),
+                    'total_checkins': total_checkins,
+                    'min_required': min_required,
+                    'confidence': round(confidence, 1),
+                    'learned_patterns': total_checkins,
+                    'recent_checkins': recent_checkins,
+                    'last_updated': self.last_analysis,
+                    'learning_period_days': self.learning_period_days
+                }
             
-            # Filter to successful check-ins within learning period
-            checkin_times = []
-            for log in logs:
-                if log.event_type == 'ping' and log.status == 'success':
-                    log_time = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
-                    if start_time <= log_time <= end_time:
-                        checkin_times.append(log_time)
-            
-            total_checkins = len(checkin_times)
-            min_required = 3
-            
-            # Calculate progress percentage (more granular for better visual feedback)
-            if total_checkins == 0:
-                progress = 0
-            elif total_checkins < min_required:
-                progress = (total_checkins / min_required) * 90  # Show up to 90% before patterns are ready
-            else:
-                progress = 100
-            
-            if total_checkins >= min_required:
-                status = 'ready'
-                message = f'Patterns learned from {total_checkins} check-ins'
-            elif total_checkins > 0:
-                status = 'learning'
-                message = f'Learning: {total_checkins}/{min_required} check-ins needed'
-            else:
-                status = 'waiting'
-                message = 'Waiting for check-ins to start learning'
-            
-            # Calculate pattern confidence if patterns exist
-            confidence = 0
-            if self.pattern_data and 'total_checkins' in self.pattern_data:
-                pattern_checkins = self.pattern_data.get('total_checkins', 0)
-                # Confidence increases with more data, maxes out at 20 check-ins for faster feedback
-                confidence = min(100, (pattern_checkins / 20) * 100)
-            
+            # This should never be reached now, but keep as fallback
             return {
-                'status': status,
-                'message': message,
-                'progress': round(progress, 1),
-                'total_checkins': total_checkins,
-                'min_required': min_required,
-                'confidence': round(confidence, 1),
-                'last_updated': self.last_analysis,
+                'status': 'error',
+                'message': 'Unexpected state in learning progress calculation',
+                'progress': 0,
+                'confidence': 0,
+                'learned_patterns': 0,
+                'recent_checkins': 0,
+                'last_updated': None,
                 'learning_period_days': self.learning_period_days
             }
         except Exception as e:
@@ -1344,6 +1693,101 @@ class SmartAlert:
                 'progress': 0,
                 'confidence': 0
             }
+    
+    def _analyze_trends(self, interval_patterns):
+        """Analyze trends in check-in patterns to detect gradual schedule changes"""
+        from decimal import Decimal
+        import statistics
+        
+        if len(interval_patterns) < 5:  # Need minimum data for trend analysis
+            return {
+                'trend_detected': False,
+                'trend_direction': 'stable',
+                'trend_strength': 0,
+                'trend_confidence': 0
+            }
+        
+        # Sort patterns by timestamp for chronological analysis
+        sorted_patterns = sorted(interval_patterns, key=lambda x: x['timestamp'])
+        intervals = [p['interval'] for p in sorted_patterns]
+        
+        # Calculate moving averages to detect trends
+        # Use 25% of data points as window size (minimum 3, maximum 10)
+        window_size = max(3, min(10, len(intervals) // 4))
+        moving_averages = []
+        
+        for i in range(len(intervals) - window_size + 1):
+            window = intervals[i:i + window_size]
+            avg = statistics.mean(window)
+            moving_averages.append(avg)
+        
+        if len(moving_averages) < 3:  # Need at least 3 points for trend
+            return {
+                'trend_detected': False,
+                'trend_direction': 'stable',
+                'trend_strength': 0,
+                'trend_confidence': 0
+            }
+        
+        # Calculate trend using linear regression on moving averages
+        x_values = list(range(len(moving_averages)))
+        y_values = moving_averages
+        
+        # Simple linear regression: y = mx + b
+        n = len(x_values)
+        sum_x = sum(x_values)
+        sum_y = sum(y_values)
+        sum_xy = sum(x * y for x, y in zip(x_values, y_values))
+        sum_x2 = sum(x * x for x in x_values)
+        
+        # Calculate slope (trend direction and strength)
+        denominator = n * sum_x2 - sum_x * sum_x
+        if denominator == 0:
+            slope = 0
+        else:
+            slope = (n * sum_xy - sum_x * sum_y) / denominator
+        
+        # Calculate correlation coefficient for trend confidence
+        if len(y_values) > 1:
+            x_std = statistics.stdev(x_values) if len(x_values) > 1 else 0
+            y_std = statistics.stdev(y_values) if len(y_values) > 1 else 0
+            
+            if x_std > 0 and y_std > 0:
+                correlation = (sum_xy - (sum_x * sum_y) / n) / ((n - 1) * x_std * y_std)
+                correlation = max(-1, min(1, correlation))  # Clamp between -1 and 1
+            else:
+                correlation = 0
+        else:
+            correlation = 0
+        
+        # Determine trend characteristics
+        avg_interval = statistics.mean(intervals)
+        slope_percentage = (slope / avg_interval) * 100 if avg_interval > 0 else 0
+        
+        # Classify trend direction
+        if abs(slope_percentage) < 2:  # Less than 2% change
+            trend_direction = 'stable'
+            trend_detected = False
+        elif slope_percentage > 0:
+            trend_direction = 'increasing'  # Intervals getting longer
+            trend_detected = abs(slope_percentage) > 5  # Only detect if > 5% change
+        else:
+            trend_direction = 'decreasing'  # Intervals getting shorter
+            trend_detected = abs(slope_percentage) > 5  # Only detect if > 5% change
+        
+        trend_strength = abs(slope_percentage)
+        trend_confidence = abs(correlation)
+        
+        return {
+            'trend_detected': trend_detected,
+            'trend_direction': trend_direction,
+            'trend_strength': Decimal(str(round(trend_strength, 2))),
+            'trend_confidence': Decimal(str(round(trend_confidence, 2))),
+            'slope_per_interval': Decimal(str(round(slope, 2))),
+            'correlation_coefficient': Decimal(str(round(correlation, 3))),
+            'analysis_window_size': window_size,
+            'total_intervals_analyzed': len(intervals)
+        }
 
 
 class Subscription:
