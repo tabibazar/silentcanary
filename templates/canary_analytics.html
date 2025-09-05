@@ -12,11 +12,6 @@
         <a href="{{ url_for('export_canary_data', canary_id=canary.canary_id, format='json') }}" class="btn btn-outline-info btn-sm">
             <i class="fas fa-download"></i> Export JSON
         </a>
-        {% if trends.total_failures == 0 %}
-        <a href="{{ url_for('test_failure_data', canary_id=canary.canary_id) }}" class="btn btn-outline-warning btn-sm">
-            <i class="fas fa-vial"></i> Generate Test Data
-        </a>
-        {% endif %}
         <a href="{{ url_for('canary_logs', canary_id=canary.canary_id) }}" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-list"></i> View Logs
         </a>
