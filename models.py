@@ -2341,11 +2341,6 @@ class SystemSettings:
     def save(self):
         """Save system settings to DynamoDB (using APIUsage table)"""
         try:
-            print(f"💾 SAVING SYSTEM SETTINGS:")
-            print(f"   Site Key: '{self.recaptcha_site_key}'")
-            print(f"   Secret Key: '{self.recaptcha_secret_key}'")
-            print(f"   Enabled: {self.recaptcha_enabled}")
-            
             api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
             item = {
                 'log_id': self.SETTINGS_KEY,
@@ -2357,12 +2352,10 @@ class SystemSettings:
                 'success': self.recaptcha_enabled
             }
             
-            print(f"   DynamoDB Item: {item}")
             api_usage_table.put_item(Item=item)
-            print("   ✅ Save successful")
             return True
         except Exception as e:
-            print(f"❌ Error saving system settings: {e}")
+            print(f"Error saving system settings: {e}")
             return False
     
     @staticmethod
