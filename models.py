@@ -2328,3 +2328,53 @@ class EmailVerification:
         except Exception as e:
             print(f"Error fetching email verification by ID: {e}")
             return None
+
+class SystemSettings:
+    """System-wide settings for SilentCanary"""
+    SETTINGS_KEY = 'system_settings'
+    
+    def __init__(self, recaptcha_site_key=None, recaptcha_secret_key=None, recaptcha_enabled=False):
+        self.recaptcha_site_key = recaptcha_site_key
+        self.recaptcha_secret_key = recaptcha_secret_key  
+        self.recaptcha_enabled = recaptcha_enabled
+    
+    def save(self):
+        """Save system settings to DynamoDB (using APIUsage table)"""
+        try:
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            item = {
+                'log_id': self.SETTINGS_KEY,
+                'user_id': 'system',
+                'api_type': 'system_settings',
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'endpoint': self.recaptcha_site_key or '',
+                'feature_used': self.recaptcha_secret_key or '',
+                'success': self.recaptcha_enabled
+            }
+            
+            api_usage_table.put_item(Item=item)
+            return True
+        except Exception as e:
+            print(f"Error saving system settings: {e}")
+            return False
+    
+    @staticmethod
+    def get():
+        """Get system settings from DynamoDB"""
+        try:
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            response = api_usage_table.get_item(Key={'log_id': SystemSettings.SETTINGS_KEY})
+            
+            item = response.get('Item')
+            if item and item.get('api_type') == 'system_settings':
+                return SystemSettings(
+                    recaptcha_site_key=item.get('endpoint') or None,
+                    recaptcha_secret_key=item.get('feature_used') or None,
+                    recaptcha_enabled=item.get('success', False)
+                )
+            else:
+                # Return default settings if not found
+                return SystemSettings()
+        except Exception as e:
+            print(f"Error fetching system settings: {e}")
+            return SystemSettings()  # Return default settings on error

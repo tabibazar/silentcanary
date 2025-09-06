@@ -2,6 +2,12 @@
 
 {% block title %}Register - SilentCanary{% endblock %}
 
+{% block head %}
+{% if settings and settings.recaptcha_enabled and settings.recaptcha_site_key %}
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
+{% endif %}
+{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-6 col-lg-4">
@@ -61,6 +67,12 @@
                             </div>
                         {% endif %}
                     </div>
+                    
+                    {% if settings and settings.recaptcha_enabled and settings.recaptcha_site_key %}
+                    <div class="mb-3 text-center">
+                        <div class="g-recaptcha" data-sitekey="{{ settings.recaptcha_site_key }}"></div>
+                    </div>
+                    {% endif %}
                     
                     <div class="d-grid">
                         {{ form.submit(class="btn btn-primary") }}
