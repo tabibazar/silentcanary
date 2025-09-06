@@ -15,6 +15,12 @@ from flask_mail import Mail, Message
 from flask import Flask
 from dotenv import load_dotenv
 
+# Import email sending function from main app
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from app import send_templated_email
+
 # Load environment
 load_dotenv()
 
@@ -96,8 +102,23 @@ def record_alert_sent(canary, alert_type="standard"):
     )
 
 def is_long_running_job(canary):
-    """Check if this is a long-running job (>30 days) that shouldn't use Smart Alerts"""
-    return canary.interval_minutes > 43200  # 30 days in minutes
+    """Check if this is a long-running job that should use different alerting logic"""
+    # Categorize jobs based on interval patterns
+    interval_days = canary.interval_minutes / 1440
+    
+    # Very long intervals (>7 days) get special handling
+    # This includes weekly, bi-weekly, monthly, and quarterly jobs
+    if interval_days > 7:
+        return True
+        
+    # For shorter intervals, check if Smart Alerts would be beneficial
+    # Jobs that run multiple times per day benefit from Smart Alerts
+    if interval_days < 1:  # Sub-daily jobs
+        return False
+        
+    # Daily to weekly jobs can benefit from Smart Alerts
+    # if they have irregular patterns (business hours, weekdays only, etc.)
+    return False
 
 def should_use_smart_alerts(canary):
     """Determine if Smart Alerts should be used for this canary"""
@@ -200,7 +221,7 @@ Please investigate your monitoring target immediately."""
             return False
 
 def check_canary_health():
-    """Check all active canaries for health and enqueue notifications for failed ones"""
+    """Check all active canaries for health using Smart Alert ML predictions and standard overdue detection"""
     print(f"🔍 Checking canary health at {datetime.now(timezone.utc)}")
     
     try:
@@ -213,8 +234,51 @@ def check_canary_health():
         print(f"📊 Checking {len(active_canaries)} active canaries")
         
         failed_count = 0
+        smart_anomaly_count = 0
+        learning_updates = 0
+        
         for canary in active_canaries:
-            if canary.status != 'failed' and canary.is_overdue():
+            if canary.status == 'failed':
+                continue  # Skip already failed canaries
+                
+            # Phase 1: Check Smart Alert ML predictions FIRST (before overdue threshold)
+            if should_use_smart_alerts(canary):
+                smart_alert = SmartAlert.get_by_canary_id(canary.canary_id)
+                if smart_alert and smart_alert.is_enabled:
+                    # Update patterns if needed
+                    try:
+                        if smart_alert.should_update_patterns():
+                            print(f"🧠 Updating patterns for Smart Alert '{canary.name}'")
+                            if smart_alert.learn_patterns():
+                                learning_updates += 1
+                                print(f"✅ Patterns updated successfully for '{canary.name}'")
+                            else:
+                                print(f"⚠️ Insufficient data for pattern update '{canary.name}'")
+                    except Exception as e:
+                        print(f"❌ Error updating patterns for '{canary.name}': {e}")
+                    
+                    # Check for Smart Alert ML anomalies (this is the key improvement!)
+                    if smart_alert.is_anomaly():
+                        print(f"🧠 Smart alert detected anomaly for '{canary.name}' - sending notifications")
+                        
+                        # Mark canary as failed due to smart alert anomaly
+                        canary.status = 'failed'
+                        canary.save()
+                        
+                        # Enqueue smart alert notification
+                        notification_queue.enqueue(
+                            send_notifications,
+                            canary.canary_id,
+                            "smart_alert",
+                            job_timeout=300,
+                            retry=3
+                        )
+                        
+                        smart_anomaly_count += 1
+                        continue  # Don't check standard overdue logic for smart alert canaries
+            
+            # Phase 2: Standard overdue detection for non-smart-alert canaries or as fallback
+            if canary.is_overdue():
                 # Determine alert type based on canary characteristics
                 alert_type = "standard"
                 
@@ -222,12 +286,6 @@ def check_canary_health():
                 if is_long_running_job(canary):
                     alert_type = "long_job"
                     print(f"⚠️ Long-running job '{canary.name}' is overdue (interval: {canary.interval_minutes/1440:.1f} days)")
-                
-                # For regular jobs, check if Smart Alerts should be used
-                elif should_use_smart_alerts(canary):
-                    alert_type = "smart_alert" 
-                    print(f"⚠️ Smart Alert canary '{canary.name}' is overdue")
-                
                 else:
                     print(f"⚠️ Standard canary '{canary.name}' is overdue")
                 
@@ -235,7 +293,7 @@ def check_canary_health():
                 canary.status = 'failed'
                 canary.save()
                 
-                # Enqueue notification job with alert type
+                # Enqueue notification job
                 notification_queue.enqueue(
                     send_notifications,
                     canary.canary_id,
@@ -246,12 +304,20 @@ def check_canary_health():
                 
                 failed_count += 1
         
-        if failed_count > 0:
-            print(f"📧 Enqueued notifications for {failed_count} failed canaries")
+        # Report results
+        if failed_count > 0 or smart_anomaly_count > 0 or learning_updates > 0:
+            status_parts = []
+            if failed_count > 0:
+                status_parts.append(f"{failed_count} failed canaries")
+            if smart_anomaly_count > 0:
+                status_parts.append(f"{smart_anomaly_count} smart anomalies")
+            if learning_updates > 0:
+                status_parts.append(f"{learning_updates} pattern updates")
+            print(f"📧 Processed {', '.join(status_parts)}")
         else:
             print("✅ All canaries are healthy")
         
-        return failed_count
+        return failed_count + smart_anomaly_count
         
     except Exception as e:
         print(f"❌ Error checking canary health: {e}")

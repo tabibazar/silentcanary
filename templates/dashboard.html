@@ -175,9 +175,9 @@
                                     {% if canary.alert_type == 'email' %}
                                         📧 Email
                                     {% elif canary.alert_type == 'slack' %}
-                                        💬 Slack
+                                        💬 Webhook
                                     {% elif canary.alert_type == 'both' %}
-                                        📧 Email + 💬 Slack
+                                        📧 Email + 💬 Webhook
                                     {% endif %}<br>
                                     {% if canary.tags %}
                                     <strong>Tags:</strong>

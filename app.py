@@ -228,6 +228,8 @@ class SettingsForm(FlaskForm):
     email = StringField('Email', render_kw={'readonly': True})  
     timezone = SelectField('Timezone', choices=[], validators=[Optional()])
     anthropic_api_key = StringField('Anthropic API Key (Optional)', validators=[Optional()], render_kw={'placeholder': 'sk-ant-api03-... (for AI-powered insights)'})
+    recaptcha_site_key = StringField('reCAPTCHA Site Key (Optional)', validators=[Optional()], render_kw={'placeholder': '6LcXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'})
+    recaptcha_secret_key = PasswordField('reCAPTCHA Secret Key (Optional)', validators=[Optional()], render_kw={'placeholder': '6LcXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'})
     current_password = PasswordField('Current Password')
     new_password = PasswordField('New Password', validators=[Optional(), Length(min=8)])
     confirm_password = PasswordField('Confirm New Password', validators=[Optional(), EqualTo('new_password')])
@@ -1223,6 +1225,10 @@ def settings():
                 flash('Settings updated successfully! AI features disabled.', 'info')
                 api_key_validated = True
             
+            # Update reCAPTCHA keys
+            current_user.recaptcha_site_key = form.recaptcha_site_key.data.strip() if form.recaptcha_site_key.data else None
+            current_user.recaptcha_secret_key = form.recaptcha_secret_key.data.strip() if form.recaptcha_secret_key.data else None
+            
             # Save changes
             if current_user.save():
                 # Only show generic success if we haven't shown a specific API key message
@@ -1239,6 +1245,10 @@ def settings():
         form.timezone.data = current_user.timezone or 'UTC'
     if not form.anthropic_api_key.data:
         form.anthropic_api_key.data = current_user.anthropic_api_key or ''
+    if not form.recaptcha_site_key.data:
+        form.recaptcha_site_key.data = current_user.recaptcha_site_key or ''
+    if not form.recaptcha_secret_key.data:
+        form.recaptcha_secret_key.data = current_user.recaptcha_secret_key or ''
     
     # Get user's API keys
     from models import APIKey

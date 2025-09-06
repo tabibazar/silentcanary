@@ -99,6 +99,73 @@
                         </div>
                     </div>
                     
+                    <hr>
+                    <h5>reCAPTCHA Configuration (Optional)</h5>
+                    <div class="mb-3">
+                        {{ form.recaptcha_site_key.label(class="form-label") }}
+                        <div class="input-group">
+                            {{ form.recaptcha_site_key(class="form-control", type="password", id="recaptcha-site-key-input") }}
+                            <button class="btn btn-outline-secondary" type="button" id="toggle-site-key-visibility">
+                                <i class="fas fa-eye" id="site-key-visibility-icon"></i>
+                            </button>
+                        </div>
+                        
+                        {% if form.recaptcha_site_key.errors %}
+                            <div class="text-danger mt-2">
+                                {% for error in form.recaptcha_site_key.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        
+                        <div class="form-text">
+                            <strong>🛡️ Protect your registration form!</strong> Add reCAPTCHA to prevent spam signups:
+                            <ul class="mt-2 mb-2">
+                                <li><strong>Site Key (Public):</strong> Used in your registration form HTML</li>
+                                <li><strong>Bot Protection:</strong> Blocks automated spam registrations</li>
+                                <li><strong>User-Friendly:</strong> Modern "I'm not a robot" checkbox</li>
+                            </ul>
+                            <div class="alert alert-info p-2 mt-2">
+                                <small>
+                                    <strong>📝 How to get your reCAPTCHA keys:</strong>
+                                    <ol class="mb-1 mt-1">
+                                        <li>Visit <a href="https://www.google.com/recaptcha/admin/create" target="_blank" class="fw-bold">Google reCAPTCHA Console</a></li>
+                                        <li>Sign up or log in to your Google account</li>
+                                        <li>Create a new site with reCAPTCHA v2 "I'm not a robot"</li>
+                                        <li>Add your domain (e.g., yoursite.com, localhost for testing)</li>
+                                        <li>Copy both Site Key and Secret Key below</li>
+                                    </ol>
+                                </small>
+                            </div>
+                            <small class="text-muted">
+                                <i class="fas fa-shield-alt me-1"></i> Keys are stored securely and only used for spam protection
+                                • <i class="fas fa-globe me-1"></i> Free service from Google
+                                • <i class="fas fa-times-circle me-1"></i> Leave blank to disable reCAPTCHA
+                            </small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.recaptcha_secret_key.label(class="form-label") }}
+                        <div class="input-group">
+                            {{ form.recaptcha_secret_key(class="form-control", id="recaptcha-secret-key-input") }}
+                            <button class="btn btn-outline-secondary" type="button" id="toggle-secret-key-visibility">
+                                <i class="fas fa-eye" id="secret-key-visibility-icon"></i>
+                            </button>
+                        </div>
+                        
+                        {% if form.recaptcha_secret_key.errors %}
+                            <div class="text-danger mt-2">
+                                {% for error in form.recaptcha_secret_key.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        
+                        <div class="form-text">
+                            <strong>Secret Key (Private):</strong> Used for server-side validation - keep this secure!
+                        </div>
+                    </div>
                     
                     <hr>
                     <h5>Change Password (Optional)</h5>
@@ -761,6 +828,37 @@ document.addEventListener('DOMContentLoaded', function() {
         div.textContent = text;
         return div.innerHTML;
     }
+
+    // reCAPTCHA key visibility toggles
+    const siteKeyInput = document.getElementById('recaptcha-site-key-input');
+    const toggleSiteKeyBtn = document.getElementById('toggle-site-key-visibility');
+    const siteKeyIcon = document.getElementById('site-key-visibility-icon');
+    
+    const secretKeyInput = document.getElementById('recaptcha-secret-key-input');
+    const toggleSecretKeyBtn = document.getElementById('toggle-secret-key-visibility');
+    const secretKeyIcon = document.getElementById('secret-key-visibility-icon');
+
+    // Toggle Site Key visibility
+    toggleSiteKeyBtn.addEventListener('click', function() {
+        if (siteKeyInput.type === 'password') {
+            siteKeyInput.type = 'text';
+            siteKeyIcon.className = 'fas fa-eye-slash';
+        } else {
+            siteKeyInput.type = 'password';
+            siteKeyIcon.className = 'fas fa-eye';
+        }
+    });
+
+    // Toggle Secret Key visibility
+    toggleSecretKeyBtn.addEventListener('click', function() {
+        if (secretKeyInput.type === 'password') {
+            secretKeyInput.type = 'text';
+            secretKeyIcon.className = 'fas fa-eye-slash';
+        } else {
+            secretKeyInput.type = 'password';
+            secretKeyIcon.className = 'fas fa-eye';
+        }
+    });
 
 });
 </script>

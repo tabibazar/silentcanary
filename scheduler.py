@@ -46,8 +46,7 @@ class CanaryScheduler:
             job = self.health_queue.enqueue(
                 check_canary_health,
                 job_id=f"health-check-{int(time.time())}",
-                job_timeout=300,  # 5 minutes timeout
-                retry=2
+                job_timeout=300  # 5 minutes timeout
             )
             
             print(f"✅ Health check scheduled (job: {job.id})")

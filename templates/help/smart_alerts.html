@@ -116,12 +116,32 @@
                         <li><strong>90-100%:</strong> Highly sensitive - detects small pattern changes</li>
                     </ul>
 
-                    <h5>Learning Period (3-30 days)</h5>
-                    <p>How much historical data to use for pattern learning:</p>
+                    <h5>Learning Period (3-365 days)</h5>
+                    <p>How much historical data to use for pattern learning, now extended for long-running jobs:</p>
+                    
+                    <h6>For Frequent Jobs (< 7 day intervals):</h6>
                     <ul>
                         <li><strong>3-7 days:</strong> Quick learning, good for new canaries</li>
                         <li><strong>7-14 days:</strong> Recommended for most scenarios</li>
                         <li><strong>14-30 days:</strong> Long-term patterns, stable processes</li>
+                    </ul>
+                    
+                    <h6>For Weekly to Monthly Jobs (7-30 day intervals):</h6>
+                    <ul>
+                        <li><strong>14-30 days:</strong> Good starting point</li>
+                        <li><strong>60-90 days:</strong> Better pattern detection (recommended)</li>
+                    </ul>
+                    
+                    <h6>For Monthly to Quarterly Jobs (30-90 day intervals):</h6>
+                    <ul>
+                        <li><strong>90-120 days:</strong> Minimum for meaningful analysis</li>
+                        <li><strong>180 days:</strong> Recommended for seasonal pattern detection</li>
+                    </ul>
+                    
+                    <h6>For Long-Running Jobs (90+ day intervals):</h6>
+                    <ul>
+                        <li><strong>180-270 days:</strong> Captures multiple cycles</li>
+                        <li><strong>365 days:</strong> Full year analysis for annual patterns</li>
                     </ul>
 
                     <div class="alert alert-info">
@@ -142,7 +162,22 @@
                         <li><strong>Business Hour Dependencies:</strong> Services that behave differently during work hours</li>
                         <li><strong>Load-Dependent Processes:</strong> Tasks that take varying amounts of time</li>
                         <li><strong>Critical Systems:</strong> When you need early warning of issues</li>
+                        <li><strong>All Interval Types:</strong> From frequent jobs (minutes) to annual tasks (up to 365 days)</li>
+                        <li><strong>Long-Running Processes:</strong> Monthly, quarterly, and annual jobs with extended learning periods</li>
                     </ul>
+
+                    <h5>When NOT to Use Smart Alerts</h5>
+                    <ul>
+                        <li><strong>One-Time Jobs:</strong> Jobs that run only once or very rarely</li>
+                        <li><strong>Highly Variable Schedules:</strong> Tasks with completely unpredictable timing patterns</li>
+                        <li><strong>Jobs > 1 Year:</strong> Processes that check in less frequently than annually</li>
+                        <li><strong>Insufficient History:</strong> New jobs without enough check-ins for pattern analysis</li>
+                    </ul>
+
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Extended Support:</strong> Smart Alerts now support jobs with check-in intervals up to one year! The system automatically adjusts learning periods and analysis methods based on your job's interval for optimal pattern detection.
+                    </div>
 
                     <h5>Configuration Tips</h5>
                     <ul>
@@ -157,7 +192,7 @@
                     <ul>
                         <li>Regular alerts catch complete failures (missed check-ins)</li>
                         <li>Smart alerts catch early warning signs and pattern changes</li>
-                        <li>Both use the same notification channels (email, Slack)</li>
+                        <li>Both use the same notification channels (email, webhooks)</li>
                     </ul>
                 </div>
             </div>
@@ -176,8 +211,8 @@
                         <li>Suggested next steps for investigation</li>
                     </ul>
 
-                    <h5>Slack Notifications</h5>
-                    <p>Slack alerts use structured format with:</p>
+                    <h5>Webhook Notifications</h5>
+                    <p>Webhook alerts use structured format with:</p>
                     <ul>
                         <li>Visual indicators (🧠 icon for smart alerts)</li>
                         <li>Key metrics in easily readable fields</li>

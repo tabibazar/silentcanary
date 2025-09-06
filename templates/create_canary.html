@@ -90,7 +90,7 @@
                     
                     <div class="mb-3" id="slack_field">
                         {{ form.slack_webhook.label(class="form-label") }}
-                        {{ form.slack_webhook(class="form-control", placeholder="https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK") }}
+                        {{ form.slack_webhook(class="form-control", placeholder="https://hooks.slack.com/services/YOUR/WEBHOOK/URL") }}
                         {% if form.slack_webhook.errors %}
                             <div class="text-danger">
                                 {% for error in form.slack_webhook.errors %}
@@ -99,7 +99,7 @@
                             </div>
                         {% endif %}
                         <div class="form-text">
-                            Slack webhook URL for notifications 
+                            Slack-compatible webhook URL for notifications 
                             <a href="https://api.slack.com/messaging/webhooks" target="_blank" class="text-decoration-none">
                                 <small>(How to get webhook URL?)</small>
                             </a>

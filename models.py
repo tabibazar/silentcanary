@@ -40,7 +40,8 @@ api_usage_table = dynamodb.Table('SilentCanary_APIUsage')
 
 class User:
     def __init__(self, user_id=None, username=None, email=None, password_hash=None, 
-                 is_verified=False, user_timezone='UTC', created_at=None, last_login=None, api_key=None, anthropic_api_key=None):
+                 is_verified=False, user_timezone='UTC', created_at=None, last_login=None, api_key=None, 
+                 anthropic_api_key=None, recaptcha_site_key=None, recaptcha_secret_key=None):
         self.user_id = user_id or str(uuid.uuid4())
         self.username = username
         self.email = email
@@ -51,6 +52,8 @@ class User:
         self.last_login = last_login
         self.api_key = api_key
         self.anthropic_api_key = anthropic_api_key
+        self.recaptcha_site_key = recaptcha_site_key
+        self.recaptcha_secret_key = recaptcha_secret_key
     
     def set_password(self, password):
         """Set password hash"""
@@ -128,6 +131,12 @@ class User:
                 
             if self.anthropic_api_key is not None:
                 item['anthropic_api_key'] = self.anthropic_api_key
+                
+            if self.recaptcha_site_key is not None:
+                item['recaptcha_site_key'] = self.recaptcha_site_key
+                
+            if self.recaptcha_secret_key is not None:
+                item['recaptcha_secret_key'] = self.recaptcha_secret_key
             
             users_table.put_item(Item=item)
             return True
@@ -161,7 +170,9 @@ class User:
                     created_at=item['created_at'],
                     last_login=item.get('last_login'),
                     api_key=item.get('api_key'),
-                    anthropic_api_key=item.get('anthropic_api_key')
+                    anthropic_api_key=item.get('anthropic_api_key'),
+                    recaptcha_site_key=item.get('recaptcha_site_key'),
+                    recaptcha_secret_key=item.get('recaptcha_secret_key')
                 )
             return None
         except ClientError as e:
@@ -188,7 +199,9 @@ class User:
                     created_at=item['created_at'],
                     last_login=item.get('last_login'),
                     api_key=item.get('api_key'),
-                    anthropic_api_key=item.get('anthropic_api_key')
+                    anthropic_api_key=item.get('anthropic_api_key'),
+                    recaptcha_site_key=item.get('recaptcha_site_key'),
+                    recaptcha_secret_key=item.get('recaptcha_secret_key')
                 )
             return None
         except ClientError as e:
@@ -215,7 +228,9 @@ class User:
                     created_at=item['created_at'],
                     last_login=item.get('last_login'),
                     api_key=item.get('api_key'),
-                    anthropic_api_key=item.get('anthropic_api_key')
+                    anthropic_api_key=item.get('anthropic_api_key'),
+                    recaptcha_site_key=item.get('recaptcha_site_key'),
+                    recaptcha_secret_key=item.get('recaptcha_secret_key')
                 )
             return None
         except ClientError as e:

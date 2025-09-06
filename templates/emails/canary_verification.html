@@ -1,0 +1,33 @@
+{% extends "emails/base.html" %}
+
+{% block title %}SilentCanary - Verify Your Email for Alert{% endblock %}
+
+{% block content %}
+<h2 style="color: #667eea;">📧 Email Verification Required</h2>
+
+<p>You've set up a new SilentCanary monitor called "<strong>{{ canary_name }}</strong>" with this email address for alerts. To prevent spam and ensure security, we need to verify that you own this email address.</p>
+
+<div class="alert alert-info" style="text-align: center; margin: 20px 0;">
+    <p style="margin: 0; font-size: 18px;"><strong>Verification Code:</strong></p>
+    <p style="margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: #667eea; letter-spacing: 3px;">{{ verification_code }}</p>
+</div>
+
+<p><strong>Option 1:</strong> Click the button below to verify automatically:</p>
+
+<p style="text-align: center;">
+    <a href="{{ verification_url }}" class="btn btn-primary">✅ Verify Email Address</a>
+</p>
+
+<p><strong>Option 2:</strong> Or manually enter the verification code when prompted.</p>
+
+<div class="alert alert-warning">
+    <strong>⏰ Important:</strong><br>
+    This verification expires in 24 hours. Your canary will remain inactive until verified.
+</div>
+
+<p style="color: #888; font-size: 14px;">
+    If you didn't request this verification, please ignore this email. The canary will remain inactive and no alerts will be sent to this address.
+</p>
+
+<p>Best regards,<br>The SilentCanary Team</p>
+{% endblock %}
