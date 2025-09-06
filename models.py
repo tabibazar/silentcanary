@@ -2378,3 +2378,8 @@ class SystemSettings:
         except Exception as e:
             print(f"Error fetching system settings: {e}")
             return SystemSettings()  # Return default settings on error
+    
+    @staticmethod
+    def get_settings():
+        """Alias for get() method for consistency"""
+        return SystemSettings.get()
