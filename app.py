@@ -771,6 +771,7 @@ def admin_update_email(user_id):
 @admin_required
 def admin_system_settings():
     """Admin system settings management"""
+    print(f"🚨 ROUTE HIT: admin_system_settings - Method: {request.method}")
     form = SystemSettingsForm()
     
     # Load current system settings
