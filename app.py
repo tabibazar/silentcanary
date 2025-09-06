@@ -776,6 +776,13 @@ def admin_system_settings():
     # Load current system settings
     settings = SystemSettings.get_settings()
     
+    # Debug: Check form submission and validation
+    if request.method == 'POST':
+        print(f"🔧 POST REQUEST RECEIVED:")
+        print(f"   Form data: {dict(request.form)}")
+        print(f"   Form validation errors: {form.errors}")
+        print(f"   Form validated: {form.validate_on_submit()}")
+    
     if form.validate_on_submit():
         try:
             # Debug logging
