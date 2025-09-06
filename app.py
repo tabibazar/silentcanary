@@ -778,10 +778,20 @@ def admin_system_settings():
     
     if form.validate_on_submit():
         try:
+            # Debug logging
+            print(f"🔧 SYSTEM SETTINGS DEBUG:")
+            print(f"   Site Key: '{form.recaptcha_site_key.data}'")
+            print(f"   Secret Key: '{form.recaptcha_secret_key.data}'")
+            print(f"   Enabled: '{form.recaptcha_enabled.data}'")
+            
             # Update system settings
             settings.recaptcha_site_key = form.recaptcha_site_key.data.strip() if form.recaptcha_site_key.data else None
             settings.recaptcha_secret_key = form.recaptcha_secret_key.data.strip() if form.recaptcha_secret_key.data else None
             settings.recaptcha_enabled = form.recaptcha_enabled.data == 'True'
+            
+            print(f"   Processed Site Key: '{settings.recaptcha_site_key}'")
+            print(f"   Processed Secret Key: '{settings.recaptcha_secret_key}'")
+            print(f"   Processed Enabled: '{settings.recaptcha_enabled}'")
             
             if settings.save():
                 flash('System settings updated successfully', 'success')
