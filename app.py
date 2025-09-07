@@ -48,7 +48,9 @@ app.config['MAIL_USERNAME'] = 'apikey'
 app.config['MAIL_PASSWORD'] = os.environ.get('SENDGRID_API_KEY')
 app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'auth@avriz.com')
 
-# reCAPTCHA configuration removed
+# reCAPTCHA configuration
+app.config['RECAPTCHA_SITE_KEY'] = os.environ.get('RECAPTCHA_SITE_KEY')
+app.config['RECAPTCHA_SECRET_KEY'] = os.environ.get('RECAPTCHA_SECRET_KEY')
 
 
 login_manager = LoginManager()
@@ -341,6 +343,36 @@ def register():
     form = RegistrationForm()
     
     if form.validate_on_submit():
+        # Validate reCAPTCHA if enabled
+        if app.config.get('RECAPTCHA_SECRET_KEY'):
+            recaptcha_response = request.form.get('g-recaptcha-response')
+            client_ip = request.remote_addr
+            
+            if not recaptcha_response:
+                flash('Please complete the reCAPTCHA verification.', 'error')
+                return render_template('register.html', form=form)
+            
+            # Verify reCAPTCHA with Google
+            recaptcha_data = {
+                'secret': app.config['RECAPTCHA_SECRET_KEY'],
+                'response': recaptcha_response,
+                'remoteip': request.remote_addr
+            }
+            
+            try:
+                r = requests.post('https://www.google.com/recaptcha/api/siteverify', data=recaptcha_data)
+                result = r.json()
+                
+                if not result.get('success', False):
+                    app.logger.warning(f"reCAPTCHA failed verification - IP: {client_ip}, Email: {form.email.data}")
+                    flash('reCAPTCHA verification failed. Please try again.', 'error')
+                    return render_template('register.html', form=form)
+                    
+            except Exception as e:
+                app.logger.error(f"reCAPTCHA API error - IP: {client_ip}, Error: {str(e)}")
+                flash('reCAPTCHA verification error. Please try again.', 'error')
+                return render_template('register.html', form=form)
+        
         # Check if user already exists
         existing_user = User.get_by_email(form.email.data)
         if existing_user:

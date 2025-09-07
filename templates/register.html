@@ -4,6 +4,9 @@
 {% block title %}Register - SilentCanary{% endblock %}
 
 {% block head %}
+{% if config.RECAPTCHA_SITE_KEY %}
+<script src="https://www.google.com/recaptcha/enterprise.js?render={{ config.RECAPTCHA_SITE_KEY }}"></script>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -66,11 +69,45 @@
                         {% endif %}
                     </div>
                     
+                    {% if config.RECAPTCHA_SITE_KEY %}
+                    <div class="mb-3">
+                        <div id="recaptcha-container"></div>
+                    </div>
+                    {% endif %}
                     
                     <div class="d-grid">
                         {{ form.submit(class="btn btn-primary", id="submitBtn") }}
                     </div>
                 </form>
+                
+                {% if config.RECAPTCHA_SITE_KEY %}
+                <script>
+                grecaptcha.enterprise.ready(function() {
+                    document.getElementById('submitBtn').addEventListener('click', function(e) {
+                        e.preventDefault();
+                        
+                        grecaptcha.enterprise.execute('{{ config.RECAPTCHA_SITE_KEY }}', {action: 'REGISTER'}).then(function(token) {
+                            // Remove any existing recaptcha tokens
+                            var existingTokens = document.querySelectorAll('input[name="g-recaptcha-response"]');
+                            existingTokens.forEach(function(el) { el.remove(); });
+                            
+                            // Add the token to the form
+                            var input = document.createElement("input");
+                            input.type = "hidden";
+                            input.name = "g-recaptcha-response";
+                            input.value = token;
+                            document.getElementById("registrationForm").appendChild(input);
+                            
+                            // Submit the form using prototype to avoid conflicts
+                            var form = document.getElementById("registrationForm");
+                            HTMLFormElement.prototype.submit.call(form);
+                        }).catch(function(error) {
+                            alert('reCAPTCHA failed to load. Please refresh and try again.');
+                        });
+                    });
+                });
+                </script>
+                {% endif %}
                 
                 <div class="text-center mt-3">
                     <p>Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>
