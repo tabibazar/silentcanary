@@ -15,6 +15,8 @@ import uuid
 import pytz
 import requests
 import time
+import logging
+import json
 # Import our DynamoDB models  
 from models import User, Canary, CanaryLog, SmartAlert, Subscription, SystemSettings, get_dynamodb_resource
 
@@ -45,6 +47,8 @@ app.config['MAIL_USE_SSL'] = False
 app.config['MAIL_USERNAME'] = 'apikey'
 app.config['MAIL_PASSWORD'] = os.environ.get('SENDGRID_API_KEY')
 app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'auth@avriz.com')
+
+# reCAPTCHA configuration removed
 
 
 login_manager = LoginManager()
@@ -190,13 +194,13 @@ def validate_secure_email(form, field):
 class RegistrationForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired(), Length(min=4, max=20)])
     email = StringField('Email', validators=[DataRequired(), Email(), validate_secure_email])
-    password = PasswordField('Password', validators=[DataRequired(), Length(min=8)])
-    password2 = PasswordField('Repeat Password', validators=[DataRequired(), EqualTo('password')])
+    password = PasswordField('Password', validators=[DataRequired(), Length(min=8)], render_kw={'autocomplete': 'new-password'})
+    password2 = PasswordField('Repeat Password', validators=[DataRequired(), EqualTo('password')], render_kw={'autocomplete': 'new-password'})
     submit = SubmitField('Register')
 
 class LoginForm(FlaskForm):
     email = StringField('Email', validators=[DataRequired(), Email(), validate_secure_email])
-    password = PasswordField('Password', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[DataRequired()], render_kw={'autocomplete': 'current-password'})
     submit = SubmitField('Sign In')
 
 class CanaryForm(FlaskForm):
@@ -229,9 +233,9 @@ class SettingsForm(FlaskForm):
     email = StringField('Email', render_kw={'readonly': True})  
     timezone = SelectField('Timezone', choices=[], validators=[Optional()])
     anthropic_api_key = StringField('Anthropic API Key (Optional)', validators=[Optional()], render_kw={'placeholder': 'sk-ant-api03-... (for AI-powered insights)'})
-    current_password = PasswordField('Current Password')
-    new_password = PasswordField('New Password', validators=[Optional(), Length(min=8)])
-    confirm_password = PasswordField('Confirm New Password', validators=[Optional(), EqualTo('new_password')])
+    current_password = PasswordField('Current Password', render_kw={'autocomplete': 'current-password'})
+    new_password = PasswordField('New Password', validators=[Optional(), Length(min=8)], render_kw={'autocomplete': 'new-password'})
+    confirm_password = PasswordField('Confirm New Password', validators=[Optional(), EqualTo('new_password')], render_kw={'autocomplete': 'new-password'})
     submit = SubmitField('Update Settings')
     verify_email = SubmitField('Verify Email')
     delete_account = SubmitField('Delete Account')
@@ -241,8 +245,8 @@ class ForgotPasswordForm(FlaskForm):
     submit = SubmitField('Send Reset Link')
 
 class ResetPasswordForm(FlaskForm):
-    password = PasswordField('New Password', validators=[DataRequired(), Length(min=8)])
-    password2 = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
+    password = PasswordField('New Password', validators=[DataRequired(), Length(min=8)], render_kw={'autocomplete': 'new-password'})
+    password2 = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')], render_kw={'autocomplete': 'new-password'})
     submit = SubmitField('Reset Password')
 
 class ContactForm(FlaskForm):
@@ -260,13 +264,9 @@ class ContactForm(FlaskForm):
     message = TextAreaField('Message', validators=[DataRequired(), Length(min=10, max=2000)])
     submit = SubmitField('Send Message')
 
-class SystemSettingsForm(FlaskForm):
-    recaptcha_site_key = StringField('reCAPTCHA Site Key', validators=[Optional()], render_kw={'placeholder': '6LfYo8ArAAAAAIXA5OD7aX0EoT5KBlB770i3mWpO'})
-    recaptcha_secret_key = PasswordField('reCAPTCHA Secret Key', validators=[Optional()], render_kw={'placeholder': 'Enter your reCAPTCHA secret key'})
-    recaptcha_enabled = SelectField('reCAPTCHA Status', choices=[('False', 'Disabled'), ('True', 'Enabled')], validators=[Optional()], default='False')
-    submit = SubmitField('Update System Settings')
 
 # Routes
+
 @app.route('/health')
 def health():
     """Health check endpoint for Kubernetes probes"""
@@ -287,11 +287,12 @@ def add_security_headers(response):
     # Content Security Policy - Prevent XSS and injection attacks
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://www.google.com https://www.gstatic.com; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
         "font-src 'self' https://cdnjs.cloudflare.com; "
         "img-src 'self' data: https:; "
-        "connect-src 'self'; "
+        "connect-src 'self' https://www.google.com https://www.gstatic.com; "
+        "frame-src https://www.google.com https://www.gstatic.com https://recaptcha.google.com; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self'"
@@ -338,52 +339,18 @@ def register():
         return redirect(url_for('dashboard'))
     
     form = RegistrationForm()
-    # Get system settings for reCAPTCHA
-    settings = SystemSettings.get_settings()
     
     if form.validate_on_submit():
-        # Validate reCAPTCHA Enterprise v3 if enabled
-        if settings and settings.recaptcha_enabled:
-            recaptcha_response = request.form.get('g-recaptcha-response')
-            if not recaptcha_response:
-                flash('Please complete the reCAPTCHA verification.', 'error')
-                return render_template('register.html', form=form, settings=settings)
-            
-            # Verify reCAPTCHA Enterprise v3 with Google
-            recaptcha_data = {
-                'secret': settings.recaptcha_secret_key,
-                'response': recaptcha_response,
-                'remoteip': request.remote_addr
-            }
-            
-            try:
-                r = requests.post('https://www.google.com/recaptcha/api/siteverify', data=recaptcha_data)
-                result = r.json()
-                
-                if not result.get('success', False):
-                    flash('reCAPTCHA verification failed. Please try again.', 'error')
-                    return render_template('register.html', form=form, settings=settings)
-                    
-                # For Enterprise v3, check score if available
-                score = result.get('score', 1.0)
-                if score < 0.5:  # Adjust threshold as needed
-                    flash('reCAPTCHA verification failed. Please try again.', 'error')
-                    return render_template('register.html', form=form, settings=settings)
-                    
-            except Exception as e:
-                flash('reCAPTCHA verification error. Please try again.', 'error')
-                return render_template('register.html', form=form, settings=settings)
-        
         # Check if user already exists
         existing_user = User.get_by_email(form.email.data)
         if existing_user:
             flash('Email already registered')
-            return render_template('register.html', form=form, settings=settings)
+            return render_template('register.html', form=form)
         
         existing_username = User.get_by_username(form.username.data)
         if existing_username:
             flash('Username already taken')
-            return render_template('register.html', form=form, settings=settings)
+            return render_template('register.html', form=form)
         
         # Create new user
         user = User(
@@ -417,7 +384,7 @@ def register():
         else:
             flash('Registration failed. Please try again.')
     
-    return render_template('register.html', form=form, settings=settings)
+    return render_template('register.html', form=form)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -772,38 +739,6 @@ def admin_update_email(user_id):
     
     return redirect(url_for('admin'))
 
-@app.route('/admin/system_settings', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def admin_system_settings():
-    """Admin system settings including reCAPTCHA configuration"""
-    settings = SystemSettings.get_settings()
-    form = SystemSettingsForm()
-    
-    if form.validate_on_submit():
-        try:
-            # Update system settings
-            settings.recaptcha_site_key = form.recaptcha_site_key.data.strip() if form.recaptcha_site_key.data else None
-            settings.recaptcha_secret_key = form.recaptcha_secret_key.data.strip() if form.recaptcha_secret_key.data else None
-            settings.recaptcha_enabled = form.recaptcha_enabled.data == 'True'
-            
-            if settings.save():
-                flash('System settings updated successfully', 'success')
-            else:
-                flash('Failed to save system settings', 'error')
-                
-        except Exception as e:
-            flash(f'Error updating system settings: {e}', 'error')
-        
-        return redirect(url_for('admin_system_settings'))
-    
-    # Pre-populate form with current values
-    if settings:
-        form.recaptcha_site_key.data = settings.recaptcha_site_key or ''
-        form.recaptcha_secret_key.data = settings.recaptcha_secret_key or ''
-        form.recaptcha_enabled.data = 'True' if settings.recaptcha_enabled else 'False'
-    
-    return render_template('admin_system_settings.html', form=form, settings=settings)
 
 # Subscription functionality removed - using Buy Me Coffee instead
 

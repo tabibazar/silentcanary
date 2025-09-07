@@ -1,11 +1,9 @@
+
 {% extends "base.html" %}
 
 {% block title %}Register - SilentCanary{% endblock %}
 
 {% block head %}
-{% if settings and settings.recaptcha_enabled and settings.recaptcha_site_key %}
-<script src="https://www.google.com/recaptcha/enterprise.js?render={{ settings.recaptcha_site_key }}"></script>
-{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -68,40 +66,11 @@
                         {% endif %}
                     </div>
                     
-                    {% if settings and settings.recaptcha_enabled and settings.recaptcha_site_key %}
-                    <div class="mb-3">
-                        <div id="recaptcha-container"></div>
-                    </div>
-                    {% endif %}
                     
                     <div class="d-grid">
                         {{ form.submit(class="btn btn-primary", id="submitBtn") }}
                     </div>
                 </form>
-                
-                {% if settings and settings.recaptcha_enabled and settings.recaptcha_site_key %}
-                <script>
-                function onSubmit(token) {
-                    document.getElementById("registrationForm").submit();
-                }
-
-                grecaptcha.enterprise.ready(function() {
-                    document.getElementById('submitBtn').addEventListener('click', function(e) {
-                        e.preventDefault();
-                        grecaptcha.enterprise.execute('{{ settings.recaptcha_site_key }}', {action: 'register'}).then(function(token) {
-                            // Add the token to the form
-                            var input = document.createElement("input");
-                            input.type = "hidden";
-                            input.name = "g-recaptcha-response";
-                            input.value = token;
-                            document.getElementById("registrationForm").appendChild(input);
-                            // Submit the form
-                            document.getElementById("registrationForm").submit();
-                        });
-                    });
-                });
-                </script>
-                {% endif %}
                 
                 <div class="text-center mt-3">
                     <p>Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>

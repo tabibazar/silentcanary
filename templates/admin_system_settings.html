@@ -25,7 +25,7 @@
                             <div class="mb-3">
                                 {{ form.recaptcha_site_key.label(class="form-label") }}
                                 {{ form.recaptcha_site_key(class="form-control") }}
-                                <div class="form-text">Your reCAPTCHA site key (public key)</div>
+                                <div class="form-text">Your reCAPTCHA site key (public key) - Required to display the widget</div>
                                 {% if form.recaptcha_site_key.errors %}
                                     <div class="text-danger">
                                         {% for error in form.recaptcha_site_key.errors %}
@@ -40,7 +40,7 @@
                             <div class="mb-3">
                                 {{ form.recaptcha_secret_key.label(class="form-label") }}
                                 {{ form.recaptcha_secret_key(class="form-control") }}
-                                <div class="form-text">Your reCAPTCHA secret key (private key)</div>
+                                <div class="form-text">Your reCAPTCHA secret key (private key) - Required for backend verification</div>
                                 {% if form.recaptcha_secret_key.errors %}
                                     <div class="text-danger">
                                         {% for error in form.recaptcha_secret_key.errors %}
