@@ -194,7 +194,7 @@ def validate_secure_email(form, field):
 
 # Forms
 class RegistrationForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired(), Length(min=4, max=20)])
+    username = StringField('Username', validators=[DataRequired(), Length(min=4, max=20)], render_kw={'autocomplete': 'username'})
     email = StringField('Email', validators=[DataRequired(), Email(), validate_secure_email])
     password = PasswordField('Password', validators=[DataRequired(), Length(min=8)], render_kw={'autocomplete': 'new-password'})
     password2 = PasswordField('Repeat Password', validators=[DataRequired(), EqualTo('password')], render_kw={'autocomplete': 'new-password'})
