@@ -93,6 +93,8 @@ def send_templated_email(recipients, subject, template_name, **template_vars):
         if isinstance(recipients, str):
             recipients = [recipients]
             
+        app.logger.info(f"Preparing to send email to {recipients} with subject: {subject}")
+        
         # Render the template
         html_content = render_template(f'emails/{template_name}.html', **template_vars)
         
@@ -104,10 +106,13 @@ def send_templated_email(recipients, subject, template_name, **template_vars):
             html=html_content
         )
         
+        app.logger.info(f"Sending email via mail.send() to {recipients}")
         mail.send(msg)
+        app.logger.info(f"Email sent successfully to {recipients}")
         return True
         
     except Exception as e:
+        app.logger.error(f"Error sending templated email to {recipients}: {str(e)}")
         print(f"Error sending templated email: {e}")
         return False
 
@@ -400,16 +405,26 @@ def register():
                 token = serializer.dumps({'user_id': user.user_id}, salt='email-verification')
                 verification_link = url_for('verify_email', token=token, _external=True)
                 
+                app.logger.info(f"Attempting to send verification email to {user.email} for user {user.username}")
+                
                 # Send welcome email using template
-                send_templated_email(
+                email_sent = send_templated_email(
                     recipients=user.email,
                     subject='Welcome to SilentCanary - Please verify your email',
                     template_name='welcome_verify',
                     username=user.username,
                     verification_link=verification_link
                 )
-                flash('Registration successful! Please check your email to verify your account.')
+                
+                if email_sent:
+                    app.logger.info(f"Verification email sent successfully to {user.email}")
+                    flash('Registration successful! Please check your email to verify your account.')
+                else:
+                    app.logger.error(f"Failed to send verification email to {user.email}")
+                    flash('Registration successful! Please log in. Note: verification email could not be sent.')
+                    
             except Exception as e:
+                app.logger.error(f"Registration email exception: {str(e)}")
                 print(f"Registration email error: {e}")
                 flash('Registration successful! Please log in. Note: verification email could not be sent.')
             return redirect(url_for('login'))
