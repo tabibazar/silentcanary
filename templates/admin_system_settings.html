@@ -1,125 +1,100 @@
 {% extends "base.html" %}
 
-{% block title %}System Settings - Admin{% endblock %}
+{% block title %}System Settings - Admin - SilentCanary{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h1><i class="fas fa-cogs text-primary"></i> System Settings</h1>
-    <a href="{{ url_for('admin') }}" class="btn btn-outline-secondary">
-        <i class="fas fa-arrow-left"></i> Back to Admin
-    </a>
-</div>
-
-<!-- reCAPTCHA Configuration -->
-<div class="card">
-    <div class="card-header">
-        <h5 class="mb-0">
-            <i class="fas fa-shield-alt text-success"></i> reCAPTCHA Configuration
-            {% if settings and settings.recaptcha_enabled %}
-                <span class="badge bg-success ms-2">Enabled</span>
-            {% else %}
-                <span class="badge bg-warning ms-2">Disabled</span>
-            {% endif %}
-        </h5>
-    </div>
-    <div class="card-body">
-        <form method="POST">
-            {{ form.hidden_tag() }}
-            
-            <div class="alert alert-info">
-                <i class="fas fa-info-circle"></i>
-                <strong>reCAPTCHA Setup:</strong> Configure Google reCAPTCHA v2 to protect the registration form from bots and spam.
-            </div>
-            
-            <div class="row mb-3">
-                <div class="col-md-6">
-                    <label for="recaptcha_site_key" class="form-label">Site Key (Public)</label>
-                    {{ form.recaptcha_site_key(class="form-control") }}
-                    <div class="form-text">This key is visible to users. Get it from the <a href="https://www.google.com/recaptcha/admin" target="_blank">Google reCAPTCHA console</a>.</div>
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="fas fa-cogs"></i> System Settings</h2>
+            <a href="{{ url_for('admin') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Admin
+            </a>
+        </div>
+        
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">reCAPTCHA Enterprise v3 Configuration</h5>
+                <p class="text-muted">Configure reCAPTCHA Enterprise v3 for spam protection on registration forms.</p>
+                
+                <form method="POST">
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                {{ form.recaptcha_site_key.label(class="form-label") }}
+                                {{ form.recaptcha_site_key(class="form-control") }}
+                                <div class="form-text">Your reCAPTCHA site key (public key)</div>
+                                {% if form.recaptcha_site_key.errors %}
+                                    <div class="text-danger">
+                                        {% for error in form.recaptcha_site_key.errors %}
+                                            <small>{{ error }}</small>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                {{ form.recaptcha_secret_key.label(class="form-label") }}
+                                {{ form.recaptcha_secret_key(class="form-control") }}
+                                <div class="form-text">Your reCAPTCHA secret key (private key)</div>
+                                {% if form.recaptcha_secret_key.errors %}
+                                    <div class="text-danger">
+                                        {% for error in form.recaptcha_secret_key.errors %}
+                                            <small>{{ error }}</small>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.recaptcha_enabled.label(class="form-label") }}
+                        {{ form.recaptcha_enabled(class="form-select") }}
+                        <div class="form-text">Enable or disable reCAPTCHA protection</div>
+                        {% if form.recaptcha_enabled.errors %}
+                            <div class="text-danger">
+                                {% for error in form.recaptcha_enabled.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+                
+                <hr class="my-4">
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Current Configuration Status</h6>
+                        {% if settings and settings.recaptcha_enabled %}
+                            <span class="badge bg-success"><i class="fas fa-shield-alt"></i> reCAPTCHA Enabled</span>
+                        {% else %}
+                            <span class="badge bg-warning"><i class="fas fa-shield-alt"></i> reCAPTCHA Disabled</span>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h6>Setup Instructions</h6>
+                        <small class="text-muted">
+                            1. Create a reCAPTCHA Enterprise site at <a href="https://console.cloud.google.com/security/recaptcha" target="_blank">Google Cloud Console</a><br>
+                            2. Choose "Enterprise" and "v3"<br>  
+                            3. Add your domain (qa.silentcanary.net)<br>
+                            4. Copy the site key and secret key above<br>
+                            5. Enable reCAPTCHA and save settings
+                        </small>
+                    </div>
                 </div>
-                <div class="col-md-6">
-                    <label for="recaptcha_secret_key" class="form-label">Secret Key (Private)</label>
-                    {{ form.recaptcha_secret_key(class="form-control") }}
-                    <div class="form-text">This key is kept secret on the server side.</div>
-                </div>
             </div>
-            
-            <div class="mb-3">
-                <label for="recaptcha_enabled" class="form-label">reCAPTCHA Status</label>
-                {{ form.recaptcha_enabled(class="form-select") }}
-                <div class="form-text">Enable or disable reCAPTCHA protection on the registration form.</div>
-            </div>
-            
-            <div class="alert alert-warning">
-                <i class="fas fa-exclamation-triangle"></i>
-                <strong>Important:</strong> Both Site Key and Secret Key must be provided to enable reCAPTCHA. 
-                When disabled, the registration form will not show the reCAPTCHA challenge.
-            </div>
-            
-            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-save"></i> Save Settings
-                </button>
-            </div>
-        </form>
+        </div>
     </div>
 </div>
-
-<!-- Setup Instructions -->
-<div class="card mt-4">
-    <div class="card-header">
-        <h5 class="mb-0">
-            <i class="fas fa-book text-info"></i> Setup Instructions
-        </h5>
-    </div>
-    <div class="card-body">
-        <h6>1. Create reCAPTCHA keys</h6>
-        <ol>
-            <li>Go to the <a href="https://www.google.com/recaptcha/admin" target="_blank" class="text-decoration-none">Google reCAPTCHA Admin Console</a></li>
-            <li>Click "+" to create a new site</li>
-            <li>Choose "reCAPTCHA v2" → "I'm not a robot" Checkbox</li>
-            <li>Add your domain (e.g., silentcanary.com)</li>
-            <li>Accept the terms and submit</li>
-        </ol>
-        
-        <h6>2. Configure keys</h6>
-        <ul>
-            <li><strong>Site Key:</strong> Copy the site key to the "Site Key" field above</li>
-            <li><strong>Secret Key:</strong> Copy the secret key to the "Secret Key" field above</li>
-            <li><strong>Enable:</strong> Set status to "Enabled" to activate reCAPTCHA protection</li>
-        </ul>
-        
-        <h6>3. Test integration</h6>
-        <p>After saving the settings, test the registration form to ensure reCAPTCHA appears and validates correctly.</p>
-    </div>
-</div>
-
-{% endblock %}
-
-{% block scripts %}
-<script>
-// Show/hide secret key toggle
-document.addEventListener('DOMContentLoaded', function() {
-    // Add toggle for password field visibility
-    const secretKeyField = document.getElementById('recaptcha_secret_key');
-    if (secretKeyField) {
-        const toggleBtn = document.createElement('button');
-        toggleBtn.type = 'button';
-        toggleBtn.className = 'btn btn-outline-secondary btn-sm mt-2';
-        toggleBtn.innerHTML = '<i class="fas fa-eye"></i> Show';
-        
-        toggleBtn.onclick = function() {
-            if (secretKeyField.type === 'password') {
-                secretKeyField.type = 'text';
-                toggleBtn.innerHTML = '<i class="fas fa-eye-slash"></i> Hide';
-            } else {
-                secretKeyField.type = 'password';
-                toggleBtn.innerHTML = '<i class="fas fa-eye"></i> Show';
-            }
-        };
-        
-        secretKeyField.parentNode.appendChild(toggleBtn);
-    }
-});
-</script>
 {% endblock %}

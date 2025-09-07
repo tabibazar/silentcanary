@@ -46,6 +46,7 @@ app.config['MAIL_USERNAME'] = 'apikey'
 app.config['MAIL_PASSWORD'] = os.environ.get('SENDGRID_API_KEY')
 app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'auth@avriz.com')
 
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
@@ -260,8 +261,8 @@ class ContactForm(FlaskForm):
     submit = SubmitField('Send Message')
 
 class SystemSettingsForm(FlaskForm):
-    recaptcha_site_key = StringField('reCAPTCHA Site Key', validators=[Optional()], render_kw={'placeholder': '6LcXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'})
-    recaptcha_secret_key = PasswordField('reCAPTCHA Secret Key', validators=[Optional()], render_kw={'placeholder': '6LfXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'})
+    recaptcha_site_key = StringField('reCAPTCHA Site Key', validators=[Optional()], render_kw={'placeholder': '6LfYo8ArAAAAAIXA5OD7aX0EoT5KBlB770i3mWpO'})
+    recaptcha_secret_key = PasswordField('reCAPTCHA Secret Key', validators=[Optional()], render_kw={'placeholder': 'Enter your reCAPTCHA secret key'})
     recaptcha_enabled = SelectField('reCAPTCHA Status', choices=[('False', 'Disabled'), ('True', 'Enabled')], validators=[Optional()], default='False')
     submit = SubmitField('Update System Settings')
 
@@ -337,18 +338,18 @@ def register():
         return redirect(url_for('dashboard'))
     
     form = RegistrationForm()
+    # Get system settings for reCAPTCHA
+    settings = SystemSettings.get_settings()
+    
     if form.validate_on_submit():
-        # Get system settings for reCAPTCHA
-        settings = SystemSettings.get_settings()
-        
-        # Validate reCAPTCHA if enabled
+        # Validate reCAPTCHA Enterprise v3 if enabled
         if settings and settings.recaptcha_enabled:
             recaptcha_response = request.form.get('g-recaptcha-response')
             if not recaptcha_response:
                 flash('Please complete the reCAPTCHA verification.', 'error')
                 return render_template('register.html', form=form, settings=settings)
             
-            # Verify reCAPTCHA with Google
+            # Verify reCAPTCHA Enterprise v3 with Google
             recaptcha_data = {
                 'secret': settings.recaptcha_secret_key,
                 'response': recaptcha_response,
@@ -362,6 +363,13 @@ def register():
                 if not result.get('success', False):
                     flash('reCAPTCHA verification failed. Please try again.', 'error')
                     return render_template('register.html', form=form, settings=settings)
+                    
+                # For Enterprise v3, check score if available
+                score = result.get('score', 1.0)
+                if score < 0.5:  # Adjust threshold as needed
+                    flash('reCAPTCHA verification failed. Please try again.', 'error')
+                    return render_template('register.html', form=form, settings=settings)
+                    
             except Exception as e:
                 flash('reCAPTCHA verification error. Please try again.', 'error')
                 return render_template('register.html', form=form, settings=settings)
@@ -409,8 +417,6 @@ def register():
         else:
             flash('Registration failed. Please try again.')
     
-    # Get system settings to show reCAPTCHA in template
-    settings = SystemSettings.get_settings()
     return render_template('register.html', form=form, settings=settings)
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -768,24 +774,18 @@ def admin_update_email(user_id):
 
 @app.route('/admin/system_settings', methods=['GET', 'POST'])
 @login_required
-@admin_required  
+@admin_required
 def admin_system_settings():
-    """Admin system settings management"""
-    # Load current system settings
+    """Admin system settings including reCAPTCHA configuration"""
     settings = SystemSettings.get_settings()
+    form = SystemSettingsForm()
     
-    if request.method == 'POST':
-        # Process form manually to bypass validation issues
+    if form.validate_on_submit():
         try:
-            # Get form data directly from request
-            site_key = request.form.get('recaptcha_site_key', '').strip()
-            secret_key = request.form.get('recaptcha_secret_key', '').strip()
-            enabled = request.form.get('recaptcha_enabled') == 'True'
-            
-            # Update system settings  
-            settings.recaptcha_site_key = site_key if site_key else None
-            settings.recaptcha_secret_key = secret_key if secret_key else None
-            settings.recaptcha_enabled = enabled
+            # Update system settings
+            settings.recaptcha_site_key = form.recaptcha_site_key.data.strip() if form.recaptcha_site_key.data else None
+            settings.recaptcha_secret_key = form.recaptcha_secret_key.data.strip() if form.recaptcha_secret_key.data else None
+            settings.recaptcha_enabled = form.recaptcha_enabled.data == 'True'
             
             if settings.save():
                 flash('System settings updated successfully', 'success')
@@ -797,8 +797,7 @@ def admin_system_settings():
         
         return redirect(url_for('admin_system_settings'))
     
-    # For GET requests, create form and populate
-    form = SystemSettingsForm()
+    # Pre-populate form with current values
     if settings:
         form.recaptcha_site_key.data = settings.recaptcha_site_key or ''
         form.recaptcha_secret_key.data = settings.recaptcha_secret_key or ''

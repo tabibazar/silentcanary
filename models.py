@@ -41,7 +41,7 @@ api_usage_table = dynamodb.Table('SilentCanary_APIUsage')
 class User:
     def __init__(self, user_id=None, username=None, email=None, password_hash=None, 
                  is_verified=False, user_timezone='UTC', created_at=None, last_login=None, api_key=None, 
-                 anthropic_api_key=None, recaptcha_site_key=None, recaptcha_secret_key=None):
+                 anthropic_api_key=None):
         self.user_id = user_id or str(uuid.uuid4())
         self.username = username
         self.email = email
@@ -52,8 +52,6 @@ class User:
         self.last_login = last_login
         self.api_key = api_key
         self.anthropic_api_key = anthropic_api_key
-        self.recaptcha_site_key = recaptcha_site_key
-        self.recaptcha_secret_key = recaptcha_secret_key
     
     def set_password(self, password):
         """Set password hash"""
@@ -132,11 +130,6 @@ class User:
             if self.anthropic_api_key is not None:
                 item['anthropic_api_key'] = self.anthropic_api_key
                 
-            if self.recaptcha_site_key is not None:
-                item['recaptcha_site_key'] = self.recaptcha_site_key
-                
-            if self.recaptcha_secret_key is not None:
-                item['recaptcha_secret_key'] = self.recaptcha_secret_key
             
             users_table.put_item(Item=item)
             return True
@@ -171,8 +164,6 @@ class User:
                     last_login=item.get('last_login'),
                     api_key=item.get('api_key'),
                     anthropic_api_key=item.get('anthropic_api_key'),
-                    recaptcha_site_key=item.get('recaptcha_site_key'),
-                    recaptcha_secret_key=item.get('recaptcha_secret_key')
                 )
             return None
         except ClientError as e:
@@ -200,8 +191,6 @@ class User:
                     last_login=item.get('last_login'),
                     api_key=item.get('api_key'),
                     anthropic_api_key=item.get('anthropic_api_key'),
-                    recaptcha_site_key=item.get('recaptcha_site_key'),
-                    recaptcha_secret_key=item.get('recaptcha_secret_key')
                 )
             return None
         except ClientError as e:
@@ -229,8 +218,6 @@ class User:
                     last_login=item.get('last_login'),
                     api_key=item.get('api_key'),
                     anthropic_api_key=item.get('anthropic_api_key'),
-                    recaptcha_site_key=item.get('recaptcha_site_key'),
-                    recaptcha_secret_key=item.get('recaptcha_secret_key')
                 )
             return None
         except ClientError as e:
@@ -2329,6 +2316,7 @@ class EmailVerification:
             print(f"Error fetching email verification by ID: {e}")
             return None
 
+
 class SystemSettings:
     """System-wide settings for SilentCanary"""
     SETTINGS_KEY = 'system_settings'
@@ -2359,27 +2347,25 @@ class SystemSettings:
             return False
     
     @staticmethod
-    def get():
+    def get_settings():
         """Get system settings from DynamoDB"""
         try:
             api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
             response = api_usage_table.get_item(Key={'log_id': SystemSettings.SETTINGS_KEY})
             
-            item = response.get('Item')
-            if item and item.get('api_type') == 'system_settings':
+            if 'Item' in response:
+                item = response['Item']
                 return SystemSettings(
-                    recaptcha_site_key=item.get('endpoint') or None,
-                    recaptcha_secret_key=item.get('feature_used') or None,
+                    recaptcha_site_key=item.get('endpoint', ''),
+                    recaptcha_secret_key=item.get('feature_used', ''),
                     recaptcha_enabled=item.get('success', False)
                 )
             else:
-                # Return default settings if not found
+                # Return default settings if none exist
                 return SystemSettings()
         except Exception as e:
             print(f"Error fetching system settings: {e}")
-            return SystemSettings()  # Return default settings on error
-    
-    @staticmethod
-    def get_settings():
-        """Alias for get() method for consistency"""
-        return SystemSettings.get()
+            return SystemSettings()
+
+
+
