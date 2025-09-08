@@ -32,6 +32,7 @@ if not secret_key:
     raise RuntimeError("SECRET_KEY environment variable must be set for security")
 app.config['SECRET_KEY'] = secret_key
 app.config['PREFERRED_URL_SCHEME'] = 'https'
+app.config['SERVER_NAME'] = 'silentcanary.com'
 
 # We'll add route debugging at the end of the file
 
