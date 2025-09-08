@@ -1162,11 +1162,11 @@ def checkin(token):
     return jsonify(response_data)
 
 @app.route('/settings', methods=['GET', 'POST'])
-@login_required
+@login_required  
 def settings():
     form = SettingsForm()
     
-# Debug logging removed for security - Phase 4
+    # Debug logging removed for security - Phase 4
     
     # Populate timezone choices
     common_timezones = [
