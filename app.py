@@ -34,7 +34,8 @@ if not secret_key:
 app.config['SECRET_KEY'] = secret_key
 app.config['PREFERRED_URL_SCHEME'] = 'https'
 
-# Initialize CSRF protection
+# Initialize CSRF protection with extended timeout
+app.config['WTF_CSRF_TIME_LIMIT'] = 7200  # 2 hours instead of default 1 hour
 csrf = CSRFProtect(app)
 
 # We'll add route debugging at the end of the file
@@ -3598,6 +3599,12 @@ def enhance_smart_alert_logic(logic_data, canary, smart_alert, user_api_key):
         logic_data['ai_explanation'] = ai_explanation
         
     return logic_data
+
+@app.route('/csrf-token')
+def get_csrf_token():
+    """Provide a fresh CSRF token for AJAX requests"""
+    from flask_wtf.csrf import generate_csrf
+    return jsonify({'csrf_token': generate_csrf()})
 
 # Start scheduler automatically when module is imported (not just when run as main)
 def start_background_scheduler():

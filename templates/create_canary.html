@@ -302,5 +302,41 @@ function updateSensitivityDisplay(value) {
     
     display.textContent = label;
 }
+
+// Handle CSRF token expiration on form submit
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form[method="POST"]');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const csrfToken = form.querySelector('input[name="csrf_token"]');
+            if (!csrfToken || !csrfToken.value) {
+                e.preventDefault();
+                alert('Security token missing. Please refresh the page and try again.');
+                return false;
+            }
+        });
+        
+        // Optionally refresh CSRF token periodically (every 30 minutes)
+        setInterval(async function() {
+            try {
+                const response = await fetch('/csrf-token', {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.csrf_token) {
+                        const csrfInput = form.querySelector('input[name="csrf_token"]');
+                        if (csrfInput) {
+                            csrfInput.value = data.csrf_token;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to refresh CSRF token:', error);
+            }
+        }, 30 * 60 * 1000); // 30 minutes
+    }
+});
 </script>
 {% endblock %}
