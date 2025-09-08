@@ -107,6 +107,8 @@ def send_templated_email(recipients, subject, template_name, **template_vars):
         )
         
         app.logger.info(f"Sending email via mail.send() to {recipients}")
+        app.logger.info(f"Message details - From: {msg.sender}, To: {msg.recipients}, Subject: {msg.subject}")
+        app.logger.info(f"Mail config - Server: {app.config['MAIL_SERVER']}, Username: {app.config['MAIL_USERNAME']}, Default_Sender: {app.config['MAIL_DEFAULT_SENDER']}")
         mail.send(msg)
         app.logger.info(f"Email sent successfully to {recipients}")
         return True
