@@ -211,6 +211,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" id="updateEmailForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
                     <div class="alert alert-info">
                         <strong>User:</strong> <span id="modalUserName"></span><br>
@@ -239,6 +240,7 @@
 
 <!-- Hidden Delete Form -->
 <form method="POST" id="deleteUserForm" style="display: none;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" id="deleteUserId" name="user_id">
 </form>
 

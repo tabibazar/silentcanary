@@ -278,6 +278,7 @@
                                     </a>
                                     <form method="POST" action="{{ url_for('delete_canary', canary_id=canary.canary_id) }}" 
                                           onsubmit="return confirm('Are you sure you want to delete this canary?')" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
                                             <i class="fas fa-trash"></i>
                                         </button>
