@@ -2,6 +2,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, jso
 from functools import wraps
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
+from flask_wtf.csrf import CSRFProtect
 from flask_mail import Mail, Message
 from wtforms import StringField, PasswordField, SubmitField, IntegerField, TextAreaField, SelectField, FloatField
 from wtforms.validators import DataRequired, Email, Length, EqualTo, Optional, NumberRange, ValidationError
@@ -32,6 +33,9 @@ if not secret_key:
     raise RuntimeError("SECRET_KEY environment variable must be set for security")
 app.config['SECRET_KEY'] = secret_key
 app.config['PREFERRED_URL_SCHEME'] = 'https'
+
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
 
 # We'll add route debugging at the end of the file
 
