@@ -99,9 +99,11 @@ def send_templated_email(recipients, subject, template_name, **template_vars):
         html_content = render_template(f'emails/{template_name}.html', **template_vars)
         
         # Create and send the message
+        # Use RFC 2822 format for sender with display name
+        sender_address = f"SilentCanary <{app.config['MAIL_DEFAULT_SENDER']}>"
         msg = Message(
             subject=subject,
-            sender=('SilentCanary', app.config['MAIL_DEFAULT_SENDER']),
+            sender=sender_address,
             recipients=recipients,
             html=html_content
         )

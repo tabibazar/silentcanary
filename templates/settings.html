@@ -167,7 +167,7 @@
                             <span class="text-warning"><i class="fas fa-exclamation-triangle"></i> Not verified</span>
                             <div class="mt-2">
                                 <form method="POST" class="d-inline">
-                                    {{ form.hidden_tag() }}
+                                    <input id="csrf_token_verify" name="csrf_token" type="hidden" value="{{ csrf_token() }}">
                                     {{ form.verify_email(class="btn btn-sm btn-warning") }}
                                 </form>
                             </div>
@@ -254,7 +254,7 @@
                                             <i class="fas fa-chart-line" style="font-size: 0.8em;"></i>
                                         </button>
                                         <form method="POST" class="d-inline">
-                                            {{ form.hidden_tag() }}
+                                            <input id="csrf_token_delete_{{ loop.index }}" name="csrf_token" type="hidden" value="{{ csrf_token() }}">
                                             <input type="hidden" name="api_key_id" value="{{ api_key.api_key_id }}">
                                             <button type="submit" name="delete_api_key" 
                                                     class="btn btn-outline-danger btn-sm"
@@ -308,7 +308,7 @@
             <div class="modal-dialog">
                 <div class="modal-content">
                     <form method="POST">
-                        {{ form.hidden_tag() }}
+                        <input id="csrf_token_create" name="csrf_token" type="hidden" value="{{ csrf_token() }}">
                         <div class="modal-header">
                             <h5 class="modal-title">Create New API Key</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -353,7 +353,7 @@
                 </div>
                 
                 <form method="POST" class="d-inline" onsubmit="return confirmDelete()">
-                    {{ form.hidden_tag() }}
+                    <input id="csrf_token_delete_account" name="csrf_token" type="hidden" value="{{ csrf_token() }}">
                     {{ form.delete_account(class="btn btn-danger") }}
                 </form>
             </div>
