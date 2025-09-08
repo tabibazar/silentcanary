@@ -32,7 +32,6 @@ if not secret_key:
     raise RuntimeError("SECRET_KEY environment variable must be set for security")
 app.config['SECRET_KEY'] = secret_key
 app.config['PREFERRED_URL_SCHEME'] = 'https'
-app.config['SERVER_NAME'] = 'silentcanary.com'
 
 # We'll add route debugging at the end of the file
 
@@ -406,7 +405,8 @@ def register():
             try:
                 serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
                 token = serializer.dumps({'user_id': user.user_id}, salt='email-verification')
-                verification_link = url_for('verify_email', token=token, _external=True)
+                # Build verification link manually to avoid SERVER_NAME issues
+                verification_link = f"https://silentcanary.com/verify_email/{token}"
                 
                 app.logger.info(f"Attempting to send verification email to {user.email} for user {user.username}")
                 
@@ -1206,7 +1206,8 @@ def settings():
             
             # Send verification email
             try:
-                verification_link = url_for('verify_email', token=token, _external=True)
+                # Build verification link manually to avoid SERVER_NAME issues
+                verification_link = f"https://silentcanary.com/verify_email/{token}"
                 # Send email verification using template
                 send_templated_email(
                     recipients=current_user.email,
