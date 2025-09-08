@@ -915,6 +915,42 @@ def create_canary():
         )
         
         if canary.save():
+            # Handle Smart Alert creation if enabled
+            if request.form.get('enable_smart_alerts'):
+                # Map sensitivity threshold to decimal value
+                from decimal import Decimal
+                sensitivity_map = {
+                    'high': Decimal('0.3'),    # More sensitive, catches more anomalies
+                    'medium': Decimal('0.6'),  # Balanced detection
+                    'low': Decimal('0.8')      # Less sensitive, only major anomalies
+                }
+                
+                # Check if advanced sensitivity slider was used (overrides dropdown)
+                sensitivity_value_input = request.form.get('sensitivity_value')
+                if sensitivity_value_input:
+                    sensitivity_value = Decimal(str(sensitivity_value_input))
+                else:
+                    # Fall back to dropdown selection
+                    sensitivity_threshold = request.form.get('sensitivity_threshold', 'medium')
+                    sensitivity_value = sensitivity_map.get(sensitivity_threshold, Decimal('0.6'))
+                
+                # Get learning period from form (defaults to 7 days)
+                learning_period = int(request.form.get('learning_period', 7))
+                
+                smart_alert = SmartAlert(
+                    canary_id=canary.canary_id,
+                    user_id=current_user.user_id,
+                    name=f"Smart Alert for {canary.name}",
+                    sensitivity=sensitivity_value,
+                    learning_period_days=learning_period,
+                    is_enabled=True
+                )
+                
+                if smart_alert.save():
+                    app.logger.info(f"Smart Alert created for canary {canary.canary_id} with sensitivity {sensitivity_value}")
+                else:
+                    app.logger.warning(f"Failed to create Smart Alert for canary {canary.canary_id}")
+            
             if needs_email_verification:
                 # Create email verification record
                 from models import EmailVerification
@@ -1626,11 +1662,13 @@ def enable_smart_alert(canary_id):
         return redirect(url_for('dashboard'))
     
     # Get form data
-    sensitivity = request.form.get('sensitivity', 0.8)
+    sensitivity = request.form.get('sensitivity', '0.8')
     learning_period = request.form.get('learning_period', 7)
     
     try:
-        sensitivity = max(0.5, min(1.0, float(sensitivity)))
+        from decimal import Decimal
+        sensitivity_float = max(0.5, min(1.0, float(sensitivity)))
+        sensitivity = Decimal(str(sensitivity_float))
         learning_period = max(1, min(365, int(learning_period)))
     except (ValueError, TypeError):
         flash('Invalid configuration values')
@@ -1640,13 +1678,13 @@ def enable_smart_alert(canary_id):
     smart_alert = SmartAlert.get_by_canary_id(canary_id)
     if smart_alert:
         smart_alert.is_enabled = True
-        smart_alert.sensitivity = Decimal(str(sensitivity))
+        smart_alert.sensitivity = sensitivity
         smart_alert.learning_period_days = learning_period
     else:
         smart_alert = SmartAlert(
             canary_id=canary_id,
             user_id=current_user.user_id,
-            sensitivity=Decimal(str(sensitivity)),
+            sensitivity=sensitivity,
             learning_period_days=learning_period
         )
     
@@ -3017,7 +3055,7 @@ def create_canary_from_data(user_id, data):
         smart_alert = SmartAlert(
             canary_id=canary.canary_id,
             user_id=user_id,
-            sensitivity=Decimal(str(data.get('smart_alert_sensitivity', 0.6))),  # More conservative default
+            sensitivity=Decimal('0.6') if data.get('smart_alert_sensitivity') is None else Decimal(str(data.get('smart_alert_sensitivity'))),
             learning_period_days=data.get('smart_alert_learning_period', 7),
             is_enabled=True
         )

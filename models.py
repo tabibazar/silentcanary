@@ -1010,15 +1010,20 @@ class ApiUsageLog:
 class SmartAlert:
     """Smart alerting with ML-based anomaly detection for irregular check-in patterns"""
     
-    def __init__(self, smart_alert_id=None, canary_id=None, user_id=None, is_enabled=True,
-                 learning_period_days=7, sensitivity=0.8, created_at=None, 
+    def __init__(self, smart_alert_id=None, canary_id=None, user_id=None, name=None, is_enabled=True,
+                 learning_period_days=7, sensitivity=None, created_at=None, 
                  pattern_data=None, last_analysis=None, last_alert_sent=None):
         self.smart_alert_id = smart_alert_id or str(uuid.uuid4())
         self.canary_id = canary_id
         self.user_id = user_id
+        self.name = name or "Smart Alert"
         self.is_enabled = is_enabled
         self.learning_period_days = learning_period_days  # How many days to learn patterns
-        self.sensitivity = Decimal(str(sensitivity))  # 0.5-1.0, higher = more sensitive
+        # Handle sensitivity with proper default
+        if sensitivity is None:
+            self.sensitivity = Decimal('0.8')  # Default sensitivity
+        else:
+            self.sensitivity = Decimal(str(sensitivity))  # 0.5-1.0, higher = more sensitive
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
         self.pattern_data = pattern_data or {}  # Stores learned patterns
         self.last_analysis = last_analysis
@@ -1032,6 +1037,7 @@ class SmartAlert:
                     'smart_alert_id': self.smart_alert_id,
                     'canary_id': self.canary_id,
                     'user_id': self.user_id,
+                    'name': self.name,
                     'is_enabled': self.is_enabled,
                     'learning_period_days': self.learning_period_days,
                     'sensitivity': self.sensitivity,
@@ -1069,6 +1075,7 @@ class SmartAlert:
                     smart_alert_id=item['smart_alert_id'],
                     canary_id=item['canary_id'],
                     user_id=item['user_id'],
+                    name=item.get('name', 'Smart Alert'),
                     is_enabled=item.get('is_enabled', True),
                     learning_period_days=int(item.get('learning_period_days', 7)),
                     sensitivity=item.get('sensitivity', Decimal('0.8')),
