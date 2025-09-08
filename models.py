@@ -2232,7 +2232,7 @@ class EmailVerification:
                 'feature_used': self.verification_code,  # Store verification code
                 'success': self.is_verified,
                 'timestamp': self.created_at,
-                'response_time_ms': int(datetime.fromisoformat(self.expires_at.replace('Z', '+00:00')).timestamp() * 1000) if self.expires_at else None,
+                'response_time_ms': Decimal(str(int(datetime.fromisoformat(self.expires_at.replace('Z', '+00:00')).timestamp() * 1000))) if self.expires_at else None,
                 'error_message': self.verified_at
             }
             
@@ -2291,7 +2291,7 @@ class EmailVerification:
                     is_verified=item['success'],
                     created_at=item['timestamp'],
                     verified_at=item.get('error_message'),
-                    expires_at=datetime.fromtimestamp(item['response_time_ms'] / 1000, tz=timezone.utc).isoformat() if item.get('response_time_ms') else None
+                    expires_at=datetime.fromtimestamp(float(item['response_time_ms']) / 1000, tz=timezone.utc).isoformat() if item.get('response_time_ms') else None
                 )
             return None
         except Exception as e:
@@ -2316,7 +2316,7 @@ class EmailVerification:
                     is_verified=item['success'],
                     created_at=item['timestamp'],
                     verified_at=item.get('error_message'),
-                    expires_at=datetime.fromtimestamp(item['response_time_ms'] / 1000, tz=timezone.utc).isoformat() if item.get('response_time_ms') else None
+                    expires_at=datetime.fromtimestamp(float(item['response_time_ms']) / 1000, tz=timezone.utc).isoformat() if item.get('response_time_ms') else None
                 )
             return None
         except Exception as e:
