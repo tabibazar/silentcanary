@@ -984,7 +984,7 @@ def create_canary():
 def send_verification_email(verification, canary):
     """Send email verification email for canary alert email"""
     try:
-        verification_url = url_for('verify_canary_email', verification_id=verification.verification_id, _external=True)
+        verification_url = f'https://silentcanary.com/verify-email/{verification.verification_id}'
         
         # Use templated email instead of hardcoded HTML
         success = send_templated_email(
@@ -2767,9 +2767,9 @@ def send_notifications(canary, log_entry=None):
     # Get user for email fallback
     user = User.get_by_id(canary.user_id)
     
-    # Get additional context for the email template
-    dashboard_link = url_for('dashboard', _external=True)
-    canary_logs_link = url_for('canary_logs', canary_id=canary.canary_id, _external=True)
+    # Get additional context for the email template (hardcoded for scheduler compatibility)
+    dashboard_link = 'https://silentcanary.com/dashboard'
+    canary_logs_link = f'https://silentcanary.com/canary/{canary.canary_id}/logs'
     
     # Check if smart alerts are enabled
     smart_alert = SmartAlert.get_by_canary_id(canary.canary_id)
