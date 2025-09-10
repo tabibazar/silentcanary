@@ -2375,4 +2375,281 @@ class SystemSettings:
             return SystemSettings()
 
 
+class ContactRequest:
+    """Model for storing and managing contact form requests"""
+    
+    def __init__(self, request_id=None, name=None, email=None, subject=None, category=None, 
+                 message=None, status='new', escalation_stage='new', created_at=None, admin_reply=None, 
+                 replied_at=None, replied_by=None, escalated_at=None, escalated_by=None, priority='normal'):
+        self.request_id = request_id or str(uuid.uuid4())
+        self.name = name
+        self.email = email
+        self.subject = subject
+        self.category = category  # general, technical, billing, feature, bug, enterprise
+        self.message = message
+        self.status = status  # new, in_progress, replied, closed
+        self.escalation_stage = escalation_stage  # new, in_progress, replied, closed
+        self.priority = priority  # low, normal, high, urgent
+        self.created_at = created_at or datetime.now(timezone.utc).isoformat()
+        self.admin_reply = admin_reply  # Reply message from admin
+        self.replied_at = replied_at  # When admin replied
+        self.replied_by = replied_by  # Email of admin who replied
+        self.escalated_at = escalated_at  # When escalated
+        self.escalated_by = escalated_by  # Who escalated it
+    
+    def save(self):
+        """Save contact request to DynamoDB (using APIUsage table)"""
+        try:
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            # Create escalation metadata JSON
+            import json
+            escalation_metadata = {
+                'escalation_stage': self.escalation_stage,
+                'priority': self.priority,
+                'escalated_at': self.escalated_at,
+                'escalated_by': self.escalated_by,
+                'admin_reply': self.admin_reply
+            }
+            
+            item = {
+                'log_id': self.request_id,
+                'user_id': self.email,  # Store email in user_id for easy lookup
+                'api_type': 'contact_request',
+                'endpoint': self.name,  # Store name in endpoint
+                'model': self.category,  # Store category in model
+                'feature_used': self.subject,  # Store subject in feature_used
+                'success': True if self.status == 'replied' else False,
+                'timestamp': self.created_at,
+                'error_message': self.message,  # Store full message in error_message
+                'input_tokens': Decimal(str(len(self.message.split()))) if self.message else Decimal('0'),  # Word count
+                'output_tokens': Decimal(str(len(self.admin_reply.split()))) if self.admin_reply else Decimal('0'),  # Reply word count
+                'response_time_ms': Decimal('0') if self.replied_at else None,
+                'estimated_cost': json.dumps(escalation_metadata)  # Store escalation metadata as JSON
+            }
+            
+            api_usage_table.put_item(Item=item)
+            return True
+        except Exception as e:
+            print(f"Error saving contact request: {e}")
+            return False
+    
+    def reply(self, admin_email, reply_message):
+        """Mark request as replied with admin response"""
+        self.admin_reply = reply_message
+        self.replied_at = datetime.now(timezone.utc).isoformat()
+        self.replied_by = admin_email
+        self.status = 'replied'
+        self.escalation_stage = 'replied'
+        return self.save()
+    
+    def mark_closed(self):
+        """Mark request as closed"""
+        self.status = 'closed'
+        self.escalation_stage = 'closed'
+        return self.save()
+    
+    def escalate(self, admin_email, escalation_stage, priority=None):
+        """Escalate request to different stage"""
+        valid_stages = ['new', 'in_progress', 'replied', 'closed']
+        if escalation_stage not in valid_stages:
+            return False
+        
+        self.escalation_stage = escalation_stage
+        self.escalated_at = datetime.now(timezone.utc).isoformat()
+        self.escalated_by = admin_email
+        
+        if priority:
+            valid_priorities = ['low', 'normal', 'high', 'urgent']
+            if priority in valid_priorities:
+                self.priority = priority
+        
+        # Update status to match escalation stage
+        if escalation_stage in ['new', 'in_progress', 'replied', 'closed']:
+            self.status = escalation_stage
+            
+        return self.save()
+    
+    def set_priority(self, admin_email, priority):
+        """Set priority level"""
+        valid_priorities = ['low', 'normal', 'high', 'urgent']
+        if priority not in valid_priorities:
+            return False
+        
+        self.priority = priority
+        self.escalated_at = datetime.now(timezone.utc).isoformat()
+        self.escalated_by = admin_email
+        return self.save()
+    
+    def mark_in_progress(self, admin_email):
+        """Mark request as in progress"""
+        self.status = 'in_progress'
+        self.escalation_stage = 'in_progress'
+        self.escalated_at = datetime.now(timezone.utc).isoformat()
+        self.escalated_by = admin_email
+        return self.save()
+    
+    @staticmethod
+    def get_all(limit=100, status=None):
+        """Get all contact requests, optionally filtered by status"""
+        try:
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            
+            if status:
+                # Filter by status using success field mapping
+                success_value = True if status == 'replied' else False
+                response = api_usage_table.scan(
+                    FilterExpression='api_type = :api_type AND success = :status',
+                    ExpressionAttributeValues={
+                        ':api_type': 'contact_request',
+                        ':status': success_value
+                    },
+                    Limit=limit
+                )
+            else:
+                response = api_usage_table.scan(
+                    FilterExpression='api_type = :api_type',
+                    ExpressionAttributeValues={':api_type': 'contact_request'},
+                    Limit=limit
+                )
+            
+            requests = []
+            for item in response.get('Items', []):
+                # Parse escalation metadata from JSON
+                import json
+                escalation_metadata = {}
+                try:
+                    if item.get('estimated_cost') and isinstance(item.get('estimated_cost'), str):
+                        escalation_metadata = json.loads(item.get('estimated_cost', '{}'))
+                except (json.JSONDecodeError, TypeError):
+                    escalation_metadata = {}
+                
+                # Determine status and escalation stage
+                escalation_stage = escalation_metadata.get('escalation_stage', 'new')
+                if item.get('success') and escalation_metadata:
+                    status = 'replied'
+                elif escalation_metadata:
+                    status = 'in_progress'
+                else:
+                    status = 'new'
+                
+                contact_request = ContactRequest(
+                    request_id=item['log_id'],
+                    name=item.get('endpoint', ''),
+                    email=item.get('user_id', ''),
+                    subject=item.get('feature_used', ''),
+                    category=item.get('model', 'general'),
+                    message=item.get('error_message', ''),
+                    status=status,
+                    escalation_stage=escalation_stage,
+                    priority=escalation_metadata.get('priority', 'normal'),
+                    created_at=item.get('timestamp', ''),
+                    admin_reply=escalation_metadata.get('admin_reply'),
+                    replied_at=datetime.fromtimestamp(float(item['response_time_ms']) / 1000, tz=timezone.utc).isoformat() if item.get('response_time_ms') else None,
+                    replied_by=escalation_metadata.get('escalated_by'),
+                    escalated_at=escalation_metadata.get('escalated_at'),
+                    escalated_by=escalation_metadata.get('escalated_by')
+                )
+                requests.append(contact_request)
+            
+            # Sort by creation date (most recent first)
+            requests.sort(key=lambda x: x.created_at, reverse=True)
+            return requests
+            
+        except Exception as e:
+            print(f"Error fetching contact requests: {e}")
+            return []
+    
+    @staticmethod
+    def get_by_id(request_id):
+        """Get contact request by ID"""
+        try:
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            response = api_usage_table.get_item(Key={'log_id': request_id})
+            
+            item = response.get('Item')
+            if item and item.get('api_type') == 'contact_request':
+                # Parse escalation metadata from JSON
+                import json
+                escalation_metadata = {}
+                try:
+                    if item.get('estimated_cost') and isinstance(item.get('estimated_cost'), str):
+                        escalation_metadata = json.loads(item.get('estimated_cost', '{}'))
+                except (json.JSONDecodeError, TypeError):
+                    escalation_metadata = {}
+                
+                # Determine status and escalation stage
+                escalation_stage = escalation_metadata.get('escalation_stage', 'new')
+                if item.get('success') and escalation_metadata:
+                    status = 'replied'
+                elif escalation_metadata:
+                    status = 'in_progress'
+                else:
+                    status = 'new'
+                
+                return ContactRequest(
+                    request_id=item['log_id'],
+                    name=item.get('endpoint', ''),
+                    email=item.get('user_id', ''),
+                    subject=item.get('feature_used', ''),
+                    category=item.get('model', 'general'),
+                    message=item.get('error_message', ''),
+                    status=status,
+                    escalation_stage=escalation_stage,
+                    priority=escalation_metadata.get('priority', 'normal'),
+                    created_at=item.get('timestamp', ''),
+                    admin_reply=escalation_metadata.get('admin_reply'),
+                    replied_at=datetime.fromtimestamp(float(item['response_time_ms']) / 1000, tz=timezone.utc).isoformat() if item.get('response_time_ms') else None,
+                    replied_by=escalation_metadata.get('escalated_by'),
+                    escalated_at=escalation_metadata.get('escalated_at'),
+                    escalated_by=escalation_metadata.get('escalated_by')
+                )
+            return None
+        except Exception as e:
+            print(f"Error fetching contact request by ID: {e}")
+            return None
+    
+    @staticmethod
+    def get_stats():
+        """Get contact request statistics"""
+        try:
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            response = api_usage_table.scan(
+                FilterExpression='api_type = :api_type',
+                ExpressionAttributeValues={':api_type': 'contact_request'}
+            )
+            
+            items = response.get('Items', [])
+            total = len(items)
+            
+            # Parse escalation metadata from each item to get proper counts
+            import json
+            stage_counts = {'new': 0, 'in_progress': 0, 'replied': 0, 'closed': 0}
+            
+            for item in items:
+                escalation_metadata = {}
+                try:
+                    if item.get('estimated_cost') and isinstance(item.get('estimated_cost'), str):
+                        escalation_metadata = json.loads(item.get('estimated_cost', '{}'))
+                except (json.JSONDecodeError, TypeError):
+                    escalation_metadata = {}
+                
+                # Get escalation stage from metadata, default to 'new'
+                escalation_stage = escalation_metadata.get('escalation_stage', 'new')
+                if escalation_stage in stage_counts:
+                    stage_counts[escalation_stage] += 1
+                else:
+                    stage_counts['new'] += 1  # Default unknown stages to 'new'
+            
+            return {
+                'total': total,
+                'new': stage_counts['new'],
+                'in_progress': stage_counts['in_progress'],
+                'replied': stage_counts['replied'],
+                'closed': stage_counts['closed']
+            }
+            
+        except Exception as e:
+            print(f"Error getting contact request stats: {e}")
+            return {'total': 0, 'new': 0, 'in_progress': 0, 'replied': 0, 'closed': 0}
+
 
