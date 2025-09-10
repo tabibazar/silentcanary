@@ -1,0 +1,41 @@
+{% extends "emails/base.html" %}
+
+{% block title %}SilentCanary Support - Reply to Your Contact Request{% endblock %}
+
+{% block content %}
+<h2>Reply to Your Support Request</h2>
+
+<p>Hello <strong>{{ user_name }}</strong>,</p>
+
+<p>Thank you for contacting SilentCanary support. We've received your message and are pleased to provide the following response:</p>
+
+<div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; border-left: 4px solid #28a745; margin: 20px 0;">
+    <h4 style="margin-top: 0; color: #28a745;">Support Team Response:</h4>
+    {{ admin_reply | nl2br }}
+</div>
+
+<div style="background-color: #e9ecef; padding: 15px; border-radius: 4px; margin: 20px 0;">
+    <h5 style="margin-top: 0;">Your Original Message:</h5>
+    <p><strong>Subject:</strong> {{ original_subject }}</p>
+    <div style="background-color: #ffffff; padding: 10px; border-radius: 4px; margin-top: 10px;">
+        {{ original_message | nl2br }}
+    </div>
+</div>
+
+<p><strong>Need further assistance?</strong></p>
+<ul>
+    <li>Submit a new contact request at <a href="https://silentcanary.com/contact">silentcanary.com/contact</a></li>
+    <li>Visit our <a href="https://silentcanary.com/help">documentation</a> for more resources</li>
+    <li>Check our <a href="https://silentcanary.com/help/faq">FAQ</a> for common questions</li>
+</ul>
+
+<p>Best regards,<br>
+<strong>{{ admin_email }}</strong><br>
+The SilentCanary Support Team</p>
+
+<hr style="border: none; border-top: 1px solid #dee2e6; margin: 30px 0;">
+<p style="font-size: 12px; color: #6c757d;">
+    This response is from SilentCanary support. 
+    For additional questions, please submit a new contact request at silentcanary.com/contact.
+</p>
+{% endblock %}
