@@ -19,7 +19,7 @@ import time
 import logging
 import json
 # Import our DynamoDB models  
-from models import User, Canary, CanaryLog, SmartAlert, Subscription, SystemSettings, get_dynamodb_resource
+from models import User, Canary, CanaryLog, SmartAlert, Subscription, SystemSettings, ContactRequest, get_dynamodb_resource
 
 # Load environment variables from .env file
 load_dotenv()
@@ -51,7 +51,7 @@ app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USE_SSL'] = False
 app.config['MAIL_USERNAME'] = 'apikey'
 app.config['MAIL_PASSWORD'] = os.environ.get('SENDGRID_API_KEY')
-app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'auth@avriz.com')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'no-reply@silentcanary.com')
 
 # reCAPTCHA configuration
 app.config['RECAPTCHA_SITE_KEY'] = os.environ.get('RECAPTCHA_SITE_KEY')
@@ -79,6 +79,16 @@ def log_all_requests():
             print(f"📍 User ID: {current_user.user_id}")
     return None  # Continue processing
 mail = Mail(app)
+
+# Add custom Jinja2 filters
+from markupsafe import Markup
+
+@app.template_filter('nl2br')
+def nl2br(value):
+    """Convert newlines to <br> tags"""
+    if not value:
+        return value
+    return Markup(value.replace('\n', '<br>\n'))
 
 # Email templating function
 def send_templated_email(recipients, subject, template_name, **template_vars):
@@ -796,6 +806,173 @@ def admin_update_email(user_id):
     
     return redirect(url_for('admin'))
 
+@app.route('/admin/contact-requests')
+@login_required
+@admin_required
+def admin_contact_requests():
+    """Admin panel for managing contact requests"""
+    try:
+        # Get status filter
+        status_filter = request.args.get('status', 'all')
+        
+        # Get contact requests
+        if status_filter == 'all':
+            contact_requests = ContactRequest.get_all(limit=200)
+        else:
+            contact_requests = ContactRequest.get_all(limit=200, status=status_filter)
+        
+        # Get statistics
+        stats = ContactRequest.get_stats()
+        
+        return render_template('admin/contact_requests.html', 
+                             contact_requests=contact_requests, 
+                             stats=stats, 
+                             status_filter=status_filter)
+        
+    except Exception as e:
+        flash(f'Error loading contact requests: {e}', 'error')
+        return redirect(url_for('admin'))
+
+@app.route('/admin/contact-requests/<request_id>')
+@login_required
+@admin_required
+def admin_view_contact_request(request_id):
+    """View individual contact request"""
+    try:
+        contact_request = ContactRequest.get_by_id(request_id)
+        if not contact_request:
+            flash('Contact request not found', 'error')
+            return redirect(url_for('admin_contact_requests'))
+        
+        return render_template('admin/view_contact_request.html', request=contact_request)
+        
+    except Exception as e:
+        flash(f'Error loading contact request: {e}', 'error')
+        return redirect(url_for('admin_contact_requests'))
+
+@app.route('/admin/contact-requests/<request_id>/reply', methods=['POST'])
+@login_required
+@admin_required
+def admin_reply_contact_request(request_id):
+    """Reply to a contact request via email"""
+    try:
+        contact_request = ContactRequest.get_by_id(request_id)
+        if not contact_request:
+            flash('Contact request not found', 'error')
+            return redirect(url_for('admin_contact_requests'))
+        
+        reply_message = request.form.get('reply_message', '').strip()
+        if not reply_message:
+            flash('Reply message is required', 'error')
+            return redirect(url_for('admin_view_contact_request', request_id=request_id))
+        
+        # Send reply email from reza@silentcanary.com (QA setting)
+        admin_email = 'reza@silentcanary.com'  # QA specific email
+        
+        try:
+            # Send reply email to user
+            send_templated_email(
+                recipients=contact_request.email,
+                subject=f'Re: {contact_request.subject}',
+                template_name='contact_reply',
+                user_name=contact_request.name,
+                original_subject=contact_request.subject,
+                original_message=contact_request.message,
+                admin_reply=reply_message,
+                admin_email=admin_email
+            )
+            
+            # Mark request as replied
+            if contact_request.reply(admin_email, reply_message):
+                flash('Reply sent successfully!', 'success')
+            else:
+                flash('Email sent but failed to update request status', 'warning')
+            
+        except Exception as e:
+            print(f"Error sending reply email: {e}")
+            flash('Failed to send reply email', 'error')
+        
+        return redirect(url_for('admin_view_contact_request', request_id=request_id))
+        
+    except Exception as e:
+        flash(f'Error processing reply: {e}', 'error')
+        return redirect(url_for('admin_contact_requests'))
+
+@app.route('/admin/contact-requests/<request_id>/close', methods=['POST'])
+@login_required
+@admin_required
+def admin_close_contact_request(request_id):
+    """Close a contact request"""
+    try:
+        contact_request = ContactRequest.get_by_id(request_id)
+        if not contact_request:
+            flash('Contact request not found', 'error')
+            return redirect(url_for('admin_contact_requests'))
+        
+        if contact_request.mark_closed():
+            flash('Contact request closed successfully', 'success')
+        else:
+            flash('Failed to close contact request', 'error')
+            
+        return redirect(url_for('admin_contact_requests'))
+        
+    except Exception as e:
+        flash(f'Error closing contact request: {e}', 'error')
+        return redirect(url_for('admin_contact_requests'))
+
+@app.route('/admin/contact-requests/<request_id>/escalate', methods=['POST'])
+@login_required
+@admin_required
+def admin_escalate_contact_request(request_id):
+    """Escalate a contact request to different stage"""
+    try:
+        contact_request = ContactRequest.get_by_id(request_id)
+        if not contact_request:
+            flash('Contact request not found', 'error')
+            return redirect(url_for('admin_contact_requests'))
+        
+        escalation_stage = request.form.get('escalation_stage')
+        priority = request.form.get('priority')
+        admin_email = current_user.email
+        
+        if escalation_stage:
+            if contact_request.escalate(admin_email, escalation_stage, priority):
+                flash(f'Request escalated to {escalation_stage.title()} stage', 'success')
+            else:
+                flash('Failed to escalate request', 'error')
+        elif priority:
+            if contact_request.set_priority(admin_email, priority):
+                flash(f'Priority set to {priority.title()}', 'success')
+            else:
+                flash('Failed to set priority', 'error')
+        
+        return redirect(url_for('admin_view_contact_request', request_id=request_id))
+        
+    except Exception as e:
+        flash(f'Error escalating request: {e}', 'error')
+        return redirect(url_for('admin_contact_requests'))
+
+@app.route('/admin/contact-requests/<request_id>/mark-progress', methods=['POST'])
+@login_required
+@admin_required
+def admin_mark_progress_contact_request(request_id):
+    """Mark contact request as in progress"""
+    try:
+        contact_request = ContactRequest.get_by_id(request_id)
+        if not contact_request:
+            flash('Contact request not found', 'error')
+            return redirect(url_for('admin_contact_requests'))
+        
+        if contact_request.mark_in_progress(current_user.email):
+            flash('Request marked as in progress', 'success')
+        else:
+            flash('Failed to update request status', 'error')
+            
+        return redirect(url_for('admin_view_contact_request', request_id=request_id))
+        
+    except Exception as e:
+        flash(f'Error updating request: {e}', 'error')
+        return redirect(url_for('admin_contact_requests'))
 
 # Subscription functionality removed - using Buy Me Coffee instead
 
@@ -808,6 +985,21 @@ def contact():
     
     if form.validate_on_submit():
         try:
+            # Save contact request to database
+            contact_request = ContactRequest(
+                name=form.name.data,
+                email=form.email.data,
+                subject=form.subject.data,
+                category=form.category.data,
+                message=form.message.data,
+                status='new'
+            )
+            
+            if contact_request.save():
+                print(f"✅ Contact request saved to database: {contact_request.request_id}")
+            else:
+                print(f"❌ Failed to save contact request to database")
+            
             # Send email notification to support team
             send_templated_email(
                 recipients='support@silentcanary.com',
@@ -834,7 +1026,7 @@ def contact():
             return redirect(url_for('contact'))
             
         except Exception as e:
-            print(f"Error sending contact email: {e}")
+            print(f"Error processing contact form: {e}")
             flash('⚠️ There was an error sending your message. Please try again or email us directly at support@silentcanary.com', 'error')
     
     return render_template('contact.html', form=form)
@@ -3296,7 +3488,7 @@ def call_claude_api(prompt, user_api_key, max_tokens=1000, feature_used='unknown
             print("call_claude_api: Client created, making API call...")  # Debug log
             
             response = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-5-sonnet-20240620",
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -3382,7 +3574,7 @@ def call_claude_api(prompt, user_api_key, max_tokens=1000, feature_used='unknown
                 user_id=user_id,
                 api_type='anthropic',
                 endpoint='messages',
-                model='claude-3-5-sonnet-20241022',
+                model='claude-3-5-sonnet-20240620',
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 total_tokens=total_tokens,
@@ -3408,7 +3600,7 @@ def call_claude_api(prompt, user_api_key, max_tokens=1000, feature_used='unknown
             user_id=user_id,
             api_type='anthropic',
             endpoint='messages',
-            model='claude-3-5-sonnet-20241022',
+            model='claude-3-5-sonnet-20240620',
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
@@ -3455,7 +3647,7 @@ def validate_anthropic_api_key(api_key):
         
         # Make a minimal test call
         response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-5-sonnet-20240620",
             max_tokens=5,
             messages=[{"role": "user", "content": "Hi"}]
         )
