@@ -114,14 +114,14 @@
             <a class="btn btn-light btn-lg px-4" href="{{ url_for('register') }}">
                 <i class="fas fa-rocket me-2"></i>Get Started Free
             </a>
-            <a class="btn btn-warning btn-lg px-4" href="https://buymeacoffee.com/silentcanary" target="_blank">
-                <i class="fas fa-coffee me-2"></i>Buy Me Coffee
+            <a class="btn btn-outline-primary btn-lg px-4" href="{{ url_for('subscription_plans') }}">
+                <i class="fas fa-credit-card me-2"></i>View Pricing
             </a>
         </div>
         <p class="mt-3 small opacity-75">
-            <i class="fas fa-check-circle me-1"></i> Completely free forever • 
+            <i class="fas fa-check-circle me-1"></i> 1 canary free forever • 
             <i class="fas fa-check-circle me-1"></i> No credit card required • 
-            <i class="fas fa-check-circle me-1"></i> Unlimited canaries
+            <i class="fas fa-check-circle me-1"></i> All features included
         </p>
     </div>
 </div>
@@ -223,10 +223,10 @@
 
 <!-- Support Section -->
 <div class="bg-light p-5 rounded text-center mb-5">
-    <h3 class="mb-3">Support SilentCanary</h3>
-    <p class="mb-4">SilentCanary is completely free to use with unlimited canaries. If you find it useful, consider supporting development with a coffee!</p>
-    <a href="https://buymeacoffee.com/silentcanary" target="_blank" class="btn btn-warning btn-lg">
-        <i class="fas fa-coffee me-2"></i>Buy Me Coffee
+    <h3 class="mb-3">Simple, Transparent Pricing</h3>
+    <p class="mb-4">Start free with 1 canary forever. Upgrade when you need more canaries - all features included in every plan!</p>
+    <a href="{{ url_for('subscription_plans') }}" class="btn btn-primary btn-lg">
+        <i class="fas fa-credit-card me-2"></i>View All Plans
     </a>
 </div>
 

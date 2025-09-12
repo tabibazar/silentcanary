@@ -24,7 +24,7 @@ from models import User, Canary, CanaryLog, SmartAlert, Subscription, SystemSett
 # Load environment variables from .env file
 load_dotenv()
 
-# Stripe removed - using Buy Me Coffee donation model
+# Stripe integration for subscription payments
 
 app = Flask(__name__)
 # Security fix: Remove hardcoded fallback secret key
@@ -974,9 +974,9 @@ def admin_mark_progress_contact_request(request_id):
         flash(f'Error updating request: {e}', 'error')
         return redirect(url_for('admin_contact_requests'))
 
-# Subscription functionality removed - using Buy Me Coffee instead
+# Subscription functionality with Stripe integration
 
-# All subscription and payment functionality removed - using Buy Me Coffee donation model
+# Subscription and payment functionality with Stripe
 
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
@@ -1076,12 +1076,12 @@ def resources_examples():
     """Resources: Examples page"""
     return render_template('help/examples.html')
 
-# Stripe webhooks removed - using Buy Me Coffee donation model
+# Stripe webhooks for subscription management
 
 @app.route('/create_canary', methods=['GET', 'POST'])
 @login_required
 def create_canary():
-    # No subscription limits - unlimited canaries with Buy Me Coffee model
+    # Check subscription limits based on user's plan
     
     form = CanaryForm()
     if form.validate_on_submit():
