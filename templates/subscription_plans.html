@@ -143,18 +143,22 @@
                         <div class="current-plan-badge">Current Plan</div>
                     {% endif %}
                     
-                    <h4 class="card-title">Free</h4>
+                    <h4 class="card-title">Solo</h4>
                     <div class="plan-price">$0</div>
-                    <div class="plan-period">per month</div>
+                    <div class="plan-period">forever</div>
                     
                     <hr class="my-4">
                     
                     <ul class="feature-list text-left">
                         <li><span class="feature-check">✓</span> 1 Canary</li>
-                        <li><span class="feature-check">✓</span> Basic Monitoring</li>
+                        <li><span class="feature-check">✓</span> Complete Feature Set</li>
                         <li><span class="feature-check">✓</span> Email Alerts</li>
                         <li><span class="feature-check">✓</span> Web Dashboard</li>
                         <li><span class="feature-check">✓</span> API Access</li>
+                        <li><span class="feature-check">✓</span> Smart Alerts (AI)</li>
+                        <li><span class="feature-check">✓</span> Advanced Analytics</li>
+                        <li><span class="feature-check">✓</span> Custom Webhooks</li>
+                        <li><span class="feature-check">✓</span> Email Support</li>
                     </ul>
                     
                     <div class="mt-4">
@@ -176,43 +180,44 @@
             </div>
         </div>
         
-        <!-- Starter Plan -->
+        <!-- Startup Plan -->
         <div class="col-lg-3 col-md-6 mb-4">
-            <div class="card plan-card {% if current_user.is_authenticated and subscription and subscription.plan_name == 'starter' %}current{% endif %}">
+            <div class="card plan-card {% if current_user.is_authenticated and subscription and subscription.plan_name == 'startup' %}current{% endif %}">
                 <div class="card-body text-center p-4">
-                    {% if current_user.is_authenticated and subscription and subscription.plan_name == 'starter' %}
+                    {% if current_user.is_authenticated and subscription and subscription.plan_name == 'startup' %}
                         <div class="current-plan-badge">Current Plan</div>
                     {% endif %}
                     
-                    <h4 class="card-title">Starter</h4>
-                    <div class="plan-price">$5</div>
+                    <h4 class="card-title">Startup</h4>
+                    <div class="plan-price">$7</div>
                     <div class="plan-period">per month</div>
                     
                     <hr class="my-4">
                     
                     <ul class="feature-list text-left">
-                        <li><span class="feature-check">✓</span> 3 Canaries</li>
-                        <li><span class="feature-check">✓</span> Basic Monitoring</li>
+                        <li><span class="feature-check">✓</span> 5 Canaries</li>
+                        <li><span class="feature-check">✓</span> Complete Feature Set</li>
                         <li><span class="feature-check">✓</span> Email Alerts</li>
                         <li><span class="feature-check">✓</span> Web Dashboard</li>
                         <li><span class="feature-check">✓</span> API Access</li>
                         <li><span class="feature-check">✓</span> Smart Alerts (AI)</li>
                         <li><span class="feature-check">✓</span> Advanced Analytics</li>
                         <li><span class="feature-check">✓</span> Custom Webhooks</li>
+                        <li><span class="feature-check">✓</span> Email Support</li>
                     </ul>
                     
                     <div class="mt-4">
-                        {% if current_user.is_authenticated and subscription and subscription.plan_name == 'starter' %}
+                        {% if current_user.is_authenticated and subscription and subscription.plan_name == 'startup' %}
                             <button class="btn btn-success btn-block" disabled>
                                 <i class="fas fa-check"></i> Current Plan
                             </button>
                         {% elif current_user.is_authenticated %}
-                            <a href="{{ url_for('upgrade_plan', plan='starter') }}" class="btn btn-primary btn-block">
-                                Upgrade to Starter
+                            <a href="{{ url_for('upgrade_plan', plan='startup') }}" class="btn btn-primary btn-block">
+                                Upgrade to Startup
                             </a>
                         {% else %}
                             <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
-                                Start 14-Day Free Trial
+                                Start Free Trial
                             </a>
                         {% endif %}
                     </div>
@@ -220,43 +225,44 @@
             </div>
         </div>
         
-        <!-- Pro Plan -->
+        <!-- Growth Plan -->
         <div class="col-lg-3 col-md-6 mb-4">
-            <div class="card plan-card popular {% if current_user.is_authenticated and subscription and subscription.plan_name == 'pro' %}current{% endif %}">
+            <div class="card plan-card popular {% if current_user.is_authenticated and subscription and subscription.plan_name == 'growth' %}current{% endif %}">
                 <div class="card-body text-center p-4">
-                    {% if current_user.is_authenticated and subscription and subscription.plan_name == 'pro' %}
+                    {% if current_user.is_authenticated and subscription and subscription.plan_name == 'growth' %}
                         <div class="current-plan-badge">Current Plan</div>
                     {% endif %}
                     
-                    <h4 class="card-title">Pro</h4>
-                    <div class="plan-price">$15</div>
+                    <h4 class="card-title">Growth</h4>
+                    <div class="plan-price">$25</div>
                     <div class="plan-period">per month</div>
                     
                     <hr class="my-4">
                     
                     <ul class="feature-list text-left">
-                        <li><span class="feature-check">✓</span> 10 Canaries</li>
-                        <li><span class="feature-check">✓</span> Basic Monitoring</li>
+                        <li><span class="feature-check">✓</span> 25 Canaries</li>
+                        <li><span class="feature-check">✓</span> Complete Feature Set</li>
                         <li><span class="feature-check">✓</span> Email Alerts</li>
                         <li><span class="feature-check">✓</span> Web Dashboard</li>
                         <li><span class="feature-check">✓</span> API Access</li>
                         <li><span class="feature-check">✓</span> Smart Alerts (AI)</li>
                         <li><span class="feature-check">✓</span> Advanced Analytics</li>
                         <li><span class="feature-check">✓</span> Custom Webhooks</li>
+                        <li><span class="feature-check">✓</span> Priority Support</li>
                     </ul>
                     
                     <div class="mt-4">
-                        {% if current_user.is_authenticated and subscription and subscription.plan_name == 'pro' %}
+                        {% if current_user.is_authenticated and subscription and subscription.plan_name == 'growth' %}
                             <button class="btn btn-success btn-block" disabled>
                                 <i class="fas fa-check"></i> Current Plan
                             </button>
                         {% elif current_user.is_authenticated %}
-                            <a href="{{ url_for('upgrade_plan', plan='pro') }}" class="btn btn-primary btn-block">
-                                Upgrade to Pro
+                            <a href="{{ url_for('upgrade_plan', plan='growth') }}" class="btn btn-primary btn-block">
+                                Upgrade to Growth
                             </a>
                         {% else %}
                             <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
-                                Start 14-Day Free Trial
+                                Start Free Trial
                             </a>
                         {% endif %}
                     </div>
@@ -264,46 +270,65 @@
             </div>
         </div>
         
-        <!-- Business Plan -->
+        <!-- Enterprise Plan -->
         <div class="col-lg-3 col-md-6 mb-4">
-            <div class="card plan-card {% if current_user.is_authenticated and subscription and subscription.plan_name == 'business' %}current{% endif %}">
+            <div class="card plan-card {% if current_user.is_authenticated and subscription and subscription.plan_name == 'enterprise' %}current{% endif %}">
                 <div class="card-body text-center p-4">
-                    {% if current_user.is_authenticated and subscription and subscription.plan_name == 'business' %}
+                    {% if current_user.is_authenticated and subscription and subscription.plan_name == 'enterprise' %}
                         <div class="current-plan-badge">Current Plan</div>
                     {% endif %}
                     
-                    <h4 class="card-title">Business</h4>
-                    <div class="plan-price">$50</div>
+                    <h4 class="card-title">Enterprise</h4>
+                    <div class="plan-price">$75</div>
                     <div class="plan-period">per month</div>
                     
                     <hr class="my-4">
                     
                     <ul class="feature-list text-left">
-                        <li><span class="feature-check">✓</span> 50 Canaries</li>
-                        <li><span class="feature-check">✓</span> Basic Monitoring</li>
+                        <li><span class="feature-check">✓</span> 100 Canaries</li>
+                        <li><span class="feature-check">✓</span> Complete Feature Set</li>
                         <li><span class="feature-check">✓</span> Email Alerts</li>
                         <li><span class="feature-check">✓</span> Web Dashboard</li>
                         <li><span class="feature-check">✓</span> API Access</li>
                         <li><span class="feature-check">✓</span> Smart Alerts (AI)</li>
                         <li><span class="feature-check">✓</span> Advanced Analytics</li>
                         <li><span class="feature-check">✓</span> Custom Webhooks</li>
+                        <li><span class="feature-check">✓</span> White-glove Support</li>
                     </ul>
                     
                     <div class="mt-4">
-                        {% if current_user.is_authenticated and subscription and subscription.plan_name == 'business' %}
+                        {% if current_user.is_authenticated and subscription and subscription.plan_name == 'enterprise' %}
                             <button class="btn btn-success btn-block" disabled>
                                 <i class="fas fa-check"></i> Current Plan
                             </button>
                         {% elif current_user.is_authenticated %}
-                            <a href="{{ url_for('upgrade_plan', plan='business') }}" class="btn btn-primary btn-block">
-                                Upgrade to Business
+                            <a href="{{ url_for('upgrade_plan', plan='enterprise') }}" class="btn btn-primary btn-block">
+                                Upgrade to Enterprise
                             </a>
                         {% else %}
                             <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
-                                Start 14-Day Free Trial
+                                Start Free Trial
                             </a>
                         {% endif %}
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Enterprise Plus Section -->
+    <div class="row mt-5">
+        <div class="col-12">
+            <div class="card bg-light">
+                <div class="card-body text-center p-5">
+                    <h3><i class="fas fa-building text-primary"></i> Need More Than 100 Canaries?</h3>
+                    <p class="lead text-muted mb-4">
+                        For organizations with large-scale monitoring needs, we offer custom enterprise plans
+                        with unlimited canaries and dedicated support.
+                    </p>
+                    <a href="{{ url_for('contact') }}" class="btn btn-primary btn-lg">
+                        <i class="fas fa-comments"></i> Contact Sales
+                    </a>
                 </div>
             </div>
         </div>
