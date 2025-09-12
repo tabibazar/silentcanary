@@ -205,8 +205,11 @@
                     <h4 class="card-title">Startup</h4>
                     <div class="plan-price" data-monthly="7" data-annual="70">$7</div>
                     <div class="plan-period" data-monthly="per month" data-annual="per year">per month</div>
+                    <div class="monthly-equivalent text-muted" style="display: none;">
+                        <small>$5.83/month billed annually</small>
+                    </div>
                     <div class="annual-savings text-success" style="display: none;">
-                        <small>Save $14/year</small>
+                        <small><strong>💰 Save $14/year (17% off)</strong></small>
                     </div>
                     
                     <hr class="my-4">
@@ -253,8 +256,11 @@
                     <h4 class="card-title">Growth</h4>
                     <div class="plan-price" data-monthly="25" data-annual="250">$25</div>
                     <div class="plan-period" data-monthly="per month" data-annual="per year">per month</div>
+                    <div class="monthly-equivalent text-muted" style="display: none;">
+                        <small>$20.83/month billed annually</small>
+                    </div>
                     <div class="annual-savings text-success" style="display: none;">
-                        <small>Save $50/year</small>
+                        <small><strong>💰 Save $50/year (17% off)</strong></small>
                     </div>
                     
                     <hr class="my-4">
@@ -301,8 +307,11 @@
                     <h4 class="card-title">Enterprise</h4>
                     <div class="plan-price" data-monthly="75" data-annual="750">$75</div>
                     <div class="plan-period" data-monthly="per month" data-annual="per year">per month</div>
+                    <div class="monthly-equivalent text-muted" style="display: none;">
+                        <small>$62.50/month billed annually</small>
+                    </div>
                     <div class="annual-savings text-success" style="display: none;">
-                        <small>Save $150/year</small>
+                        <small><strong>💰 Save $150/year (17% off)</strong></small>
                     </div>
                     
                     <hr class="my-4">
@@ -390,9 +399,13 @@
                 }
             });
             
-            // Show/hide savings
+            // Show/hide savings and monthly equivalent
             document.querySelectorAll('.annual-savings').forEach(savingsElement => {
                 savingsElement.style.display = isAnnual ? 'block' : 'none';
+            });
+            
+            document.querySelectorAll('.monthly-equivalent').forEach(equivalentElement => {
+                equivalentElement.style.display = isAnnual ? 'block' : 'none';
             });
             
             // Update upgrade buttons to include billing period
