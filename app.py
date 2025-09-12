@@ -1031,6 +1031,45 @@ def contact():
     
     return render_template('contact.html', form=form)
 
+@app.route('/pricing')
+def subscription_plans():
+    """Subscription plans page"""
+    # Get user's current subscription and usage if logged in
+    subscription = None
+    usage = None
+    
+    if current_user.is_authenticated:
+        try:
+            from models import Subscription
+            subscription = Subscription.get_by_user_id(current_user.user_id)
+            
+            # Calculate usage statistics
+            if subscription:
+                from models import Canary
+                canaries = Canary.get_by_user_id(current_user.user_id)
+                canaries_used = len(canaries) if canaries else 0
+                
+                # Define limits based on plan
+                limits = {
+                    'free': 1,
+                    'startup': 5,
+                    'growth': 25,
+                    'enterprise': 100
+                }
+                
+                canary_limit = limits.get(subscription.plan_name, 1)
+                usage_percentage = min((canaries_used / canary_limit) * 100, 100) if canary_limit > 0 else 0
+                
+                usage = {
+                    'canaries_used': canaries_used,
+                    'canary_limit': canary_limit,
+                    'usage_percentage': usage_percentage
+                }
+        except Exception as e:
+            print(f"Error getting subscription info: {e}")
+    
+    return render_template('subscription_plans.html', subscription=subscription, usage=usage)
+
 @app.route('/terms-of-service')
 def terms_of_service():
     """Terms of Service page"""
