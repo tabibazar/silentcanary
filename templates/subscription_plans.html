@@ -118,6 +118,20 @@
                 Subscription Plans
             </h1>
             
+            <!-- Billing Period Toggle -->
+            <div class="text-center mb-4">
+                <div class="btn-group" role="group" aria-label="Billing period">
+                    <input type="radio" class="btn-check" name="billing-period" id="monthly" autocomplete="off" checked>
+                    <label class="btn btn-outline-primary" for="monthly">Monthly</label>
+                    
+                    <input type="radio" class="btn-check" name="billing-period" id="annual" autocomplete="off">
+                    <label class="btn btn-outline-primary" for="annual">
+                        Annual 
+                        <span class="badge bg-success ms-1">2 months free!</span>
+                    </label>
+                </div>
+            </div>
+            
             {% if current_user.is_authenticated and usage %}
             <div class="alert alert-info mb-4">
                 <h5><i class="fas fa-info-circle"></i> Current Usage</h5>
@@ -189,8 +203,11 @@
                     {% endif %}
                     
                     <h4 class="card-title">Startup</h4>
-                    <div class="plan-price">$7</div>
-                    <div class="plan-period">per month</div>
+                    <div class="plan-price" data-monthly="7" data-annual="70">$7</div>
+                    <div class="plan-period" data-monthly="per month" data-annual="per year">per month</div>
+                    <div class="annual-savings text-success" style="display: none;">
+                        <small>Save $14/year</small>
+                    </div>
                     
                     <hr class="my-4">
                     
@@ -234,8 +251,11 @@
                     {% endif %}
                     
                     <h4 class="card-title">Growth</h4>
-                    <div class="plan-price">$25</div>
-                    <div class="plan-period">per month</div>
+                    <div class="plan-price" data-monthly="25" data-annual="250">$25</div>
+                    <div class="plan-period" data-monthly="per month" data-annual="per year">per month</div>
+                    <div class="annual-savings text-success" style="display: none;">
+                        <small>Save $50/year</small>
+                    </div>
                     
                     <hr class="my-4">
                     
@@ -279,8 +299,11 @@
                     {% endif %}
                     
                     <h4 class="card-title">Enterprise</h4>
-                    <div class="plan-price">$75</div>
-                    <div class="plan-period">per month</div>
+                    <div class="plan-price" data-monthly="75" data-annual="750">$75</div>
+                    <div class="plan-period" data-monthly="per month" data-annual="per year">per month</div>
+                    <div class="annual-savings text-success" style="display: none;">
+                        <small>Save $150/year</small>
+                    </div>
                     
                     <hr class="my-4">
                     
@@ -339,6 +362,59 @@
 
 {% block extra_js %}
 <script>
-    // Add any additional JavaScript if needed
+    // Billing period toggle functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        const monthlyRadio = document.getElementById('monthly');
+        const annualRadio = document.getElementById('annual');
+        
+        function updatePricing() {
+            const isAnnual = annualRadio.checked;
+            
+            // Update all plan prices
+            document.querySelectorAll('.plan-price').forEach(priceElement => {
+                const monthlyPrice = priceElement.getAttribute('data-monthly');
+                const annualPrice = priceElement.getAttribute('data-annual');
+                
+                if (monthlyPrice && annualPrice) {
+                    priceElement.textContent = isAnnual ? `$${annualPrice}` : `$${monthlyPrice}`;
+                }
+            });
+            
+            // Update billing periods
+            document.querySelectorAll('.plan-period').forEach(periodElement => {
+                const monthlyPeriod = periodElement.getAttribute('data-monthly');
+                const annualPeriod = periodElement.getAttribute('data-annual');
+                
+                if (monthlyPeriod && annualPeriod) {
+                    periodElement.textContent = isAnnual ? annualPeriod : monthlyPeriod;
+                }
+            });
+            
+            // Show/hide savings
+            document.querySelectorAll('.annual-savings').forEach(savingsElement => {
+                savingsElement.style.display = isAnnual ? 'block' : 'none';
+            });
+            
+            // Update upgrade buttons to include billing period
+            document.querySelectorAll('a[href*="upgrade_plan"]').forEach(button => {
+                const href = button.getAttribute('href');
+                const baseHref = href.split('?')[0];
+                const planMatch = baseHref.match(/plan=(\w+)/);
+                
+                if (planMatch) {
+                    const plan = planMatch[1];
+                    const billingPeriod = isAnnual ? 'annual' : 'monthly';
+                    button.href = `${baseHref}?billing=${billingPeriod}`;
+                }
+            });
+        }
+        
+        // Add event listeners
+        monthlyRadio.addEventListener('change', updatePricing);
+        annualRadio.addEventListener('change', updatePricing);
+        
+        // Initialize pricing display
+        updatePricing();
+    });
 </script>
 {% endblock %}
