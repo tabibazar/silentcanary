@@ -1989,6 +1989,7 @@ def account_management():
                 except:
                     pass
         
+        print(f"🎯 Template variables: billing_frequency={billing_frequency}, plan_name={subscription.plan_name if subscription else 'None'}")
         return render_template('account.html', 
                              subscription=subscription, 
                              usage=usage,
