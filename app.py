@@ -1958,6 +1958,23 @@ def account_management():
         
         current_plan_features = plan_features.get(subscription.plan_name if subscription else 'free', plan_features['free'])
         
+        # Get billing frequency from Stripe if available
+        billing_frequency = 'monthly'  # default
+        current_price = None
+        if subscription and subscription.stripe_subscription_id and subscription.plan_name != 'free':
+            import stripe
+            stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
+            if stripe.api_key:
+                try:
+                    stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
+                    if stripe_subscription.items and len(stripe_subscription.items.data) > 0:
+                        current_price = stripe_subscription.items.data[0].price
+                        if current_price and current_price.recurring:
+                            billing_frequency = current_price.recurring.interval
+                            print(f"🔄 Current billing frequency: {billing_frequency}")
+                except Exception as e:
+                    print(f"⚠️ Could not retrieve billing frequency from Stripe: {e}")
+        
         # Convert ISO string dates back to datetime objects for template formatting
         if subscription:
             from datetime import datetime
@@ -1976,7 +1993,9 @@ def account_management():
                              subscription=subscription, 
                              usage=usage,
                              billing_history=billing_history,
-                             current_plan_features=current_plan_features)
+                             current_plan_features=current_plan_features,
+                             billing_frequency=billing_frequency,
+                             current_price=current_price)
                              
     except Exception as e:
         print(f"❌ Error in account management: {e}")
@@ -2322,6 +2341,138 @@ def change_plan(new_plan):
             
     except Exception as e:
         print(f"❌ Error in change_plan: {e}")
+        flash('An unexpected error occurred. Please try again or contact support.', 'error')
+        return redirect(url_for('contact'))
+    
+    return redirect(url_for('account_management'))
+
+@app.route('/change_billing_frequency/<frequency>')
+@login_required
+def change_billing_frequency(frequency):
+    """Change user's billing frequency (monthly <-> annual) for the same plan"""
+    try:
+        # Validate frequency parameter
+        if frequency not in ['monthly', 'annual']:
+            flash('Invalid billing frequency specified.', 'error')
+            return redirect(url_for('account_management'))
+        
+        # Get current subscription
+        subscription = Subscription.get_by_user_id(current_user.user_id)
+        
+        if not subscription:
+            flash('No current subscription found.', 'error')
+            return redirect(url_for('account_management'))
+        
+        if subscription.plan_name == 'free':
+            flash('Billing frequency changes are not available for the Solo plan.', 'info')
+            return redirect(url_for('account_management'))
+        
+        # Define plan configurations
+        plan_config = {
+            'startup': {
+                'monthly_price_id': os.environ.get('STRIPE_STARTUP_MONTHLY_PRICE_ID'),
+                'annual_price_id': os.environ.get('STRIPE_STARTUP_ANNUAL_PRICE_ID'),
+                'name': 'Startup',
+                'monthly_price': 7,
+                'annual_price': 70
+            },
+            'growth': {
+                'monthly_price_id': os.environ.get('STRIPE_GROWTH_MONTHLY_PRICE_ID'),
+                'annual_price_id': os.environ.get('STRIPE_GROWTH_ANNUAL_PRICE_ID'),
+                'name': 'Growth',
+                'monthly_price': 25,
+                'annual_price': 250
+            },
+            'enterprise': {
+                'monthly_price_id': os.environ.get('STRIPE_ENTERPRISE_MONTHLY_PRICE_ID'),
+                'annual_price_id': os.environ.get('STRIPE_ENTERPRISE_ANNUAL_PRICE_ID'),
+                'name': 'Enterprise',
+                'monthly_price': 75,
+                'annual_price': 750
+            }
+        }
+        
+        current_plan_config = plan_config.get(subscription.plan_name)
+        if not current_plan_config:
+            flash('Invalid subscription plan. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+        
+        # Get the new price ID based on frequency
+        if frequency == 'annual':
+            new_price_id = current_plan_config['annual_price_id']
+            display_price = f"${current_plan_config['annual_price']}/year"
+            frequency_display = "Annual"
+        else:  # monthly
+            new_price_id = current_plan_config['monthly_price_id']
+            display_price = f"${current_plan_config['monthly_price']}/month"
+            frequency_display = "Monthly"
+        
+        if not new_price_id:
+            flash('Billing frequency not configured for this plan. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+        
+        # Check Stripe configuration
+        stripe_secret_key = os.environ.get('STRIPE_SECRET_KEY')
+        if not stripe_secret_key:
+            flash('Payment system not configured. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+        
+        if not subscription.stripe_subscription_id:
+            flash('No active Stripe subscription found. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+        
+        print(f"🔄 Changing billing frequency to {frequency} ({display_price}) for user: {current_user.email}")
+        
+        import stripe
+        stripe.api_key = stripe_secret_key
+        
+        try:
+            # Get current subscription from Stripe
+            stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
+            
+            # Check current billing interval
+            current_interval = 'monthly'  # default
+            if stripe_subscription.items and len(stripe_subscription.items.data) > 0:
+                current_price = stripe_subscription.items.data[0].price
+                if current_price and current_price.recurring:
+                    current_interval = current_price.recurring.interval
+                    if current_interval == 'year':
+                        current_interval = 'annual'
+            
+            # Don't change if it's already the requested frequency
+            if (current_interval == 'month' and frequency == 'monthly') or \
+               (current_interval == 'year' and frequency == 'annual'):
+                flash(f'You are already on {frequency_display.lower()} billing.', 'info')
+                return redirect(url_for('account_management'))
+            
+            # Modify the subscription to change billing frequency
+            updated_subscription = stripe.Subscription.modify(
+                subscription.stripe_subscription_id,
+                items=[{
+                    'id': stripe_subscription['items']['data'][0].id,
+                    'price': new_price_id,
+                }],
+                proration_behavior='create_prorations'  # Create prorations for billing change
+            )
+            
+            print(f"✅ Billing frequency changed successfully to {frequency}")
+            
+            if frequency == 'annual':
+                flash(f'Successfully switched to annual billing ({display_price}). You\'ll save money with yearly payments!', 'success')
+            else:
+                flash(f'Successfully switched to monthly billing ({display_price}). Changes are effective immediately.', 'success')
+                
+        except stripe.error.InvalidRequestError as e:
+            print(f"❌ Stripe Invalid Request Error during billing change: {e}")
+            flash('Invalid billing frequency change request. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+        except stripe.error.StripeError as e:
+            print(f"❌ Stripe error during billing frequency change: {e}")
+            flash('Error changing billing frequency. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+            
+    except Exception as e:
+        print(f"❌ Error in change_billing_frequency: {e}")
         flash('An unexpected error occurred. Please try again or contact support.', 'error')
         return redirect(url_for('contact'))
     

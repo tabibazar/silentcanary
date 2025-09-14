@@ -1,0 +1,439 @@
+{% extends "base.html" %}
+
+{% block title %}Account Management - SilentCanary{% endblock %}
+
+{% block head %}
+<style>
+    .account-card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+    
+    .account-card .card-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px 15px 0 0 !important;
+        border: none;
+        font-weight: 600;
+    }
+    
+    .plan-badge {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        display: inline-block;
+    }
+    
+    .plan-badge.startup {
+        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+    }
+    
+    .plan-badge.growth {
+        background: linear-gradient(135deg, #fd7e14 0%, #e55a00 100%);
+    }
+    
+    .plan-badge.enterprise {
+        background: linear-gradient(135deg, #6f42c1 0%, #563d7c 100%);
+    }
+    
+    .usage-bar {
+        background: #e9ecef;
+        border-radius: 10px;
+        overflow: hidden;
+        height: 25px;
+        margin-bottom: 10px;
+        position: relative;
+    }
+    
+    .usage-progress {
+        height: 100%;
+        background: linear-gradient(90deg, #28a745, #20c997);
+        border-radius: 10px;
+        transition: width 0.3s ease;
+        position: relative;
+    }
+    
+    .usage-progress.warning {
+        background: linear-gradient(90deg, #ffc107, #fd7e14);
+    }
+    
+    .usage-progress.danger {
+        background: linear-gradient(90deg, #dc3545, #e74c3c);
+    }
+    
+    .usage-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-weight: 600;
+        color: white;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        font-size: 0.9rem;
+    }
+    
+    .feature-item {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #f1f3f4;
+    }
+    
+    .feature-item:last-child {
+        border-bottom: none;
+    }
+    
+    .feature-check {
+        color: #28a745;
+        margin-right: 10px;
+        font-weight: bold;
+    }
+    
+    .billing-table {
+        font-size: 0.9rem;
+    }
+    
+    .billing-table th {
+        background: #f8f9fa;
+        border-top: none;
+        font-weight: 600;
+    }
+    
+    .status-badge {
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    
+    .status-paid {
+        background: #d4edda;
+        color: #155724;
+    }
+    
+    .status-pending {
+        background: #fff3cd;
+        color: #856404;
+    }
+    
+    .btn-account {
+        border-radius: 10px;
+        font-weight: 600;
+        padding: 10px 20px;
+        transition: all 0.3s ease;
+    }
+    
+    .btn-account:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0, 123, 255, 0.3);
+    }
+    
+    .alert-info {
+        border: none;
+        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        border-radius: 10px;
+        border-left: 4px solid #2196f3;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mb-0">
+            <i class="fas fa-user-circle text-primary"></i>
+            Account Management
+        </h1>
+        <div>
+            <a href="{{ url_for('settings') }}" class="btn btn-outline-secondary btn-account me-2">
+                <i class="fas fa-cog"></i> Settings
+            </a>
+            <a href="{{ url_for('subscription_plans') }}" class="btn btn-primary btn-account">
+                <i class="fas fa-credit-card"></i> View Plans
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Current Plan Card -->
+        <div class="col-lg-8 mb-4">
+            <div class="card account-card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-crown me-2"></i>Current Subscription Plan
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if subscription %}
+                        <div class="d-flex justify-content-between align-items-start mb-4">
+                            <div>
+                                <h4>
+                                    <span class="plan-badge {{ subscription.plan_name }}">
+                                        {% if subscription.plan_name == 'free' %}Solo Plan{% else %}{{ subscription.plan_name.title() }} Plan{% endif %}
+                                    </span>
+                                </h4>
+                                <p class="text-muted mb-0">
+                                    Status: <strong class="text-success">{{ subscription.status.title() }}</strong>
+                                    {% if subscription.plan_name != 'free' and billing_frequency %}
+                                        <br>
+                                        <small>Billing: <strong>{{ billing_frequency.title() }}ly</strong></small>
+                                    {% endif %}
+                                    {% if subscription.current_period_end %}
+                                        <br>
+                                        <small>
+                                            {% if subscription.status == 'active' %}
+                                                Next billing date: {{ subscription.current_period_end.strftime('%B %d, %Y') }}
+                                            {% else %}
+                                                Period ends: {{ subscription.current_period_end.strftime('%B %d, %Y') }}
+                                            {% endif %}
+                                        </small>
+                                    {% endif %}
+                                </p>
+                            </div>
+                            <div class="text-end">
+                                {% if subscription.plan_name != 'free' %}
+                                    <div class="btn-group">
+                                        {% if subscription.plan_name == 'startup' %}
+                                            <a href="{{ url_for('change_plan', new_plan='growth') }}" class="btn btn-outline-success btn-sm">
+                                                <i class="fas fa-arrow-up"></i> Upgrade to Growth
+                                            </a>
+                                        {% elif subscription.plan_name == 'growth' %}
+                                            <a href="{{ url_for('change_plan', new_plan='startup') }}" class="btn btn-outline-info btn-sm">
+                                                <i class="fas fa-arrow-down"></i> Downgrade to Startup
+                                            </a>
+                                            <a href="{{ url_for('change_plan', new_plan='enterprise') }}" class="btn btn-outline-success btn-sm">
+                                                <i class="fas fa-arrow-up"></i> Upgrade to Enterprise
+                                            </a>
+                                        {% elif subscription.plan_name == 'enterprise' %}
+                                            <a href="{{ url_for('change_plan', new_plan='growth') }}" class="btn btn-outline-info btn-sm">
+                                                <i class="fas fa-arrow-down"></i> Downgrade to Growth
+                                            </a>
+                                        {% endif %}
+                                    </div>
+                                {% else %}
+                                    <a href="{{ url_for('upgrade_plan', plan='startup') }}" class="btn btn-primary btn-sm">
+                                        <i class="fas fa-arrow-up"></i> Upgrade to Startup
+                                    </a>
+                                {% endif %}
+                            </div>
+                        </div>
+
+
+                        <!-- Plan Features -->
+                        <div>
+                            <h6 class="mb-3">
+                                <i class="fas fa-check-circle text-success me-2"></i>Your Plan Includes
+                            </h6>
+                            <div class="row">
+                                {% for feature in current_plan_features.features %}
+                                    <div class="col-md-6">
+                                        <div class="feature-item">
+                                            <span class="feature-check">✓</span>
+                                            <span>{{ feature }}</span>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>No Active Subscription</strong><br>
+                            You don't have an active subscription yet. Start with our free Solo plan or upgrade to access more features.
+                            <div class="mt-3">
+                                <a href="{{ url_for('subscription_plans') }}" class="btn btn-primary">
+                                    <i class="fas fa-rocket"></i> View Subscription Plans
+                                </a>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="col-lg-4 mb-4">
+            <div class="card account-card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-bolt me-2"></i>Quick Actions
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-primary btn-account">
+                            <i class="fas fa-tachometer-alt me-2"></i>View Dashboard
+                        </a>
+                        <a href="{{ url_for('create_canary') }}" class="btn btn-outline-success btn-account">
+                            <i class="fas fa-plus me-2"></i>Create New Canary
+                        </a>
+                        {% if subscription and subscription.plan_name == 'free' %}
+                            <a href="{{ url_for('upgrade_plan', plan='startup') }}" class="btn btn-success btn-account">
+                                <i class="fas fa-arrow-up me-2"></i>Upgrade to Startup
+                            </a>
+                        {% elif subscription and subscription.plan_name != 'free' %}
+                            <div class="dropdown mb-2">
+                                <button class="btn btn-outline-warning btn-account dropdown-toggle w-100" type="button" data-bs-toggle="dropdown">
+                                    <i class="fas fa-arrows-alt-v me-2"></i>Change Plan
+                                </button>
+                                <ul class="dropdown-menu w-100">
+                                    {% if subscription.plan_name == 'startup' %}
+                                        <li><a class="dropdown-item" href="{{ url_for('change_plan', new_plan='growth') }}">
+                                            <i class="fas fa-arrow-up text-success me-2"></i>Upgrade to Growth
+                                        </a></li>
+                                        <li><a class="dropdown-item" href="{{ url_for('change_plan', new_plan='enterprise') }}">
+                                            <i class="fas fa-arrow-up text-success me-2"></i>Upgrade to Enterprise
+                                        </a></li>
+                                    {% elif subscription.plan_name == 'growth' %}
+                                        <li><a class="dropdown-item" href="{{ url_for('change_plan', new_plan='startup') }}">
+                                            <i class="fas fa-arrow-down text-info me-2"></i>Downgrade to Startup
+                                        </a></li>
+                                        <li><a class="dropdown-item" href="{{ url_for('change_plan', new_plan='enterprise') }}">
+                                            <i class="fas fa-arrow-up text-success me-2"></i>Upgrade to Enterprise
+                                        </a></li>
+                                    {% elif subscription.plan_name == 'enterprise' %}
+                                        <li><a class="dropdown-item" href="{{ url_for('change_plan', new_plan='startup') }}">
+                                            <i class="fas fa-arrow-down text-info me-2"></i>Downgrade to Startup
+                                        </a></li>
+                                        <li><a class="dropdown-item" href="{{ url_for('change_plan', new_plan='growth') }}">
+                                            <i class="fas fa-arrow-down text-info me-2"></i>Downgrade to Growth
+                                        </a></li>
+                                    {% endif %}
+                                </ul>
+                            </div>
+                            {% if billing_frequency %}
+                                <div class="dropdown mb-2">
+                                    <button class="btn btn-outline-info btn-account dropdown-toggle w-100" type="button" data-bs-toggle="dropdown">
+                                        <i class="fas fa-calendar me-2"></i>Change Billing
+                                    </button>
+                                    <ul class="dropdown-menu w-100">
+                                        {% if billing_frequency == 'month' %}
+                                            <li><a class="dropdown-item" href="{{ url_for('change_billing_frequency', frequency='annual') }}">
+                                                <i class="fas fa-calendar-alt text-info me-2"></i>Switch to Annual Billing
+                                                <br><small class="text-muted">Save with yearly billing</small>
+                                            </a></li>
+                                        {% elif billing_frequency == 'year' %}
+                                            <li><a class="dropdown-item" href="{{ url_for('change_billing_frequency', frequency='monthly') }}">
+                                                <i class="fas fa-calendar-day text-info me-2"></i>Switch to Monthly Billing
+                                                <br><small class="text-muted">Pay month-to-month</small>
+                                            </a></li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
+                            {% endif %}
+                            <button class="btn btn-outline-danger btn-account" data-bs-toggle="modal" data-bs-target="#cancelModal">
+                                <i class="fas fa-times me-2"></i>Cancel Subscription
+                            </button>
+                        {% endif %}
+                        <a href="{{ url_for('settings') }}" class="btn btn-outline-secondary btn-account">
+                            <i class="fas fa-cog me-2"></i>Account Settings
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Billing History -->
+    {% if billing_history %}
+    <div class="row">
+        <div class="col-12">
+            <div class="card account-card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-file-invoice-dollar me-2"></i>Billing History
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table billing-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for invoice in billing_history %}
+                                <tr>
+                                    <td>{{ invoice.date }}</td>
+                                    <td>{{ invoice.description }}</td>
+                                    <td>${{ "%.2f"|format(invoice.amount) }} {{ invoice.currency }}</td>
+                                    <td>
+                                        <span class="status-badge status-{{ 'paid' if invoice.status == 'paid' else 'pending' }}">
+                                            {{ invoice.status.title() }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if invoice.invoice_pdf %}
+                                            <a href="{{ invoice.invoice_pdf }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-download"></i> PDF
+                                            </a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Cancel Subscription Modal -->
+{% if subscription and subscription.plan_name != 'free' %}
+<div class="modal fade" id="cancelModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Cancel Subscription</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to cancel your <strong>{{ subscription.plan_name.title() }}</strong> subscription?</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Important:</strong> 
+                    <ul class="mb-0 mt-2">
+                        <li>Your subscription will remain active until {{ subscription.current_period_end.strftime('%B %d, %Y') if subscription.current_period_end else 'the end of your billing period' }}</li>
+                        <li>You'll be downgraded to the Solo (Free) plan with 1 canary limit</li>
+                        <li>Any canaries beyond the free limit will be automatically disabled</li>
+                        <li>You can reactivate your subscription at any time</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Keep Subscription</button>
+                <form method="POST" action="{{ url_for('cancel_subscription') }}" style="display: inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="btn btn-danger">Yes, Cancel Subscription</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-refresh usage information every 30 seconds
+    setInterval(function() {
+        // You could implement AJAX refresh here if needed
+    }, 30000);
+});
+</script>
+{% endblock %}
