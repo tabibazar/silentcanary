@@ -25,6 +25,15 @@ from models import User, Canary, CanaryLog, SmartAlert, Subscription, SystemSett
 load_dotenv()
 
 # Stripe integration for subscription payments
+# Required environment variables for Stripe:
+# - STRIPE_SECRET_KEY: Your Stripe secret key
+# - STRIPE_WEBHOOK_SECRET: Webhook signing secret from Stripe dashboard
+# - STRIPE_STARTUP_MONTHLY_PRICE_ID: Price ID for Startup monthly plan
+# - STRIPE_STARTUP_ANNUAL_PRICE_ID: Price ID for Startup annual plan  
+# - STRIPE_GROWTH_MONTHLY_PRICE_ID: Price ID for Growth monthly plan
+# - STRIPE_GROWTH_ANNUAL_PRICE_ID: Price ID for Growth annual plan
+# - STRIPE_ENTERPRISE_MONTHLY_PRICE_ID: Price ID for Enterprise monthly plan
+# - STRIPE_ENTERPRISE_ANNUAL_PRICE_ID: Price ID for Enterprise annual plan
 
 app = Flask(__name__)
 # Security fix: Remove hardcoded fallback secret key
@@ -56,6 +65,10 @@ app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'no-re
 # reCAPTCHA configuration
 app.config['RECAPTCHA_SITE_KEY'] = os.environ.get('RECAPTCHA_SITE_KEY')
 app.config['RECAPTCHA_SECRET_KEY'] = os.environ.get('RECAPTCHA_SECRET_KEY')
+
+# Stripe configuration
+app.config['STRIPE_PUBLISHABLE_KEY'] = os.environ.get('STRIPE_PUBLISHABLE_KEY')
+app.config['STRIPE_SECRET_KEY'] = os.environ.get('STRIPE_SECRET_KEY')
 
 
 login_manager = LoginManager()
@@ -376,26 +389,79 @@ def register():
                 flash('Please complete the reCAPTCHA verification.', 'error')
                 return render_template('register.html', form=form)
             
-            # Verify reCAPTCHA with Google
-            recaptcha_data = {
-                'secret': app.config['RECAPTCHA_SECRET_KEY'],
-                'response': recaptcha_response,
-                'remoteip': request.remote_addr
-            }
-            
+            # Verify reCAPTCHA Enterprise with Google
             try:
-                r = requests.post('https://www.google.com/recaptcha/api/siteverify', data=recaptcha_data)
+                # Use reCAPTCHA Enterprise API
+                project_id = app.config.get('RECAPTCHA_PROJECT_ID', 'silentcanary')
+                recaptcha_api_key = app.config.get('RECAPTCHA_API_KEY', app.config['RECAPTCHA_SECRET_KEY'])
+                
+                # Prepare the request for reCAPTCHA Enterprise
+                url = f"https://recaptchaenterprise.googleapis.com/v1/projects/{project_id}/assessments?key={recaptcha_api_key}"
+                
+                payload = {
+                    "event": {
+                        "token": recaptcha_response,
+                        "expectedAction": "REGISTER",
+                        "siteKey": app.config['RECAPTCHA_SITE_KEY']
+                    }
+                }
+                
+                headers = {
+                    'Content-Type': 'application/json'
+                }
+                
+                r = requests.post(url, json=payload, headers=headers)
                 result = r.json()
                 
-                if not result.get('success', False):
-                    app.logger.warning(f"reCAPTCHA failed verification - IP: {client_ip}, Email: {form.email.data}")
-                    flash('reCAPTCHA verification failed. Please try again.', 'error')
-                    return render_template('register.html', form=form)
+                # Check if the assessment was successful
+                if 'riskAnalysis' in result and result['riskAnalysis'].get('score', 0) >= 0.5:
+                    # Valid reCAPTCHA with good score
+                    pass
+                elif 'tokenProperties' in result and result['tokenProperties'].get('valid', False):
+                    # Valid token but potentially low score - we'll allow it
+                    pass
+                else:
+                    # Log detailed error information
+                    error_codes = result.get('error', {}).get('code', 'unknown')
+                    app.logger.warning(f"reCAPTCHA Enterprise failed - IP: {client_ip}, Email: {form.email.data}, Error: {error_codes}")
+                    
+                    # Fall back to standard reCAPTCHA verification
+                    app.logger.info("Falling back to standard reCAPTCHA verification")
+                    fallback_data = {
+                        'secret': app.config['RECAPTCHA_SECRET_KEY'],
+                        'response': recaptcha_response,
+                        'remoteip': request.remote_addr
+                    }
+                    
+                    fallback_response = requests.post('https://www.google.com/recaptcha/api/siteverify', data=fallback_data)
+                    fallback_result = fallback_response.json()
+                    
+                    if not fallback_result.get('success', False):
+                        app.logger.warning(f"Standard reCAPTCHA also failed - IP: {client_ip}, Email: {form.email.data}")
+                        flash('reCAPTCHA verification failed. Please try again.', 'error')
+                        return render_template('register.html', form=form)
                     
             except Exception as e:
-                app.logger.error(f"reCAPTCHA API error - IP: {client_ip}, Error: {str(e)}")
-                flash('reCAPTCHA verification error. Please try again.', 'error')
-                return render_template('register.html', form=form)
+                app.logger.error(f"reCAPTCHA Enterprise API error - IP: {client_ip}, Error: {str(e)}")
+                # Fall back to standard reCAPTCHA verification
+                try:
+                    fallback_data = {
+                        'secret': app.config['RECAPTCHA_SECRET_KEY'],
+                        'response': recaptcha_response,
+                        'remoteip': request.remote_addr
+                    }
+                    
+                    fallback_response = requests.post('https://www.google.com/recaptcha/api/siteverify', data=fallback_data)
+                    fallback_result = fallback_response.json()
+                    
+                    if not fallback_result.get('success', False):
+                        flash('reCAPTCHA verification failed. Please try again.', 'error')
+                        return render_template('register.html', form=form)
+                        
+                except Exception as fallback_error:
+                    app.logger.error(f"Both reCAPTCHA verification methods failed - IP: {client_ip}, Error: {str(fallback_error)}")
+                    flash('reCAPTCHA verification error. Please try again.', 'error')
+                    return render_template('register.html', form=form)
         
         # Check if user already exists
         existing_user = User.get_by_email(form.email.data)
@@ -1116,6 +1182,172 @@ def resources_examples():
     return render_template('help/examples.html')
 
 # Stripe webhooks for subscription management
+import stripe
+import hmac
+import hashlib
+
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
+
+@app.route('/webhook/stripe', methods=['POST'])
+def stripe_webhook():
+    """Handle Stripe webhook events for subscription management"""
+    payload = request.get_data()
+    sig_header = request.headers.get('Stripe-Signature')
+    endpoint_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
+    
+    try:
+        # Verify webhook signature
+        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+    except ValueError:
+        print("❌ Invalid payload")
+        return jsonify({'error': 'Invalid payload'}), 400
+    except stripe.error.SignatureVerificationError:
+        print("❌ Invalid signature")
+        return jsonify({'error': 'Invalid signature'}), 400
+    
+    # Handle the event
+    if event['type'] == 'customer.subscription.created':
+        handle_subscription_created(event['data']['object'])
+    elif event['type'] == 'customer.subscription.updated':
+        handle_subscription_updated(event['data']['object'])
+    elif event['type'] == 'customer.subscription.deleted':
+        handle_subscription_deleted(event['data']['object'])
+    elif event['type'] == 'invoice.payment_succeeded':
+        handle_payment_succeeded(event['data']['object'])
+    elif event['type'] == 'invoice.payment_failed':
+        handle_payment_failed(event['data']['object'])
+    else:
+        print(f"Unhandled event type: {event['type']}")
+    
+    return jsonify({'status': 'success'}), 200
+
+def handle_subscription_created(subscription):
+    """Handle new subscription creation"""
+    try:
+        customer_id = subscription['customer']
+        customer = stripe.Customer.retrieve(customer_id)
+        user_email = customer['email']
+        
+        # Find user by email
+        user = User.get_by_email(user_email)
+        if not user:
+            print(f"❌ User not found for email: {user_email}")
+            return
+        
+        # Get price to determine plan
+        price_id = subscription['items']['data'][0]['price']['id']
+        plan_name = get_plan_name_from_price_id(price_id)
+        
+        # Create or update subscription record
+        sub = Subscription(
+            user_id=user.user_id,
+            plan_name=plan_name,
+            stripe_customer_id=customer_id,
+            stripe_subscription_id=subscription['id'],
+            status='active',
+            current_period_start=datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc),
+            current_period_end=datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+        )
+        
+        if sub.save():
+            print(f"✅ Subscription created for user {user_email}: {plan_name}")
+        else:
+            print(f"❌ Failed to save subscription for user {user_email}")
+            
+    except Exception as e:
+        print(f"❌ Error handling subscription creation: {e}")
+
+def handle_subscription_updated(subscription):
+    """Handle subscription updates (plan changes, renewals, etc.)"""
+    try:
+        stripe_subscription_id = subscription['id']
+        existing_sub = Subscription.get_by_stripe_subscription_id(stripe_subscription_id)
+        
+        if not existing_sub:
+            print(f"❌ Subscription not found: {stripe_subscription_id}")
+            return
+        
+        # Update subscription details
+        price_id = subscription['items']['data'][0]['price']['id']
+        plan_name = get_plan_name_from_price_id(price_id)
+        
+        existing_sub.plan_name = plan_name
+        existing_sub.status = subscription['status']
+        existing_sub.current_period_start = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+        existing_sub.current_period_end = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+        
+        if existing_sub.save():
+            print(f"✅ Subscription updated: {stripe_subscription_id}")
+        else:
+            print(f"❌ Failed to update subscription: {stripe_subscription_id}")
+            
+    except Exception as e:
+        print(f"❌ Error handling subscription update: {e}")
+
+def handle_subscription_deleted(subscription):
+    """Handle subscription cancellation"""
+    try:
+        stripe_subscription_id = subscription['id']
+        existing_sub = Subscription.get_by_stripe_subscription_id(stripe_subscription_id)
+        
+        if not existing_sub:
+            print(f"❌ Subscription not found: {stripe_subscription_id}")
+            return
+        
+        # Update subscription status to canceled
+        existing_sub.status = 'canceled'
+        existing_sub.plan_name = 'free'  # Revert to free plan
+        
+        if existing_sub.save():
+            print(f"✅ Subscription canceled: {stripe_subscription_id}")
+        else:
+            print(f"❌ Failed to cancel subscription: {stripe_subscription_id}")
+            
+    except Exception as e:
+        print(f"❌ Error handling subscription deletion: {e}")
+
+def handle_payment_succeeded(invoice):
+    """Handle successful payment"""
+    try:
+        customer_id = invoice['customer']
+        subscription_id = invoice['subscription']
+        
+        print(f"✅ Payment succeeded for customer {customer_id}, subscription {subscription_id}")
+        
+        # You can add additional logic here like sending confirmation emails
+        
+    except Exception as e:
+        print(f"❌ Error handling payment success: {e}")
+
+def handle_payment_failed(invoice):
+    """Handle failed payment"""
+    try:
+        customer_id = invoice['customer']
+        subscription_id = invoice['subscription']
+        
+        print(f"❌ Payment failed for customer {customer_id}, subscription {subscription_id}")
+        
+        # You can add logic here to notify the user or handle dunning
+        
+    except Exception as e:
+        print(f"❌ Error handling payment failure: {e}")
+
+def get_plan_name_from_price_id(price_id):
+    """Map Stripe price ID to internal plan name"""
+    # You'll need to configure these price IDs in your Stripe dashboard
+    price_to_plan = {
+        # Monthly plans
+        os.environ.get('STRIPE_STARTUP_MONTHLY_PRICE_ID', 'price_startup_monthly'): 'startup',
+        os.environ.get('STRIPE_GROWTH_MONTHLY_PRICE_ID', 'price_growth_monthly'): 'growth',
+        os.environ.get('STRIPE_ENTERPRISE_MONTHLY_PRICE_ID', 'price_enterprise_monthly'): 'enterprise',
+        
+        # Annual plans
+        os.environ.get('STRIPE_STARTUP_ANNUAL_PRICE_ID', 'price_startup_annual'): 'startup',
+        os.environ.get('STRIPE_GROWTH_ANNUAL_PRICE_ID', 'price_growth_annual'): 'growth',
+        os.environ.get('STRIPE_ENTERPRISE_ANNUAL_PRICE_ID', 'price_enterprise_annual'): 'enterprise',
+    }
+    
+    return price_to_plan.get(price_id, 'free')
 
 @app.route('/create_canary', methods=['GET', 'POST'])
 @login_required
@@ -1579,7 +1811,773 @@ def settings():
     from models import APIKey
     api_keys = APIKey.get_by_user_id(current_user.user_id)
     
-    return render_template('settings.html', form=form, api_keys=api_keys)
+    # Get user's subscription information
+    subscription = None
+    usage = None
+    upgrade_options = None
+    
+    try:
+        from models import Subscription, Canary
+        subscription = Subscription.get_by_user_id(current_user.user_id)
+        
+        # If no subscription exists, create a default Solo (free) plan
+        if not subscription:
+            subscription = Subscription(
+                user_id=current_user.user_id,
+                plan_name='free',
+                status='active',
+                canary_limit=1,
+                current_period_start=datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+                current_period_end=None  # Free plan doesn't expire
+            )
+            subscription.save()
+            print(f"✅ Created default Solo subscription for user {current_user.email}")
+        
+        if subscription:
+            # Calculate current usage
+            canaries = Canary.get_by_user_id(current_user.user_id)
+            canaries_used = len(canaries) if canaries else 0
+            
+            # Define plan limits and pricing
+            plan_config = {
+                'free': {'limit': 1, 'price': 0, 'next_plan': 'startup'},
+                'startup': {'limit': 5, 'price': 7, 'next_plan': 'growth'},
+                'growth': {'limit': 25, 'price': 25, 'next_plan': 'enterprise'},
+                'enterprise': {'limit': 100, 'price': 75, 'next_plan': None}
+            }
+            
+            current_plan = plan_config.get(subscription.plan_name, plan_config['free'])
+            usage_percentage = min((canaries_used / current_plan['limit']) * 100, 100) if current_plan['limit'] > 0 else 0
+            
+            usage = {
+                'canaries_used': canaries_used,
+                'canary_limit': current_plan['limit'],
+                'usage_percentage': usage_percentage,
+                'plan_name': subscription.plan_name,
+                'plan_price': current_plan['price'],
+                'status': subscription.status
+            }
+            
+            # Determine upgrade options
+            if current_plan['next_plan']:
+                next_plan_config = plan_config[current_plan['next_plan']]
+                upgrade_options = {
+                    'next_plan': current_plan['next_plan'],
+                    'next_plan_limit': next_plan_config['limit'],
+                    'next_plan_price': next_plan_config['price'],
+                    'additional_canaries': next_plan_config['limit'] - current_plan['limit']
+                }
+                
+    except Exception as e:
+        print(f"❌ Error getting subscription info in settings: {e}")
+        import traceback
+        print(f"❌ Settings traceback: {traceback.format_exc()}")
+    
+    return render_template('settings.html', form=form, api_keys=api_keys, 
+                         subscription=subscription, usage=usage, upgrade_options=upgrade_options)
+
+@app.route('/account')
+@login_required
+def account_management():
+    """Account management dashboard showing subscription, usage, and billing information"""
+    print(f"🎯 Starting account_management for user: {current_user.email}")
+    try:
+        # Get current subscription
+        subscription = Subscription.get_by_user_id(current_user.user_id)
+        print(f"🔍 Found subscription: {subscription}")
+        
+        # If no subscription exists, create a default Solo (free) plan
+        if not subscription:
+            subscription = Subscription(
+                user_id=current_user.user_id,
+                plan_name='free',
+                status='active',
+                canary_limit=1,
+                current_period_start=datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+                current_period_end=None  # Free plan doesn't expire
+            )
+            result = subscription.save()
+            print(f"✅ Created default Solo subscription for user {current_user.email}, save result: {result}")
+        
+        # Get usage information
+        usage = None
+        if subscription:
+            usage = subscription.get_usage()
+        
+        # Get billing history (if available)
+        billing_history = []
+        stripe_customer_id = None
+        
+        if subscription and subscription.stripe_customer_id:
+            stripe_customer_id = subscription.stripe_customer_id
+            
+            # Try to get billing history from Stripe
+            import stripe
+            stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
+            
+            if stripe.api_key:
+                try:
+                    # Get recent invoices
+                    invoices = stripe.Invoice.list(
+                        customer=stripe_customer_id,
+                        limit=10
+                    )
+                    
+                    for invoice in invoices.data:
+                        billing_history.append({
+                            'id': invoice.id,
+                            'date': datetime.fromtimestamp(invoice.created).strftime('%Y-%m-%d'),
+                            'amount': invoice.amount_paid / 100,  # Convert from cents
+                            'currency': invoice.currency.upper(),
+                            'status': invoice.status,
+                            'invoice_pdf': invoice.invoice_pdf,
+                            'description': f"{subscription.plan_name.title()} Plan"
+                        })
+                except Exception as e:
+                    print(f"Error fetching billing history: {e}")
+        
+        # Get plan features for current plan
+        plan_features = {
+            'free': {
+                'canary_limit': 1,
+                'features': ['1 Canary', 'Complete Feature Set', 'Email Alerts', 'Web Dashboard', 'API Access', 'Smart Alerts (AI)', 'Advanced Analytics', 'Custom Webhooks', 'Email Support']
+            },
+            'startup': {
+                'canary_limit': 5,
+                'features': ['5 Canaries', 'Complete Feature Set', 'Email Alerts', 'Web Dashboard', 'API Access', 'Smart Alerts (AI)', 'Advanced Analytics', 'Custom Webhooks', 'Email Support']
+            },
+            'growth': {
+                'canary_limit': 25,
+                'features': ['25 Canaries', 'Complete Feature Set', 'Email Alerts', 'Web Dashboard', 'API Access', 'Smart Alerts (AI)', 'Advanced Analytics', 'Custom Webhooks', 'Priority Support']
+            },
+            'enterprise': {
+                'canary_limit': 100,
+                'features': ['100 Canaries', 'Complete Feature Set', 'Email Alerts', 'Web Dashboard', 'API Access', 'Smart Alerts (AI)', 'Advanced Analytics', 'Custom Webhooks', 'White-glove Support']
+            }
+        }
+        
+        current_plan_features = plan_features.get(subscription.plan_name if subscription else 'free', plan_features['free'])
+        
+        # Convert ISO string dates back to datetime objects for template formatting
+        if subscription:
+            from datetime import datetime
+            if subscription.current_period_start and isinstance(subscription.current_period_start, str):
+                try:
+                    subscription.current_period_start = datetime.fromisoformat(subscription.current_period_start.replace('Z', '+00:00'))
+                except:
+                    pass
+            if subscription.current_period_end and isinstance(subscription.current_period_end, str):
+                try:
+                    subscription.current_period_end = datetime.fromisoformat(subscription.current_period_end.replace('Z', '+00:00'))
+                except:
+                    pass
+        
+        return render_template('account.html', 
+                             subscription=subscription, 
+                             usage=usage,
+                             billing_history=billing_history,
+                             current_plan_features=current_plan_features)
+                             
+    except Exception as e:
+        print(f"❌ Error in account management: {e}")
+        import traceback
+        print(f"❌ Account management traceback: {traceback.format_exc()}")
+        flash('Error loading account information. Please try again.', 'error')
+        return redirect(url_for('dashboard'))
+
+@app.route('/upgrade_plan/<plan>')
+@login_required
+def upgrade_plan(plan):
+    """Create Stripe checkout session for plan upgrade"""
+    # Check if Stripe is configured
+    stripe_secret_key = os.environ.get('STRIPE_SECRET_KEY')
+    if not stripe_secret_key:
+        print("❌ STRIPE_SECRET_KEY not configured")
+        flash('Payment system is not configured. Please contact support to upgrade your plan.', 'error')
+        return redirect(url_for('contact'))
+    
+    try:
+        print(f"🚀 Starting upgrade process for plan: {plan}, user: {current_user.username}")
+        
+        # Define plan configurations with Stripe price IDs
+        plan_config = {
+            'startup': {
+                'monthly_price_id': os.environ.get('STRIPE_STARTUP_MONTHLY_PRICE_ID', 'price_startup_monthly'),
+                'annual_price_id': os.environ.get('STRIPE_STARTUP_ANNUAL_PRICE_ID', 'price_startup_annual'),
+                'name': 'Startup',
+                'monthly_price': 7,
+                'annual_price': 70
+            },
+            'growth': {
+                'monthly_price_id': os.environ.get('STRIPE_GROWTH_MONTHLY_PRICE_ID', 'price_growth_monthly'),
+                'annual_price_id': os.environ.get('STRIPE_GROWTH_ANNUAL_PRICE_ID', 'price_growth_annual'),
+                'name': 'Growth',
+                'monthly_price': 25,
+                'annual_price': 250
+            },
+            'enterprise': {
+                'monthly_price_id': os.environ.get('STRIPE_ENTERPRISE_MONTHLY_PRICE_ID', 'price_enterprise_monthly'),
+                'annual_price_id': os.environ.get('STRIPE_ENTERPRISE_ANNUAL_PRICE_ID', 'price_enterprise_annual'),
+                'name': 'Enterprise',
+                'monthly_price': 75,
+                'annual_price': 750
+            }
+        }
+        
+        if plan not in plan_config:
+            print(f"❌ Invalid plan selected: {plan}")
+            flash('Invalid plan selected', 'error')
+            return redirect(url_for('subscription_plans'))
+        
+        # Get billing period from query params (default to monthly)
+        billing_period = request.args.get('billing', 'monthly')
+        print(f"💰 Billing period: {billing_period}")
+        
+        # Select the appropriate price ID
+        config = plan_config[plan]
+        if billing_period == 'annual':
+            price_id = config['annual_price_id']
+            display_price = f"${config['annual_price']}/year"
+        else:
+            price_id = config['monthly_price_id']
+            display_price = f"${config['monthly_price']}/month"
+        
+        print(f"💳 Using price ID: {price_id} for {display_price}")
+        
+        # Create Stripe checkout session
+        import stripe
+        stripe.api_key = stripe_secret_key
+        
+        try:
+            print(f"👤 Getting or creating Stripe customer for user: {current_user.email}")
+            # Get or create Stripe customer
+            customer_id = get_or_create_stripe_customer(current_user)
+            print(f"✅ Stripe customer ID: {customer_id}")
+            
+            print(f"🛒 Creating checkout session...")
+            checkout_session = stripe.checkout.Session.create(
+                customer=customer_id,
+                payment_method_types=['card'],
+                line_items=[{
+                    'price': price_id,
+                    'quantity': 1,
+                }],
+                mode='subscription',
+                success_url=request.host_url + 'checkout/success?session_id={CHECKOUT_SESSION_ID}',
+                cancel_url=request.host_url + 'pricing',
+                metadata={
+                    'user_id': current_user.user_id,
+                    'plan': plan,
+                    'billing_period': billing_period
+                }
+            )
+            
+            print(f"✅ Checkout session created: {checkout_session.id}")
+            print(f"🔗 Redirecting to: {checkout_session.url}")
+            return redirect(checkout_session.url, code=303)
+            
+        except stripe.error.InvalidRequestError as e:
+            print(f"❌ Stripe Invalid Request Error: {e}")
+            if 'price' in str(e).lower():
+                flash('The selected plan is not available. Please contact support.', 'error')
+            else:
+                flash(f'Invalid request: {e}', 'error')
+            return redirect(url_for('subscription_plans'))
+        except stripe.error.AuthenticationError as e:
+            print(f"❌ Stripe Authentication Error: {e}")
+            flash('Payment system configuration error. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+        except stripe.error.StripeError as e:
+            print(f"❌ Stripe error creating checkout session: {e}")
+            flash(f'Payment system error. Please try again or contact support.', 'error')
+            return redirect(url_for('subscription_plans'))
+            
+    except Exception as e:
+        print(f"❌ Error in upgrade_plan: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        flash('An unexpected error occurred. Please try again.', 'error')
+        return redirect(url_for('subscription_plans'))
+
+@app.route('/cancel_subscription', methods=['POST'])
+@login_required  
+def cancel_subscription():
+    """Cancel user's current subscription"""
+    try:
+        # Get user's current subscription
+        subscription = Subscription.get_by_user_id(current_user.user_id)
+        
+        if not subscription:
+            flash('No active subscription found.', 'error')
+            return redirect(url_for('account_management'))
+        
+        if subscription.plan_name == 'free':
+            flash('You are already on the free plan.', 'info')
+            return redirect(url_for('account_management'))
+            
+        # Check if Stripe is configured
+        stripe_secret_key = os.environ.get('STRIPE_SECRET_KEY')
+        if not stripe_secret_key:
+            flash('Payment system is not configured. Please contact support to cancel your subscription.', 'error')
+            return redirect(url_for('contact'))
+        
+        import stripe
+        stripe.api_key = stripe_secret_key
+        
+        try:
+            # Cancel the subscription in Stripe
+            if subscription.stripe_subscription_id:
+                stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
+                
+                # Cancel at period end (don't immediately cancel)
+                stripe.Subscription.modify(
+                    subscription.stripe_subscription_id,
+                    cancel_at_period_end=True
+                )
+                
+                print(f"✅ Subscription {subscription.stripe_subscription_id} marked for cancellation at period end")
+                
+                # Update subscription status in database
+                subscription.status = 'canceled'
+                if subscription.save():
+                    flash('Your subscription has been cancelled. You\'ll continue to have access until the end of your current billing period.', 'success')
+                else:
+                    flash('Subscription cancelled in Stripe but failed to update local database. Please contact support.', 'warning')
+            else:
+                # No Stripe subscription ID, just cancel locally
+                subscription.status = 'canceled'
+                if subscription.save():
+                    flash('Your subscription has been cancelled.', 'success')
+                else:
+                    flash('Failed to cancel subscription. Please try again.', 'error')
+                    
+        except stripe.error.InvalidRequestError as e:
+            print(f"❌ Stripe Invalid Request Error during cancellation: {e}")
+            if 'No such subscription' in str(e):
+                # Subscription doesn't exist in Stripe, cancel locally
+                subscription.status = 'canceled'
+                if subscription.save():
+                    flash('Subscription cancelled successfully.', 'success')
+                else:
+                    flash('Failed to cancel subscription. Please contact support.', 'error')
+            else:
+                flash(f'Error cancelling subscription: {e}', 'error')
+                return redirect(url_for('contact'))
+        except stripe.error.StripeError as e:
+            print(f"❌ Stripe error during cancellation: {e}")
+            flash('Error cancelling subscription. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+            
+    except Exception as e:
+        print(f"❌ Error in cancel_subscription: {e}")
+        flash('An unexpected error occurred. Please try again or contact support.', 'error')
+        return redirect(url_for('contact'))
+    
+    return redirect(url_for('account_management'))
+
+@app.route('/change_plan/<new_plan>')
+@login_required
+def change_plan(new_plan):
+    """Change user's subscription plan (upgrade/downgrade)"""
+    try:
+        # Get current subscription
+        subscription = Subscription.get_by_user_id(current_user.user_id)
+        
+        if not subscription:
+            flash('No current subscription found. Please subscribe to a plan first.', 'error')
+            return redirect(url_for('subscription_plans'))
+        
+        # Define plan configurations
+        plan_config = {
+            'free': {
+                'name': 'Solo',
+                'canary_limit': 1,
+                'is_free': True
+            },
+            'startup': {
+                'monthly_price_id': os.environ.get('STRIPE_STARTUP_MONTHLY_PRICE_ID'),
+                'annual_price_id': os.environ.get('STRIPE_STARTUP_ANNUAL_PRICE_ID'),
+                'name': 'Startup',
+                'canary_limit': 5,
+                'monthly_price': 7,
+                'annual_price': 70,
+                'is_free': False
+            },
+            'growth': {
+                'monthly_price_id': os.environ.get('STRIPE_GROWTH_MONTHLY_PRICE_ID'),
+                'annual_price_id': os.environ.get('STRIPE_GROWTH_ANNUAL_PRICE_ID'),
+                'name': 'Growth',
+                'canary_limit': 25,
+                'monthly_price': 25,
+                'annual_price': 250,
+                'is_free': False
+            },
+            'enterprise': {
+                'monthly_price_id': os.environ.get('STRIPE_ENTERPRISE_MONTHLY_PRICE_ID'),
+                'annual_price_id': os.environ.get('STRIPE_ENTERPRISE_ANNUAL_PRICE_ID'),
+                'name': 'Enterprise',
+                'canary_limit': 100,
+                'monthly_price': 75,
+                'annual_price': 750,
+                'is_free': False
+            }
+        }
+        
+        if new_plan not in plan_config:
+            flash('Invalid plan selected.', 'error')
+            return redirect(url_for('account_management'))
+        
+        current_plan = subscription.plan_name
+        if current_plan == new_plan:
+            flash('You are already on this plan.', 'info')
+            return redirect(url_for('account_management'))
+        
+        new_plan_config = plan_config[new_plan]
+        
+        # Handle downgrade to free plan
+        if new_plan == 'free':
+            return redirect(url_for('cancel_subscription'))
+        
+        # Handle upgrade from free plan (redirect to normal subscription flow)
+        if current_plan == 'free':
+            return redirect(url_for('upgrade_plan', plan=new_plan))
+        
+        # Determine if this is an upgrade or downgrade
+        plan_hierarchy = {'free': 0, 'startup': 1, 'growth': 2, 'enterprise': 3}
+        current_level = plan_hierarchy.get(current_plan, 0)
+        new_level = plan_hierarchy.get(new_plan, 0)
+        
+        # For upgrades (higher cost plans), redirect to checkout for payment confirmation
+        if new_level > current_level:
+            print(f"🚀 Upgrade detected: {current_plan} -> {new_plan}, redirecting to checkout for payment confirmation")
+            return redirect(url_for('upgrade_plan', plan=new_plan))
+        
+        # Handle plan changes between paid plans (downgrades and same-level changes)
+        stripe_secret_key = os.environ.get('STRIPE_SECRET_KEY')
+        if not stripe_secret_key:
+            flash('Payment system not configured. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+        
+        if not subscription.stripe_subscription_id:
+            flash('No active Stripe subscription found. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+        
+        # Get billing period from query params (default to current period or monthly)
+        billing_period = request.args.get('billing', 'monthly')
+        
+        # Select the appropriate price ID
+        if billing_period == 'annual':
+            new_price_id = new_plan_config['annual_price_id']
+            display_price = f"${new_plan_config['annual_price']}/year"
+        else:
+            new_price_id = new_plan_config['monthly_price_id']
+            display_price = f"${new_plan_config['monthly_price']}/month"
+        
+        if not new_price_id:
+            flash('Plan pricing not configured. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+        
+        print(f"🔄 Changing plan from {current_plan} to {new_plan} ({display_price}) - downgrade or same level")
+        
+        import stripe
+        stripe.api_key = stripe_secret_key
+        
+        try:
+            # Get current subscription from Stripe
+            stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
+            
+            # Modify the subscription to change the plan
+            updated_subscription = stripe.Subscription.modify(
+                subscription.stripe_subscription_id,
+                items=[{
+                    'id': stripe_subscription['items']['data'][0].id,
+                    'price': new_price_id,
+                }],
+                proration_behavior='create_prorations'  # Create prorations for immediate change
+            )
+            
+            # Update local database
+            subscription.plan_name = new_plan
+            subscription.canary_limit = new_plan_config['canary_limit']
+            subscription.status = 'active'
+            
+            if subscription.save():
+                print(f"✅ Plan changed successfully to {new_plan}")
+                
+                if new_level < current_level:
+                    flash(f'Successfully downgraded to {new_plan_config["name"]} plan. Changes are effective immediately.', 'success')
+                else:
+                    flash(f'Successfully changed to {new_plan_config["name"]} plan. Changes are effective immediately.', 'success')
+            else:
+                flash('Plan changed in Stripe but failed to update local database. Please contact support.', 'warning')
+                
+        except stripe.error.InvalidRequestError as e:
+            print(f"❌ Stripe Invalid Request Error during plan change: {e}")
+            flash('Invalid plan change request. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+        except stripe.error.StripeError as e:
+            print(f"❌ Stripe error during plan change: {e}")
+            flash('Error changing plan. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+            
+    except Exception as e:
+        print(f"❌ Error in change_plan: {e}")
+        flash('An unexpected error occurred. Please try again or contact support.', 'error')
+        return redirect(url_for('contact'))
+    
+    return redirect(url_for('account_management'))
+
+def get_or_create_stripe_customer(user):
+    """Get existing Stripe customer or create new one"""
+    import stripe
+    
+    # Check if user already has a customer ID in subscription
+    try:
+        from models import Subscription
+        subscription = Subscription.get_by_user_id(user.user_id)
+        if subscription and subscription.stripe_customer_id:
+            print(f"✅ Found existing Stripe customer: {subscription.stripe_customer_id}")
+            return subscription.stripe_customer_id
+    except Exception as e:
+        print(f"⚠️ Could not check existing subscription: {e}")
+        pass
+    
+    # Create new Stripe customer
+    try:
+        print(f"➕ Creating new Stripe customer for {user.email}")
+        customer = stripe.Customer.create(
+            email=user.email,
+            name=user.username,
+            metadata={
+                'user_id': user.user_id
+            }
+        )
+        print(f"✅ Created Stripe customer: {customer.id}")
+        return customer.id
+    except stripe.error.StripeError as e:
+        print(f"❌ Error creating Stripe customer: {e}")
+        raise
+
+@app.route('/checkout/success')
+@login_required
+def checkout_success():
+    """Handle successful checkout"""
+    session_id = request.args.get('session_id')
+    
+    if not session_id:
+        flash('Invalid session', 'error')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        import stripe
+        stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
+        
+        # Retrieve the checkout session
+        session = stripe.checkout.Session.retrieve(session_id, expand=['subscription'])
+        
+        print(f"🔍 Checkout session retrieved: {session.id}")
+        print(f"💳 Payment status: {session.payment_status}")
+        
+        try:
+            print(f"🔍 About to access session.subscription...")
+            subscription_obj = session.subscription
+            print(f"🎯 Subscription ID: {subscription_obj}")
+            print(f"🔍 Session mode: {getattr(session, 'mode', 'unknown')}")
+        except Exception as e:
+            print(f"❌ Error accessing session data: {e}")
+            import traceback
+            traceback.print_exc()
+            subscription_obj = None
+        
+        if session.payment_status == 'paid' and session.subscription:
+            try:
+                print(f"🔍 Processing subscription...")
+                # Handle subscription - could be ID string or full object
+                if hasattr(session.subscription, 'id'):
+                    # Full subscription object
+                    stripe_subscription = session.subscription
+                    subscription_id = stripe_subscription.id
+                    print(f"🎯 Using expanded subscription object: {subscription_id}")
+                else:
+                    # Just the subscription ID
+                    subscription_id = session.subscription
+                    print(f"🔍 Retrieving subscription: {subscription_id}")
+                    stripe_subscription = stripe.Subscription.retrieve(subscription_id)
+                
+                print(f"✅ Subscription ready: {stripe_subscription.id}")
+                
+                # Get plan details from metadata or subscription
+                plan_name = 'startup'  # default
+                billing_period = 'monthly'  # default
+                
+                # Try to get plan info from session metadata
+                if session.metadata:
+                    plan_name = session.metadata.get('plan', 'startup')
+                    billing_period = session.metadata.get('billing_period', 'monthly')
+                
+                # Get price ID from subscription object directly
+                print(f"🔍 Getting plan from subscription...")
+                print(f"🔍 Subscription object type: {type(stripe_subscription)}")
+                print(f"🔍 Subscription has items attr: {hasattr(stripe_subscription, 'items')}")
+                print(f"🔍 Subscription has plan attr: {hasattr(stripe_subscription, 'plan')}")
+                
+                # Method 1: Try to get from direct items property (expanded object)
+                try:
+                    print(f"🔍 Trying direct subscription.items from expanded object...")
+                    print(f"🔍 Subscription.items type: {type(getattr(stripe_subscription, 'items', None))}")
+                    
+                    # Check if items attribute exists
+                    if hasattr(stripe_subscription, 'items'):
+                        items_obj = stripe_subscription.items
+                        print(f"🔍 Items object: {items_obj}")
+                        print(f"🔍 Items has data attr: {hasattr(items_obj, 'data')}")
+                        
+                        if hasattr(items_obj, 'data'):
+                            items_data = items_obj.data
+                            print(f"🔍 Items data: {items_data}")
+                            print(f"🔍 Items data type: {type(items_data)}")
+                            print(f"🔍 Items data length: {len(items_data) if items_data else 0}")
+                            
+                            if items_data and len(items_data) > 0:
+                                print(f"✅ Found items data with {len(items_data)} items")
+                                first_item = items_data[0]
+                                print(f"🔍 First item: {first_item}")
+                                price_id = first_item.price.id
+                                print(f"💰 Extracted price_id: {price_id}")
+                                plan_name = get_plan_name_from_price_id(price_id)
+                                print(f"📋 Plan from expanded subscription.items: {plan_name}")
+                            else:
+                                print(f"❌ Items data is empty or None")
+                                raise Exception("Empty items data in expanded subscription")
+                        else:
+                            print(f"❌ Items object has no data attribute")
+                            raise Exception("No data attribute in items object")
+                    else:
+                        print(f"❌ No items attribute in subscription")
+                        raise Exception("No items attribute in subscription")
+                except Exception as e:
+                    print(f"⚠️ Direct subscription.items failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    
+                    # Method 2: Try using subscription ID to retrieve items
+                    try:
+                        print(f"🔍 Trying to list subscription items by ID...")
+                        items = stripe.SubscriptionItem.list(subscription=stripe_subscription.id)
+                        if items.data:
+                            price_id = items.data[0].price.id
+                            print(f"💰 Extracted price_id from API call: {price_id}")
+                            plan_name = get_plan_name_from_price_id(price_id)
+                            print(f"📋 Plan from SubscriptionItem.list(): {plan_name}")
+                    except Exception as e2:
+                        print(f"⚠️ SubscriptionItem.list() failed: {e2}")
+                        import traceback
+                        traceback.print_exc()
+                        
+                        # Method 3: Use the plan object directly (legacy format)
+                        try:
+                            print(f"🔍 Trying subscription.plan...")
+                            if hasattr(stripe_subscription, 'plan') and stripe_subscription.plan:
+                                price_id = stripe_subscription.plan.id
+                                print(f"💰 Extracted price_id from plan: {price_id}")
+                                plan_name = get_plan_name_from_price_id(price_id)
+                                print(f"📋 Plan from subscription.plan: {plan_name}")
+                        except Exception as e3:
+                            print(f"⚠️ subscription.plan failed: {e3}")
+                            print(f"⚠️ Using default plan name: {plan_name}")
+                            import traceback
+                            traceback.print_exc()
+                    
+            except Exception as e:
+                print(f"❌ Error processing subscription: {e}")
+                import traceback
+                traceback.print_exc()
+                flash('Payment completed but there was an error updating your account. Please contact support.', 'error')
+                return redirect(url_for('settings'))
+            
+            print(f"📋 Creating subscription: plan={plan_name}, user={current_user.email}")
+            
+            # Create or update subscription in database
+            existing_subscription = Subscription.get_by_user_id(current_user.user_id)
+            
+            if existing_subscription:
+                # Update existing subscription
+                print(f"🔄 Updating existing subscription for {current_user.email}")
+                existing_subscription.plan_name = plan_name
+                existing_subscription.stripe_customer_id = stripe_subscription.customer
+                existing_subscription.stripe_subscription_id = stripe_subscription.id
+                existing_subscription.status = 'active'
+                
+                # Safely convert timestamps
+                try:
+                    print(f"🕐 Converting timestamps - start: {stripe_subscription.current_period_start}, end: {stripe_subscription.current_period_end}")
+                    existing_subscription.current_period_start = datetime.fromtimestamp(stripe_subscription.current_period_start, tz=timezone.utc)
+                    existing_subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end, tz=timezone.utc)
+                    print(f"✅ Timestamp conversion successful")
+                except Exception as e:
+                    print(f"❌ Error converting timestamps: {e}")
+                    # Fallback to current time - convert to ISO string for DynamoDB
+                    existing_subscription.current_period_start = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+                    existing_subscription.current_period_end = (datetime.utcnow() + timedelta(days=30)).replace(tzinfo=timezone.utc).isoformat()
+                
+                # Set canary limit based on plan
+                plan_limits = {'free': 1, 'startup': 5, 'growth': 25, 'enterprise': 100}
+                existing_subscription.canary_limit = plan_limits.get(plan_name, 1)
+                
+                if existing_subscription.save():
+                    print(f"✅ Updated subscription for user {current_user.email}: {plan_name}")
+                else:
+                    print(f"❌ Failed to update subscription for user {current_user.email}")
+            else:
+                # Create new subscription
+                print(f"🆕 Creating new subscription for {current_user.email}")
+                plan_limits = {'free': 1, 'startup': 5, 'growth': 25, 'enterprise': 100}
+                
+                # Safely convert timestamps
+                try:
+                    print(f"🕐 Converting timestamps for new subscription - start: {stripe_subscription.current_period_start}, end: {stripe_subscription.current_period_end}")
+                    period_start = datetime.fromtimestamp(stripe_subscription.current_period_start, tz=timezone.utc)
+                    period_end = datetime.fromtimestamp(stripe_subscription.current_period_end, tz=timezone.utc)
+                    print(f"✅ Timestamp conversion successful for new subscription")
+                except Exception as e:
+                    print(f"❌ Error converting timestamps for new subscription: {e}")
+                    # Fallback to current time - convert to ISO string for DynamoDB
+                    period_start = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+                    period_end = (datetime.utcnow() + timedelta(days=30)).replace(tzinfo=timezone.utc).isoformat()
+                
+                new_subscription = Subscription(
+                    user_id=current_user.user_id,
+                    plan_name=plan_name,
+                    stripe_customer_id=stripe_subscription.customer,
+                    stripe_subscription_id=stripe_subscription.id,
+                    status='active',
+                    canary_limit=plan_limits.get(plan_name, 1),
+                    current_period_start=period_start,
+                    current_period_end=period_end
+                )
+                
+                if new_subscription.save():
+                    print(f"✅ Created subscription for user {current_user.email}: {plan_name}")
+                else:
+                    print(f"❌ Failed to create subscription for user {current_user.email}")
+            
+            flash(f'🎉 Subscription upgraded successfully! Welcome to your {plan_name.title()} plan!', 'success')
+        else:
+            print(f"❌ Payment processing failed - Payment status: {session.payment_status}, Subscription: {session.subscription}")
+            flash('Payment is being processed. You will receive a confirmation email shortly.', 'info')
+            
+        return redirect(url_for('account_management'))
+        
+    except stripe.error.StripeError as e:
+        print(f"❌ Stripe error retrieving checkout session: {e}")
+        flash('Payment completed but there was an error updating your account. Please contact support.', 'warning')
+        return redirect(url_for('account_management'))
+    except Exception as e:
+        print(f"❌ Error in checkout success: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        flash('An error occurred. Please contact support if your payment was processed.', 'error')
+        return redirect(url_for('settings'))
 
 @app.route('/edit_canary/<canary_id>', methods=['GET', 'POST'])
 @login_required
