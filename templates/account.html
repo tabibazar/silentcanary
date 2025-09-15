@@ -296,7 +296,11 @@
                         <a href="{{ url_for('create_canary') }}" class="btn btn-outline-success btn-account">
                             <i class="fas fa-plus me-2"></i>Create New Canary
                         </a>
-                        {% if subscription and subscription.plan_name == 'free' %}
+                        {% if subscription and subscription.status == 'canceled' %}
+                            <a href="{{ url_for('resubscribe') }}" class="btn btn-outline-success btn-account">
+                                <i class="fas fa-redo me-2"></i>Resubscribe to {{ subscription.plan_name.title() }}
+                            </a>
+                        {% elif subscription and subscription.plan_name == 'free' %}
                             <a href="{{ url_for('upgrade_plan', plan='startup') }}" class="btn btn-success btn-account">
                                 <i class="fas fa-arrow-up me-2"></i>Upgrade to Startup
                             </a>
@@ -350,11 +354,7 @@
                                     </ul>
                                 </div>
                             {% endif %}
-                            {% if subscription.status == 'canceled' %}
-                            <a href="{{ url_for('resubscribe') }}" class="btn btn-outline-success btn-account">
-                                <i class="fas fa-redo me-2"></i>Resubscribe to {{ subscription.plan_name.title() }}
-                            </a>
-                            {% else %}
+                            {% if subscription.status != 'canceled' %}
                             <button class="btn btn-outline-danger btn-account" data-bs-toggle="modal" data-bs-target="#cancelModal">
                                 <i class="fas fa-times me-2"></i>Cancel Subscription
                             </button>
