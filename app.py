@@ -1296,7 +1296,7 @@ def handle_subscription_deleted(subscription):
         
         # Update subscription status to canceled
         existing_sub.status = 'canceled'
-        existing_sub.plan_name = 'free'  # Revert to free plan
+        # Keep original plan_name so user can resubscribe to same plan
         
         if existing_sub.save():
             print(f"✅ Subscription canceled: {stripe_subscription_id}")
@@ -1355,7 +1355,9 @@ def check_canary_limits(user_id):
     
     # Get user's subscription
     subscription = Subscription.get_by_user_id(user_id)
+    # If subscription is canceled, enforce free plan limits but keep original plan name for display
     plan_name = subscription.plan_name if subscription else 'free'
+    effective_plan = 'free' if (subscription and subscription.status == 'canceled') else plan_name
     
     # Define plan limits
     plan_limits = {
@@ -1365,7 +1367,7 @@ def check_canary_limits(user_id):
         'enterprise': 100
     }
     
-    limit = plan_limits.get(plan_name, 1)
+    limit = plan_limits.get(effective_plan, 1)
     current_count = len(Canary.get_by_user_id(user_id))
     
     # Check for grace period overages
@@ -2264,7 +2266,7 @@ def cancel_subscription():
                     
                     # Update subscription status in database
                     subscription.status = 'canceled'
-                    subscription.plan_name = 'free'  # Downgrade to free plan immediately
+                    # Keep original plan_name so user can resubscribe to same plan
                     if subscription.save():
                         flash('Your subscription has been cancelled immediately. You now have access to the free plan features.', 'success')
                     else:
@@ -2500,9 +2502,8 @@ def resubscribe():
             flash('Your subscription is already active.', 'info')
             return redirect(url_for('account_management'))
         
-        if subscription.plan_name == 'free':
-            flash('You cannot resubscribe to the free plan.', 'info')
-            return redirect(url_for('subscription_plans'))
+        # Note: Don't check for 'free' plan here since canceled subscriptions
+        # now keep their original plan name (startup/growth/enterprise)
         
         # Redirect to upgrade with their previous plan and resubscribe flag
         return redirect(url_for('upgrade_plan', plan=subscription.plan_name, resubscribe='true'))
