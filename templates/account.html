@@ -209,8 +209,9 @@
                                     </div>
                                     <small class="text-muted">
                                         {{ "%.1f"|format(usage_info.usage_percentage) }}% of your {{ usage_info.plan_name.title() }} plan limit used
-                                        {% if usage_info.remaining > 0 %}
-                                            ({{ usage_info.remaining }} remaining)
+                                        {% set remaining = usage_info.limit - usage_info.current_count %}
+                                        {% if remaining > 0 %}
+                                            ({{ remaining }} remaining)
                                         {% else %}
                                             <span class="text-danger">(Over limit{% if usage_info.in_grace_period %} - in grace period{% endif %})</span>
                                         {% endif %}
