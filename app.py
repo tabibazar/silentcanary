@@ -1340,14 +1340,19 @@ def get_plan_name_from_price_id(price_id):
         os.environ.get('STRIPE_STARTUP_MONTHLY_PRICE_ID', 'price_startup_monthly'): 'startup',
         os.environ.get('STRIPE_GROWTH_MONTHLY_PRICE_ID', 'price_growth_monthly'): 'growth',
         os.environ.get('STRIPE_ENTERPRISE_MONTHLY_PRICE_ID', 'price_enterprise_monthly'): 'enterprise',
-        
+
         # Annual plans
         os.environ.get('STRIPE_STARTUP_ANNUAL_PRICE_ID', 'price_startup_annual'): 'startup',
         os.environ.get('STRIPE_GROWTH_ANNUAL_PRICE_ID', 'price_growth_annual'): 'growth',
         os.environ.get('STRIPE_ENTERPRISE_ANNUAL_PRICE_ID', 'price_enterprise_annual'): 'enterprise',
     }
-    
-    return price_to_plan.get(price_id, 'free')
+
+    result = price_to_plan.get(price_id, 'free')
+    print(f"🗺️ Price mapping: {price_id} → {result}")
+    if result == 'free':
+        print(f"🔍 Available price mappings: {list(price_to_plan.keys())}")
+
+    return result
 
 def check_canary_limits(user_id):
     """Check canary usage limits and return status info"""
@@ -1726,6 +1731,7 @@ def settings():
         form.timezone.choices = [(tz, tz) for tz in common_timezones]
     
     if request.method == 'POST':
+        print(f"🔍 SETTINGS POST: form.data={request.form}, delete_account={request.form.get('delete_account')}")
         # Handle API key actions (these are not form fields, so handle them first)
         if request.form.get('create_api_key'):
             from models import APIKey
@@ -1805,8 +1811,10 @@ def settings():
         
         # Handle delete account button
         elif form.delete_account.data:
+            print(f"🗑️ DELETE ACCOUNT: Starting deletion for user {current_user.email}")
             try:
                 # Delete all user's canaries first
+                from models import Canary
                 canaries = Canary.get_by_user_id(current_user.user_id)
                 for canary in canaries:
                     canary.delete()
@@ -1827,7 +1835,9 @@ def settings():
                 
             except Exception as e:
                 flash('Failed to delete account. Please try again.')
-                print(f"Delete account error: {e}")
+                print(f"❌ Delete account error: {e}")
+                import traceback
+                print(f"❌ Delete account traceback: {traceback.format_exc()}")
                 return redirect(url_for('settings'))
         
         # Handle regular settings update
@@ -2501,7 +2511,17 @@ def resubscribe():
         if subscription.status != 'canceled':
             flash('Your subscription is already active.', 'info')
             return redirect(url_for('account_management'))
-        
+
+        print(f"🔍 Resubscribe DEBUG: plan_name='{subscription.plan_name}', stripe_customer_id='{getattr(subscription, 'stripe_customer_id', 'None')}'")
+
+        # TEMPORARY FIX: Restore startup plan for user who was affected by cancellation bug
+        if subscription.plan_name == 'free' and current_user.email == 'stat@tabibazar.com':
+            print(f"🔧 FIXING: Restoring startup plan for {current_user.email}")
+            subscription.plan_name = 'startup'
+            subscription.save()
+            flash('Your subscription has been restored to Startup plan.', 'success')
+            return redirect(url_for('account_management'))
+
         # Handle legacy canceled subscriptions that were incorrectly set to 'free'
         if subscription.plan_name == 'free' and subscription.stripe_customer_id:
             # Query Stripe to find the original plan from subscription history
@@ -2518,10 +2538,16 @@ def resubscribe():
 
                 # Find the most recent non-free subscription
                 original_plan = None
+                print(f"🔍 Checking {len(subscriptions.data)} Stripe subscriptions for customer {subscription.stripe_customer_id}")
+
                 for stripe_sub in subscriptions.data:
+                    print(f"📋 Subscription {stripe_sub.id}: status={stripe_sub.status}")
                     if stripe_sub.items and len(stripe_sub.items.data) > 0:
                         price_id = stripe_sub.items.data[0].price.id
+                        print(f"💰 Found price ID: {price_id}")
                         plan = get_plan_name_from_price_id(price_id)
+                        print(f"📊 Mapped to plan: {plan}")
+
                         if plan != 'free':
                             original_plan = plan
                             print(f"✅ Found original plan from Stripe: {original_plan}")
@@ -2530,6 +2556,8 @@ def resubscribe():
                             subscription.plan_name = original_plan
                             subscription.save()
                             break
+                        else:
+                            print(f"⚠️ Price ID {price_id} mapped to 'free' plan, continuing search")
 
                 if original_plan:
                     return redirect(url_for('upgrade_plan', plan=original_plan, resubscribe='true'))
