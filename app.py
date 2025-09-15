@@ -2502,9 +2502,12 @@ def resubscribe():
             flash('Your subscription is already active.', 'info')
             return redirect(url_for('account_management'))
         
-        # Note: Don't check for 'free' plan here since canceled subscriptions
-        # now keep their original plan name (startup/growth/enterprise)
-        
+        # Handle legacy canceled subscriptions that were incorrectly set to 'free'
+        if subscription.plan_name == 'free':
+            # For users who were affected by old cancellation logic, redirect to plans page
+            flash('Please select your previous plan to resubscribe.', 'info')
+            return redirect(url_for('subscription_plans'))
+
         # Redirect to upgrade with their previous plan and resubscribe flag
         return redirect(url_for('upgrade_plan', plan=subscription.plan_name, resubscribe='true'))
         
