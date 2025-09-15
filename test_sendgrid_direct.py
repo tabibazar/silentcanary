@@ -12,7 +12,7 @@ load_dotenv()
 def test_sendgrid_api():
     """Test SendGrid using the Web API directly."""
     api_key = os.environ.get('SENDGRID_API_KEY')
-    sender_email = os.environ.get('MAIL_DEFAULT_SENDER', 'auth@avriz.com')
+    sender_email = os.environ.get('MAIL_DEFAULT_SENDER', 'no-reply@silentcanary.com')
     
     if not api_key:
         print("❌ SENDGRID_API_KEY not found in environment")

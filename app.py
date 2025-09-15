@@ -2063,10 +2063,14 @@ def account_management():
                 except:
                     pass
         
+        # Get usage info for canary limits
+        usage_info = check_canary_limits(current_user.user_id)
+        
         print(f"🎯 Template variables: billing_frequency={billing_frequency}, plan_name={subscription.plan_name if subscription else 'None'}")
         return render_template('account.html', 
                              subscription=subscription, 
                              usage=usage,
+                             usage_info=usage_info,
                              billing_history=billing_history,
                              current_plan_features=current_plan_features,
                              billing_frequency=billing_frequency,
@@ -2123,9 +2127,11 @@ def upgrade_plan(plan):
             flash('Invalid plan selected', 'error')
             return redirect(url_for('subscription_plans'))
         
-        # Check if user has a canceled subscription
+        # Check if user has a canceled subscription (allow resubscribe flow)
         subscription = Subscription.get_by_user_id(current_user.user_id)
-        if subscription and subscription.status == 'canceled':
+        is_resubscribe = request.args.get('resubscribe') == 'true'
+
+        if subscription and subscription.status == 'canceled' and not is_resubscribe:
             print(f"❌ User has canceled subscription status")
             flash('Your subscription is currently canceled. Please use the "Resubscribe" button from your account page to reactivate your subscription.', 'error')
             return redirect(url_for('account_management'))
@@ -2169,7 +2175,8 @@ def upgrade_plan(plan):
                 metadata={
                     'user_id': current_user.user_id,
                     'plan': plan,
-                    'billing_period': billing_period
+                    'billing_period': billing_period,
+                    'is_resubscribe': 'true' if is_resubscribe else 'false'
                 }
             )
             
@@ -2480,8 +2487,8 @@ def resubscribe():
             flash('You cannot resubscribe to the free plan.', 'info')
             return redirect(url_for('subscription_plans'))
         
-        # Redirect to upgrade with their previous plan
-        return redirect(url_for('upgrade_plan', plan=subscription.plan_name))
+        # Redirect to upgrade with their previous plan and resubscribe flag
+        return redirect(url_for('upgrade_plan', plan=subscription.plan_name, resubscribe='true'))
         
     except Exception as e:
         print(f"❌ Error in resubscribe: {e}")
@@ -2798,8 +2805,10 @@ def checkout_success():
                 flash('Payment completed but there was an error updating your account. Please contact support.', 'error')
                 return redirect(url_for('settings'))
             
-            print(f"📋 Creating subscription: plan={plan_name}, user={current_user.email}")
-            
+            # Check if this is a resubscribe
+            is_resubscribe = session.metadata.get('is_resubscribe') == 'true'
+            print(f"📋 {'Reactivating' if is_resubscribe else 'Creating'} subscription: plan={plan_name}, user={current_user.email}")
+
             # Create or update subscription in database
             existing_subscription = Subscription.get_by_user_id(current_user.user_id)
             
@@ -2864,7 +2873,10 @@ def checkout_success():
                 else:
                     print(f"❌ Failed to create subscription for user {current_user.email}")
             
-            flash(f'🎉 Subscription upgraded successfully! Welcome to your {plan_name.title()} plan!', 'success')
+            if is_resubscribe:
+                flash(f'🎉 Subscription reactivated successfully! Welcome back to your {plan_name.title()} plan!', 'success')
+            else:
+                flash(f'🎉 Subscription upgraded successfully! Welcome to your {plan_name.title()} plan!', 'success')
         else:
             print(f"❌ Payment processing failed - Payment status: {session.payment_status}, Subscription: {session.subscription}")
             flash('Payment is being processed. You will receive a confirmation email shortly.', 'info')

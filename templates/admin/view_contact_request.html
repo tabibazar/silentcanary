@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}Contact Request Details - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-envelope-open text-primary"></i> Contact Request Details</h1>
+    <div class="d-flex align-items-center">
+        <span class="badge bg-danger me-2">Admin</span>
+        <a href="{{ url_for('admin_contact_requests') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Requests
+        </a>
+    </div>
+</div>
+
+<!-- Request Status and Info -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle"></i> Request Information
+                    {% if request.escalation_stage == 'new' %}
+                        <span class="badge bg-warning ms-2">New</span>
+                    {% elif request.escalation_stage == 'in_progress' %}
+                        <span class="badge bg-primary ms-2">In Progress</span>
+                    {% elif request.escalation_stage == 'replied' %}
+                        <span class="badge bg-success ms-2">Replied</span>
+                    {% elif request.escalation_stage == 'closed' %}
+                        <span class="badge bg-secondary ms-2">Closed</span>
+                    {% endif %}
+                    
+                    {% if request.priority and request.priority != 'normal' %}
+                        {% if request.priority == 'urgent' %}
+                            <span class="badge bg-danger ms-1">{{ request.priority.title() }} Priority</span>
+                        {% elif request.priority == 'high' %}
+                            <span class="badge bg-warning text-dark ms-1">{{ request.priority.title() }} Priority</span>
+                        {% elif request.priority == 'low' %}
+                            <span class="badge bg-light text-dark ms-1">{{ request.priority.title() }} Priority</span>
+                        {% endif %}
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Name:</strong> {{ request.name }}</p>
+                        <p><strong>Email:</strong> <a href="mailto:{{ request.email }}">{{ request.email }}</a></p>
+                        <p><strong>Category:</strong> 
+                            <span class="badge bg-light text-dark">{{ request.category.title() }}</span>
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Subject:</strong> {{ request.subject }}</p>
+                        <p><strong>Created:</strong> 
+                            {% if request.created_at %}
+                                {{ request.created_at[:10] }} at {{ request.created_at[11:19] }} UTC
+                            {% else %}
+                                Unknown
+                            {% endif %}
+                        </p>
+                        {% if request.replied_at and request.replied_by %}
+                        <p><strong>Replied:</strong> {{ request.replied_at[:10] }} by {{ request.replied_by }}</p>
+                        {% endif %}
+                        {% if request.escalated_at and request.escalated_by %}
+                        <p><strong>Last Escalated:</strong> {{ request.escalated_at[:10] }} by {{ request.escalated_by }}</p>
+                        {% endif %}
+                        <p><strong>Current Priority:</strong> 
+                            <span class="badge bg-light text-dark">{{ request.priority.title() if request.priority else 'Normal' }}</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-tools"></i> Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                {% if request.escalation_stage != 'closed' %}
+                <!-- Escalation Stage Controls -->
+                <div class="mb-3">
+                    <label class="form-label"><strong>Escalation Stage:</strong></label>
+                    <form method="POST" action="{{ url_for('admin_escalate_contact_request', request_id=request.request_id) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <select name="escalation_stage" class="form-select form-select-sm mb-2" onchange="this.form.submit()">
+                            <option value="">-- Change Stage --</option>
+                            <option value="new" {% if request.escalation_stage == 'new' %}selected{% endif %}>New</option>
+                            <option value="in_progress" {% if request.escalation_stage == 'in_progress' %}selected{% endif %}>In Progress</option>
+                            <option value="replied" {% if request.escalation_stage == 'replied' %}selected{% endif %}>Replied</option>
+                            <option value="closed" {% if request.escalation_stage == 'closed' %}selected{% endif %}>Closed</option>
+                        </select>
+                    </form>
+                </div>
+
+                <!-- Priority Controls -->
+                <div class="mb-3">
+                    <label class="form-label"><strong>Priority:</strong></label>
+                    <form method="POST" action="{{ url_for('admin_escalate_contact_request', request_id=request.request_id) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <select name="priority" class="form-select form-select-sm mb-2" onchange="this.form.submit()">
+                            <option value="">-- Change Priority --</option>
+                            <option value="low" {% if request.priority == 'low' %}selected{% endif %}>Low</option>
+                            <option value="normal" {% if request.priority == 'normal' %}selected{% endif %}>Normal</option>
+                            <option value="high" {% if request.priority == 'high' %}selected{% endif %}>High</option>
+                            <option value="urgent" {% if request.priority == 'urgent' %}selected{% endif %}>Urgent</option>
+                        </select>
+                    </form>
+                </div>
+
+                <hr>
+                
+                <!-- Quick Actions -->
+                {% if request.escalation_stage == 'new' %}
+                <form method="POST" action="{{ url_for('admin_mark_progress_contact_request', request_id=request.request_id) }}" class="mb-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-primary btn-sm w-100">
+                        <i class="fas fa-play"></i> Mark In Progress
+                    </button>
+                </form>
+                {% endif %}
+                
+                <form method="POST" action="{{ url_for('admin_close_contact_request', request_id=request.request_id) }}" 
+                      class="mb-2" onsubmit="return confirm('Close this contact request?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-secondary btn-sm w-100">
+                        <i class="fas fa-times"></i> Close Request
+                    </button>
+                </form>
+                {% endif %}
+                
+                <a href="mailto:{{ request.email }}?subject=Re: {{ request.subject }}" 
+                   class="btn btn-outline-primary btn-sm w-100 mb-2">
+                    <i class="fas fa-external-link-alt"></i> Open in Email Client
+                </a>
+                
+                <a href="{{ url_for('admin_contact_requests') }}" class="btn btn-outline-info btn-sm w-100">
+                    <i class="fas fa-list"></i> All Requests
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Original Message -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-message"></i> Original Message</h5>
+    </div>
+    <div class="card-body">
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
+            {{ request.message | nl2br }}
+        </div>
+    </div>
+</div>
+
+<!-- Reply Form -->
+{% if request.status != 'closed' %}
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="fas fa-reply"></i> Send Reply
+            <small class="text-muted">(from reza@silentcanary.com)</small>
+        </h5>
+    </div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('admin_reply_contact_request', request_id=request.request_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            
+            <div class="mb-3">
+                <label for="reply_message" class="form-label">Reply Message</label>
+                <textarea class="form-control" id="reply_message" name="reply_message" rows="8" 
+                          placeholder="Write your reply to {{ request.name }} here..." required></textarea>
+                <div class="form-text">
+                    This reply will be sent to {{ request.email }} from reza@silentcanary.com (QA environment).
+                </div>
+            </div>
+            
+            <!-- Email Preview -->
+            <div class="alert alert-info">
+                <strong>Email Preview:</strong><br>
+                <strong>To:</strong> {{ request.email }}<br>
+                <strong>From:</strong> reza@silentcanary.com<br>
+                <strong>Subject:</strong> Re: {{ request.subject }}<br>
+            </div>
+            
+            <div class="d-flex justify-content-between">
+                <button type="button" class="btn btn-secondary" onclick="history.back()">
+                    <i class="fas fa-arrow-left"></i> Cancel
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-paper-plane"></i> Send Reply
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-secondary">
+    <i class="fas fa-info-circle"></i> This request has been closed and cannot receive replies.
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-expand textarea as user types
+document.addEventListener('DOMContentLoaded', function() {
+    const textarea = document.getElementById('reply_message');
+    if (textarea) {
+        textarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = this.scrollHeight + 'px';
+        });
+    }
+    
+    // Focus on reply textarea
+    if (textarea && !{{ 'true' if request.status == 'closed' else 'false' }}) {
+        textarea.focus();
+    }
+});
+
+// Form validation
+document.querySelector('form').addEventListener('submit', function(e) {
+    const message = document.getElementById('reply_message').value.trim();
+    if (message.length < 10) {
+        e.preventDefault();
+        alert('Please write a more detailed reply (at least 10 characters).');
+        return false;
+    }
+    
+    if (!confirm('Send this reply to {{ request.email }}?')) {
+        e.preventDefault();
+        return false;
+    }
+});
+</script>
+{% endblock %}

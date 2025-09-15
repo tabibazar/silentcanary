@@ -2,7 +2,7 @@
 
 {% block title %}Subscription Plans - SilentCanary{% endblock %}
 
-{% block extra_css %}
+{% block head %}
 <style>
     .plan-card {
         border: 2px solid #dee2e6;
@@ -158,8 +158,8 @@
                     {% endif %}
                     
                     <h4 class="card-title">Solo</h4>
-                    <div class="plan-price">$0</div>
-                    <div class="plan-period">forever</div>
+                    <div class="plan-price" data-monthly="0" data-annual="0">$0</div>
+                    <div class="plan-period" data-monthly="forever" data-annual="forever">forever</div>
                     
                     <hr class="my-4">
                     
@@ -181,9 +181,9 @@
                                 <i class="fas fa-check"></i> Current Plan
                             </button>
                         {% elif current_user.is_authenticated %}
-                            <button class="btn btn-outline-primary btn-block" disabled>
-                                Contact Support to Downgrade
-                            </button>
+                            <a href="{{ url_for('upgrade_plan', plan='startup') }}" class="btn btn-primary btn-block">
+                                Upgrade to Startup
+                            </a>
                         {% else %}
                             <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
                                 Get Started Free
@@ -369,65 +369,72 @@
 </div>
 {% endblock %}
 
-{% block extra_js %}
+{% block scripts %}
 <script>
-    // Billing period toggle functionality
-    document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function() {
+    try {
         const monthlyRadio = document.getElementById('monthly');
         const annualRadio = document.getElementById('annual');
         
-        function updatePricing() {
-            const isAnnual = annualRadio.checked;
-            
-            // Update all plan prices
-            document.querySelectorAll('.plan-price').forEach(priceElement => {
-                const monthlyPrice = priceElement.getAttribute('data-monthly');
-                const annualPrice = priceElement.getAttribute('data-annual');
-                
-                if (monthlyPrice && annualPrice) {
-                    priceElement.textContent = isAnnual ? `$${annualPrice}` : `$${monthlyPrice}`;
-                }
-            });
-            
-            // Update billing periods
-            document.querySelectorAll('.plan-period').forEach(periodElement => {
-                const monthlyPeriod = periodElement.getAttribute('data-monthly');
-                const annualPeriod = periodElement.getAttribute('data-annual');
-                
-                if (monthlyPeriod && annualPeriod) {
-                    periodElement.textContent = isAnnual ? annualPeriod : monthlyPeriod;
-                }
-            });
-            
-            // Show/hide savings and monthly equivalent
-            document.querySelectorAll('.annual-savings').forEach(savingsElement => {
-                savingsElement.style.display = isAnnual ? 'block' : 'none';
-            });
-            
-            document.querySelectorAll('.monthly-equivalent').forEach(equivalentElement => {
-                equivalentElement.style.display = isAnnual ? 'block' : 'none';
-            });
-            
-            // Update upgrade buttons to include billing period
-            document.querySelectorAll('a[href*="upgrade_plan"]').forEach(button => {
-                const href = button.getAttribute('href');
-                const baseHref = href.split('?')[0];
-                const planMatch = baseHref.match(/plan=(\w+)/);
-                
-                if (planMatch) {
-                    const plan = planMatch[1];
-                    const billingPeriod = isAnnual ? 'annual' : 'monthly';
-                    button.href = `${baseHref}?billing=${billingPeriod}`;
-                }
-            });
+        if (!monthlyRadio || !annualRadio) {
+            console.warn('Billing period radio buttons not found');
+            return;
         }
         
-        // Add event listeners
+        function updatePricing() {
+            try {
+                const isAnnual = annualRadio.checked;
+                
+                // Update prices
+                document.querySelectorAll('.plan-price').forEach(element => {
+                    const monthly = element.getAttribute('data-monthly');
+                    const annual = element.getAttribute('data-annual');
+                    if (monthly && annual) {
+                        element.textContent = isAnnual ? `$${annual}` : `$${monthly}`;
+                    }
+                });
+                
+                // Update periods
+                document.querySelectorAll('.plan-period').forEach(element => {
+                    const monthly = element.getAttribute('data-monthly');
+                    const annual = element.getAttribute('data-annual');
+                    if (monthly && annual) {
+                        element.textContent = isAnnual ? annual : monthly;
+                    }
+                });
+                
+                // Toggle savings display
+                document.querySelectorAll('.annual-savings').forEach(element => {
+                    element.style.display = isAnnual ? 'block' : 'none';
+                });
+                
+                document.querySelectorAll('.monthly-equivalent').forEach(element => {
+                    element.style.display = isAnnual ? 'block' : 'none';
+                });
+                
+                // Update upgrade button URLs
+                document.querySelectorAll('a[href*="upgrade_plan"]').forEach(button => {
+                    const href = button.getAttribute('href');
+                    if (href) {
+                        const baseHref = href.split('?')[0];
+                        const billing = isAnnual ? 'annual' : 'monthly';
+                        button.href = `${baseHref}?billing=${billing}`;
+                    }
+                });
+            } catch (error) {
+                console.error('Error updating pricing:', error);
+            }
+        }
+        
+        // Add change listeners
         monthlyRadio.addEventListener('change', updatePricing);
         annualRadio.addEventListener('change', updatePricing);
         
-        // Initialize pricing display
+        // Initialize
         updatePricing();
-    });
+    } catch (error) {
+        console.error('Error initializing pricing toggle:', error);
+    }
+});
 </script>
 {% endblock %}

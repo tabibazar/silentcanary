@@ -1968,6 +1968,36 @@ class Subscription:
             status='active'
         )
         return subscription.save()
+    
+    @staticmethod
+    def get_by_stripe_subscription_id(stripe_subscription_id):
+        """Get subscription by Stripe subscription ID"""
+        try:
+            subscriptions_table = get_dynamodb_resource().Table('SilentCanary_Subscriptions')
+            response = subscriptions_table.scan(
+                FilterExpression='stripe_subscription_id = :stripe_sub_id',
+                ExpressionAttributeValues={':stripe_sub_id': stripe_subscription_id}
+            )
+            
+            items = response.get('Items', [])
+            if items:
+                item = items[0]  # Should be unique
+                return Subscription(
+                    subscription_id=item['subscription_id'],
+                    user_id=item['user_id'],
+                    stripe_subscription_id=item.get('stripe_subscription_id'),
+                    stripe_customer_id=item.get('stripe_customer_id'),
+                    status=item.get('status', 'active'),
+                    plan_name=item.get('plan_name', 'free'),
+                    canary_limit=item.get('canary_limit', 1),
+                    current_period_start=item.get('current_period_start'),
+                    current_period_end=item.get('current_period_end'),
+                    created_at=item.get('created_at')
+                )
+            return None
+        except Exception as e:
+            print(f"❌ Error getting subscription by Stripe ID: {e}")
+            return None
 
 class APIKey:
     """Model for managing user API keys with usage tracking"""
