@@ -1370,7 +1370,7 @@ def check_canary_limits(user_id):
     
     # Check for grace period overages
     grace_period_end = None
-    if hasattr(subscription, 'overage_grace_start') and subscription.overage_grace_start:
+    if subscription and hasattr(subscription, 'overage_grace_start') and subscription.overage_grace_start:
         try:
             if isinstance(subscription.overage_grace_start, str):
                 grace_start = datetime.fromisoformat(subscription.overage_grace_start.replace('Z', '+00:00'))
@@ -1384,12 +1384,13 @@ def check_canary_limits(user_id):
         'plan_name': plan_name,
         'limit': limit,
         'current_count': current_count,
-        'usage_percentage': (current_count / limit) * 100,
+        'usage_percentage': (current_count / limit) * 100 if limit > 0 else 0,
         'can_create': current_count < limit or (grace_period_end and datetime.utcnow() < grace_period_end),
         'in_grace_period': grace_period_end and datetime.utcnow() < grace_period_end if grace_period_end else False,
         'grace_period_end': grace_period_end,
         'needs_upgrade_warning': current_count >= limit * 0.8,
-        'at_limit': current_count >= limit
+        'at_limit': current_count >= limit,
+        'remaining': max(0, limit - current_count)
     }
 
 @app.route('/create_canary', methods=['GET', 'POST'])
@@ -2063,8 +2064,24 @@ def account_management():
                 except:
                     pass
         
-        # Get usage info for canary limits
-        usage_info = check_canary_limits(current_user.user_id)
+        # Get usage info for canary limits with error handling
+        try:
+            usage_info = check_canary_limits(current_user.user_id)
+        except Exception as e:
+            print(f"❌ Error getting usage info: {e}")
+            # Fallback usage info
+            usage_info = {
+                'plan_name': subscription.plan_name if subscription else 'free',
+                'limit': 1,
+                'current_count': 0,
+                'usage_percentage': 0,
+                'can_create': True,
+                'in_grace_period': False,
+                'grace_period_end': None,
+                'needs_upgrade_warning': False,
+                'at_limit': False,
+                'remaining': 1
+            }
         
         print(f"🎯 Template variables: billing_frequency={billing_frequency}, plan_name={subscription.plan_name if subscription else 'None'}")
         return render_template('account.html', 
