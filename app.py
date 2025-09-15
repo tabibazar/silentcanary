@@ -2503,8 +2503,46 @@ def resubscribe():
             return redirect(url_for('account_management'))
         
         # Handle legacy canceled subscriptions that were incorrectly set to 'free'
-        if subscription.plan_name == 'free':
-            # For users who were affected by old cancellation logic, redirect to plans page
+        if subscription.plan_name == 'free' and subscription.stripe_customer_id:
+            # Query Stripe to find the original plan from subscription history
+            try:
+                import stripe
+                stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
+
+                # Get all subscriptions for this customer
+                subscriptions = stripe.Subscription.list(
+                    customer=subscription.stripe_customer_id,
+                    status='all',
+                    limit=10
+                )
+
+                # Find the most recent non-free subscription
+                original_plan = None
+                for stripe_sub in subscriptions.data:
+                    if stripe_sub.items and len(stripe_sub.items.data) > 0:
+                        price_id = stripe_sub.items.data[0].price.id
+                        plan = get_plan_name_from_price_id(price_id)
+                        if plan != 'free':
+                            original_plan = plan
+                            print(f"✅ Found original plan from Stripe: {original_plan}")
+
+                            # Update the subscription record with correct plan name
+                            subscription.plan_name = original_plan
+                            subscription.save()
+                            break
+
+                if original_plan:
+                    return redirect(url_for('upgrade_plan', plan=original_plan, resubscribe='true'))
+                else:
+                    flash('Could not determine your previous plan. Please select a plan to subscribe.', 'info')
+                    return redirect(url_for('subscription_plans'))
+
+            except Exception as e:
+                print(f"❌ Error querying Stripe for original plan: {e}")
+                flash('Please select your previous plan to resubscribe.', 'info')
+                return redirect(url_for('subscription_plans'))
+        elif subscription.plan_name == 'free':
+            # No Stripe customer ID, redirect to plans
             flash('Please select your previous plan to resubscribe.', 'info')
             return redirect(url_for('subscription_plans'))
 
