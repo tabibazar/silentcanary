@@ -1349,13 +1349,68 @@ def get_plan_name_from_price_id(price_id):
     
     return price_to_plan.get(price_id, 'free')
 
+def check_canary_limits(user_id):
+    """Check canary usage limits and return status info"""
+    from datetime import datetime, timedelta
+    
+    # Get user's subscription
+    subscription = Subscription.get_by_user_id(user_id)
+    plan_name = subscription.plan_name if subscription else 'free'
+    
+    # Define plan limits
+    plan_limits = {
+        'free': 1,
+        'startup': 5, 
+        'growth': 25,
+        'enterprise': 100
+    }
+    
+    limit = plan_limits.get(plan_name, 1)
+    current_count = len(Canary.get_by_user_id(user_id))
+    
+    # Check for grace period overages
+    grace_period_end = None
+    if hasattr(subscription, 'overage_grace_start') and subscription.overage_grace_start:
+        try:
+            if isinstance(subscription.overage_grace_start, str):
+                grace_start = datetime.fromisoformat(subscription.overage_grace_start.replace('Z', '+00:00'))
+            else:
+                grace_start = subscription.overage_grace_start
+            grace_period_end = grace_start + timedelta(days=3)
+        except:
+            grace_period_end = None
+    
+    return {
+        'plan_name': plan_name,
+        'limit': limit,
+        'current_count': current_count,
+        'usage_percentage': (current_count / limit) * 100,
+        'can_create': current_count < limit or (grace_period_end and datetime.utcnow() < grace_period_end),
+        'in_grace_period': grace_period_end and datetime.utcnow() < grace_period_end if grace_period_end else False,
+        'grace_period_end': grace_period_end,
+        'needs_upgrade_warning': current_count >= limit * 0.8,
+        'at_limit': current_count >= limit
+    }
+
 @app.route('/create_canary', methods=['GET', 'POST'])
 @login_required
 def create_canary():
     # Check subscription limits based on user's plan
+    usage_info = check_canary_limits(current_user.user_id)
     
     form = CanaryForm()
     if form.validate_on_submit():
+        # Check canary limits before creating
+        usage_info = check_canary_limits(current_user.user_id)
+        
+        if not usage_info['can_create']:
+            if usage_info['in_grace_period']:
+                grace_end = usage_info['grace_period_end'].strftime('%B %d, %Y at %I:%M %p UTC')
+                flash(f"⚠️ You're in a 3-day grace period due to exceeding your {usage_info['plan_name'].title()} plan limit of {usage_info['limit']} canaries. You have until {grace_end} to upgrade your plan. <a href='/pricing' class='alert-link'><strong>Upgrade Now</strong></a>", 'warning')
+            else:
+                flash(f"❌ You've reached your {usage_info['plan_name'].title()} plan limit of {usage_info['limit']} canaries. Please <a href='/pricing' class='alert-link'><strong>upgrade your plan</strong></a> to create more canaries.", 'error')
+                return redirect(url_for('create_canary'))
+        
         # Process tags - split by comma and clean up whitespace
         tags = []
         if form.tags.data:
@@ -1383,6 +1438,19 @@ def create_canary():
         )
         
         if canary.save():
+            # Check if this canary creation puts user over their plan limit
+            updated_usage_info = check_canary_limits(current_user.user_id)
+            if updated_usage_info['current_count'] > updated_usage_info['limit']:
+                # User has exceeded their plan limit - start 3-day grace period
+                subscription = Subscription.get_by_user_id(current_user.user_id)
+                if subscription and not hasattr(subscription, 'overage_grace_start'):
+                    # Set grace period start time
+                    subscription.overage_grace_start = datetime.utcnow().isoformat()
+                    subscription.save()
+                    
+                    grace_end = (datetime.utcnow() + timedelta(days=3)).strftime('%B %d, %Y at %I:%M %p UTC')
+                    flash(f"⚠️ You've exceeded your {updated_usage_info['plan_name'].title()} plan limit! You have until {grace_end} to upgrade before canary creation is restricted. <a href='/pricing' class='alert-link'><strong>Upgrade Now</strong></a>", 'warning')
+            
             # Handle Smart Alert creation if enabled
             if request.form.get('enable_smart_alerts'):
                 # Map sensitivity threshold to decimal value
@@ -1443,7 +1511,11 @@ def create_canary():
         else:
             flash('Failed to create canary. Please try again.')
     
-    return render_template('create_canary.html', form=form)
+    # Add 80% usage warning if needed
+    if usage_info['needs_upgrade_warning'] and not usage_info['at_limit']:
+        flash(f"⚠️ You're using {usage_info['current_count']}/{usage_info['limit']} canaries ({usage_info['usage_percentage']:.0f}% of your {usage_info['plan_name'].title()} plan). Consider <a href='/pricing' class='alert-link'><strong>upgrading</strong></a> before reaching your limit.", 'warning')
+    
+    return render_template('create_canary.html', form=form, usage_info=usage_info)
 
 def send_verification_email(verification, canary):
     """Send email verification email for canary alert email"""
@@ -1913,6 +1985,7 @@ def account_management():
             
             # Try to get billing history from Stripe
             import stripe
+            from datetime import datetime
             stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
             
             if stripe.api_key:
@@ -1967,8 +2040,9 @@ def account_management():
             if stripe.api_key:
                 try:
                     stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
-                    if stripe_subscription.items and len(stripe_subscription.items.data) > 0:
-                        current_price = stripe_subscription.items.data[0].price
+                    items_list = stripe_subscription.items.list()
+                    if items_list and len(items_list.data) > 0:
+                        current_price = items_list.data[0].price
                         if current_price and current_price.recurring:
                             billing_frequency = current_price.recurring.interval
                             print(f"🔄 Current billing frequency: {billing_frequency}")
@@ -2049,6 +2123,13 @@ def upgrade_plan(plan):
             flash('Invalid plan selected', 'error')
             return redirect(url_for('subscription_plans'))
         
+        # Check if user has a canceled subscription
+        subscription = Subscription.get_by_user_id(current_user.user_id)
+        if subscription and subscription.status == 'canceled':
+            print(f"❌ User has canceled subscription status")
+            flash('Your subscription is currently canceled. Please use the "Resubscribe" button from your account page to reactivate your subscription.', 'error')
+            return redirect(url_for('account_management'))
+        
         # Get billing period from query params (default to monthly)
         billing_period = request.args.get('billing', 'monthly')
         print(f"💰 Billing period: {billing_period}")
@@ -2122,8 +2203,11 @@ def upgrade_plan(plan):
 @app.route('/cancel_subscription', methods=['POST'])
 @login_required  
 def cancel_subscription():
-    """Cancel user's current subscription"""
+    """Cancel user's current subscription with choice between immediate or end-of-period"""
     try:
+        # Get cancellation type from form (immediate or end_of_period)
+        cancellation_type = request.form.get('cancellation_type', 'end_of_period')
+        
         # Get user's current subscription
         subscription = Subscription.get_by_user_id(current_user.user_id)
         
@@ -2149,20 +2233,33 @@ def cancel_subscription():
             if subscription.stripe_subscription_id:
                 stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
                 
-                # Cancel at period end (don't immediately cancel)
-                stripe.Subscription.modify(
-                    subscription.stripe_subscription_id,
-                    cancel_at_period_end=True
-                )
-                
-                print(f"✅ Subscription {subscription.stripe_subscription_id} marked for cancellation at period end")
-                
-                # Update subscription status in database
-                subscription.status = 'canceled'
-                if subscription.save():
-                    flash('Your subscription has been cancelled. You\'ll continue to have access until the end of your current billing period.', 'success')
+                if cancellation_type == 'immediate':
+                    # Cancel immediately
+                    stripe.Subscription.cancel(subscription.stripe_subscription_id)
+                    print(f"✅ Subscription {subscription.stripe_subscription_id} cancelled immediately")
+                    
+                    # Update subscription status in database
+                    subscription.status = 'canceled'
+                    subscription.plan_name = 'free'  # Downgrade to free plan immediately
+                    if subscription.save():
+                        flash('Your subscription has been cancelled immediately. You now have access to the free plan features.', 'success')
+                    else:
+                        flash('Subscription cancelled in Stripe but failed to update local database. Please contact support.', 'warning')
                 else:
-                    flash('Subscription cancelled in Stripe but failed to update local database. Please contact support.', 'warning')
+                    # Cancel at period end (default)
+                    stripe.Subscription.modify(
+                        subscription.stripe_subscription_id,
+                        cancel_at_period_end=True
+                    )
+                    print(f"✅ Subscription {subscription.stripe_subscription_id} marked for cancellation at period end")
+                    
+                    # Update subscription status in database
+                    subscription.status = 'canceled'
+                    if subscription.save():
+                        period_end = datetime.fromtimestamp(stripe_subscription.current_period_end).strftime('%B %d, %Y')
+                        flash(f'Your subscription has been cancelled. You\'ll continue to have access to your current plan until {period_end}.', 'success')
+                    else:
+                        flash('Subscription cancelled in Stripe but failed to update local database. Please contact support.', 'warning')
             else:
                 # No Stripe subscription ID, just cancel locally
                 subscription.status = 'canceled'
@@ -2190,6 +2287,85 @@ def cancel_subscription():
             
     except Exception as e:
         print(f"❌ Error in cancel_subscription: {e}")
+        flash('An unexpected error occurred. Please try again or contact support.', 'error')
+        return redirect(url_for('contact'))
+    
+    return redirect(url_for('account_management'))
+
+def perform_immediate_plan_change(subscription, new_plan, new_plan_config, change_type):
+    """Perform immediate plan change with Stripe proration"""
+    stripe_secret_key = os.environ.get('STRIPE_SECRET_KEY')
+    if not stripe_secret_key:
+        flash('Payment system not configured. Please contact support.', 'error')
+        return redirect(url_for('contact'))
+    
+    if not subscription.stripe_subscription_id:
+        flash('No active Stripe subscription found. Please contact support.', 'error')
+        return redirect(url_for('contact'))
+    
+    import stripe
+    stripe.api_key = stripe_secret_key
+    
+    try:
+        # Get current subscription from Stripe
+        stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
+        
+        # Determine current billing period and get appropriate price ID
+        current_interval = stripe_subscription.items.list().data[0].price.recurring.interval
+        billing_period = 'annual' if current_interval == 'year' else 'monthly'
+        
+        if billing_period == 'annual':
+            new_price_id = new_plan_config['annual_price_id']
+            display_price = f"${new_plan_config['annual_price']}/year"
+        else:
+            new_price_id = new_plan_config['monthly_price_id'] 
+            display_price = f"${new_plan_config['monthly_price']}/month"
+        
+        if not new_price_id:
+            flash('Plan pricing not configured. Please contact support.', 'error')
+            return redirect(url_for('contact'))
+        
+        print(f"🔄 Performing immediate {change_type}: {subscription.plan_name} -> {new_plan} ({display_price})")
+        
+        # Update subscription with proration
+        updated_subscription = stripe.Subscription.modify(
+            subscription.stripe_subscription_id,
+            items=[{
+                'id': stripe_subscription.items.list().data[0].id,
+                'price': new_price_id,
+            }],
+            proration_behavior='create_prorations'  # This creates proration items
+        )
+        
+        print(f"✅ Stripe subscription updated with proration")
+        
+        # Update local subscription record
+        subscription.plan_name = new_plan
+        subscription.stripe_price_id = new_price_id
+        subscription.billing_frequency = billing_period
+        
+        # Clear any overage grace periods when upgrading
+        if change_type == 'upgrade' and hasattr(subscription, 'overage_grace_start'):
+            subscription.overage_grace_start = None
+        
+        if subscription.save():
+            if change_type == 'upgrade':
+                flash(f'🎉 Successfully upgraded to {new_plan_config["name"]} plan ({display_price})! The change is effective immediately with prorated billing.', 'success')
+            else:
+                flash(f'Plan changed to {new_plan_config["name"]} ({display_price}) with immediate effect and prorated billing.', 'success')
+        else:
+            flash('Plan changed in Stripe but failed to update local database. Please contact support.', 'warning')
+            
+    except stripe.error.InvalidRequestError as e:
+        print(f"❌ Stripe Invalid Request Error: {e}")
+        flash(f'Error changing plan: {e}', 'error')
+        return redirect(url_for('contact'))
+    except stripe.error.StripeError as e:
+        print(f"❌ Stripe error: {e}")
+        flash('Error changing plan. Please contact support.', 'error')
+        return redirect(url_for('contact'))
+    except Exception as e:
+        print(f"❌ Unexpected error in perform_immediate_plan_change: {e}")
         flash('An unexpected error occurred. Please try again or contact support.', 'error')
         return redirect(url_for('contact'))
     
@@ -2267,79 +2443,16 @@ def change_plan(new_plan):
         current_level = plan_hierarchy.get(current_plan, 0)
         new_level = plan_hierarchy.get(new_plan, 0)
         
-        # For upgrades (higher cost plans), redirect to checkout for payment confirmation
+        # For upgrades (higher cost plans), perform immediate change with proration
         if new_level > current_level:
-            print(f"🚀 Upgrade detected: {current_plan} -> {new_plan}, redirecting to checkout for payment confirmation")
-            return redirect(url_for('upgrade_plan', plan=new_plan))
+            print(f"🚀 Upgrade detected: {current_plan} -> {new_plan}, performing immediate change with proration")
+            return perform_immediate_plan_change(subscription, new_plan, new_plan_config, 'upgrade')
         
         # Handle plan changes between paid plans (downgrades and same-level changes)
-        stripe_secret_key = os.environ.get('STRIPE_SECRET_KEY')
-        if not stripe_secret_key:
-            flash('Payment system not configured. Please contact support.', 'error')
-            return redirect(url_for('contact'))
+        change_type = 'downgrade' if new_level < current_level else 'lateral'
+        print(f"🔄 {change_type.title()} detected: {current_plan} -> {new_plan}, performing immediate change with proration")
+        return perform_immediate_plan_change(subscription, new_plan, new_plan_config, change_type)
         
-        if not subscription.stripe_subscription_id:
-            flash('No active Stripe subscription found. Please contact support.', 'error')
-            return redirect(url_for('contact'))
-        
-        # Get billing period from query params (default to current period or monthly)
-        billing_period = request.args.get('billing', 'monthly')
-        
-        # Select the appropriate price ID
-        if billing_period == 'annual':
-            new_price_id = new_plan_config['annual_price_id']
-            display_price = f"${new_plan_config['annual_price']}/year"
-        else:
-            new_price_id = new_plan_config['monthly_price_id']
-            display_price = f"${new_plan_config['monthly_price']}/month"
-        
-        if not new_price_id:
-            flash('Plan pricing not configured. Please contact support.', 'error')
-            return redirect(url_for('contact'))
-        
-        print(f"🔄 Changing plan from {current_plan} to {new_plan} ({display_price}) - downgrade or same level")
-        
-        import stripe
-        stripe.api_key = stripe_secret_key
-        
-        try:
-            # Get current subscription from Stripe
-            stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
-            
-            # Modify the subscription to change the plan
-            updated_subscription = stripe.Subscription.modify(
-                subscription.stripe_subscription_id,
-                items=[{
-                    'id': stripe_subscription['items']['data'][0].id,
-                    'price': new_price_id,
-                }],
-                proration_behavior='create_prorations'  # Create prorations for immediate change
-            )
-            
-            # Update local database
-            subscription.plan_name = new_plan
-            subscription.canary_limit = new_plan_config['canary_limit']
-            subscription.status = 'active'
-            
-            if subscription.save():
-                print(f"✅ Plan changed successfully to {new_plan}")
-                
-                if new_level < current_level:
-                    flash(f'Successfully downgraded to {new_plan_config["name"]} plan. Changes are effective immediately.', 'success')
-                else:
-                    flash(f'Successfully changed to {new_plan_config["name"]} plan. Changes are effective immediately.', 'success')
-            else:
-                flash('Plan changed in Stripe but failed to update local database. Please contact support.', 'warning')
-                
-        except stripe.error.InvalidRequestError as e:
-            print(f"❌ Stripe Invalid Request Error during plan change: {e}")
-            flash('Invalid plan change request. Please contact support.', 'error')
-            return redirect(url_for('contact'))
-        except stripe.error.StripeError as e:
-            print(f"❌ Stripe error during plan change: {e}")
-            flash('Error changing plan. Please contact support.', 'error')
-            return redirect(url_for('contact'))
-            
     except Exception as e:
         print(f"❌ Error in change_plan: {e}")
         flash('An unexpected error occurred. Please try again or contact support.', 'error')
@@ -2347,10 +2460,43 @@ def change_plan(new_plan):
     
     return redirect(url_for('account_management'))
 
+@app.route('/resubscribe')
+@login_required
+def resubscribe():
+    """Resubscribe to the same plan that was previously canceled"""
+    try:
+        # Get user's current subscription
+        subscription = Subscription.get_by_user_id(current_user.user_id)
+        
+        if not subscription:
+            flash('No subscription found. Please choose a plan.', 'error')
+            return redirect(url_for('subscription_plans'))
+        
+        if subscription.status != 'canceled':
+            flash('Your subscription is already active.', 'info')
+            return redirect(url_for('account_management'))
+        
+        if subscription.plan_name == 'free':
+            flash('You cannot resubscribe to the free plan.', 'info')
+            return redirect(url_for('subscription_plans'))
+        
+        # Redirect to upgrade with their previous plan
+        return redirect(url_for('upgrade_plan', plan=subscription.plan_name))
+        
+    except Exception as e:
+        print(f"❌ Error in resubscribe: {e}")
+        flash('An unexpected error occurred. Please try again or contact support.', 'error')
+        return redirect(url_for('contact'))
+
 @app.route('/change_billing_frequency/<frequency>')
 @login_required
 def change_billing_frequency(frequency):
     """Change user's billing frequency (monthly <-> annual) for the same plan"""
+    import sys
+    print(f"🔄 ROUTE ENTERED: /change_billing_frequency/{frequency}", file=sys.stderr)
+    print(f"🔄 USER: {current_user.email if hasattr(current_user, 'email') else 'NO_EMAIL'}", file=sys.stderr)
+    print(f"🔄 FREQUENCY PARAM: {frequency}", file=sys.stderr)
+    sys.stderr.flush()
     try:
         # Validate frequency parameter
         if frequency not in ['monthly', 'annual']:
@@ -2433,8 +2579,9 @@ def change_billing_frequency(frequency):
             
             # Check current billing interval
             current_interval = 'monthly'  # default
-            if stripe_subscription.items and len(stripe_subscription.items.data) > 0:
-                current_price = stripe_subscription.items.data[0].price
+            items_list = stripe_subscription.items.list()
+            if items_list and len(items_list.data) > 0:
+                current_price = items_list.data[0].price
                 if current_price and current_price.recurring:
                     current_interval = current_price.recurring.interval
                     if current_interval == 'year':
@@ -2473,7 +2620,9 @@ def change_billing_frequency(frequency):
             return redirect(url_for('contact'))
             
     except Exception as e:
+        import traceback
         print(f"❌ Error in change_billing_frequency: {e}")
+        print(f"❌ Full traceback: {traceback.format_exc()}")
         flash('An unexpected error occurred. Please try again or contact support.', 'error')
         return redirect(url_for('contact'))
     
@@ -2615,7 +2764,9 @@ def checkout_success():
                     # Method 2: Try using subscription ID to retrieve items
                     try:
                         print(f"🔍 Trying to list subscription items by ID...")
-                        items = stripe.SubscriptionItem.list(subscription=stripe_subscription.id)
+                        # Ensure we're using the subscription ID, not the object
+                        subscription_id_for_items = stripe_subscription.id if hasattr(stripe_subscription, 'id') else str(stripe_subscription)
+                        items = stripe.SubscriptionItem.list(subscription=subscription_id_for_items)
                         if items.data:
                             price_id = items.data[0].price.id
                             print(f"💰 Extracted price_id from API call: {price_id}")
