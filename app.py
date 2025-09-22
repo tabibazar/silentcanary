@@ -878,36 +878,24 @@ def admin_update_email(user_id):
 def admin_contact_requests():
     """Admin panel for managing contact requests"""
     try:
-        print(f"🔍 DEBUG admin_contact_requests(): Handler called")
-
         # Get status filter
         status_filter = request.args.get('status', 'all')
-        print(f"🔍 DEBUG admin_contact_requests(): Status filter = {status_filter}")
 
         # Get contact requests
-        print(f"🔍 DEBUG admin_contact_requests(): About to call ContactRequest.get_all()")
         if status_filter == 'all':
             contact_requests = ContactRequest.get_all(limit=200)
         else:
             contact_requests = ContactRequest.get_all(limit=200, status=status_filter)
 
-        print(f"🔍 DEBUG admin_contact_requests(): get_all() returned {len(contact_requests)} requests")
-
         # Get statistics
-        print(f"🔍 DEBUG admin_contact_requests(): About to call ContactRequest.get_stats()")
         stats = ContactRequest.get_stats()
-        print(f"🔍 DEBUG admin_contact_requests(): get_stats() returned: {stats}")
 
-        print(f"✅ DEBUG admin_contact_requests(): Rendering template with {len(contact_requests)} requests")
         return render_template('admin/contact_requests.html',
                              contact_requests=contact_requests,
                              stats=stats,
                              status_filter=status_filter)
 
     except Exception as e:
-        print(f"❌ DEBUG admin_contact_requests(): Error loading contact requests: {e}")
-        import traceback
-        print(f"❌ DEBUG admin_contact_requests(): Full traceback: {traceback.format_exc()}")
         flash(f'Error loading contact requests: {e}', 'error')
         return redirect(url_for('admin'))
 
@@ -1096,34 +1084,8 @@ def contact():
                 status='new'
             )
 
-            print(f"🔍 DEBUG: About to save contact request - ID: {contact_request.request_id}, Email: {contact_request.email}")
-
-            # Test DynamoDB connection first
-            try:
-                from models import get_dynamodb_resource
-                api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
-                print(f"🔍 DEBUG: DynamoDB table connection successful: {api_usage_table.table_name}")
-            except Exception as db_error:
-                print(f"❌ DEBUG: DynamoDB connection failed: {db_error}")
-
-            # Attempt to save
-            save_result = contact_request.save()
-            print(f"🔍 DEBUG: Save method returned: {save_result}")
-
-            if save_result:
-                print(f"✅ Contact request saved to database: {contact_request.request_id}")
-
-                # Verify the save by attempting to retrieve it
-                try:
-                    test_retrieved = ContactRequest.get_by_id(contact_request.request_id)
-                    if test_retrieved:
-                        print(f"✅ DEBUG: Contact request successfully retrieved after save")
-                    else:
-                        print(f"❌ DEBUG: Contact request NOT found after save - ID: {contact_request.request_id}")
-                except Exception as retrieve_error:
-                    print(f"❌ DEBUG: Error retrieving contact request after save: {retrieve_error}")
-            else:
-                print(f"❌ Failed to save contact request to database")
+            # Save contact request to database
+            contact_request.save()
             
             # Send email notification to support team
             send_templated_email(

@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block title %}Confirm Billing Change - SilentCanary{% endblock %}
+
+{% block head %}
+<style>
+    .confirmation-card {
+        border: 2px solid #007bff;
+        border-radius: 15px;
+        background: linear-gradient(135deg, #f8fbff, #e3f2fd);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+    }
+
+    .plan-comparison {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 15px 0;
+    }
+
+    .current-plan {
+        border-left: 4px solid #6c757d;
+        padding-left: 15px;
+    }
+
+    .new-plan {
+        border-left: 4px solid #28a745;
+        padding-left: 15px;
+    }
+
+    .savings-highlight {
+        background: linear-gradient(135deg, #d4edda, #c3e6cb);
+        border: 2px solid #28a745;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 20px 0;
+    }
+
+    .proration-details {
+        background: #e7f3ff;
+        border: 1px solid #b3d9ff;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 15px 0;
+    }
+
+    .btn-confirm {
+        background: linear-gradient(135deg, #28a745, #20c997);
+        border: none;
+        font-weight: bold;
+        padding: 12px 30px;
+        border-radius: 25px;
+    }
+
+    .btn-cancel {
+        background: linear-gradient(135deg, #6c757d, #5a6268);
+        border: none;
+        color: white;
+        padding: 12px 30px;
+        border-radius: 25px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card confirmation-card">
+                <div class="card-body p-5">
+                    <div class="text-center mb-4">
+                        <h2 class="text-primary">
+                            <i class="fas fa-clipboard-check"></i>
+                            Confirm Billing Change
+                        </h2>
+                        <p class="text-muted">Please review the details of your billing change before proceeding</p>
+                    </div>
+
+                    <!-- Current vs New Plan Comparison -->
+                    <div class="plan-comparison">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="current-plan">
+                                    <h5 class="text-muted">
+                                        <i class="fas fa-arrow-left"></i> Current Plan
+                                    </h5>
+                                    <h4>{{ current_plan.name }} - Monthly</h4>
+                                    <p class="mb-0">
+                                        <strong>${{ current_plan.monthly_price }}/month</strong>
+                                    </p>
+                                    <small class="text-muted">
+                                        Next billing: {{ next_billing_date.strftime('%B %d, %Y') if next_billing_date else 'Unknown' }}
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="new-plan">
+                                    <h5 class="text-success">
+                                        <i class="fas fa-arrow-right"></i> New Plan
+                                    </h5>
+                                    <h4>{{ current_plan.name }} - Annual</h4>
+                                    <p class="mb-0">
+                                        <strong>${{ current_plan.annual_price }}/year</strong>
+                                    </p>
+                                    <small class="text-success">
+                                        <strong>${{ "%.2f"|format(current_plan.annual_price / 12) }}/month effectively</strong>
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Savings Highlight -->
+                    <div class="savings-highlight text-center">
+                        <h4 class="text-success mb-3">
+                            <i class="fas fa-piggy-bank"></i> Your Annual Savings
+                        </h4>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <h5 class="text-success">${{ yearly_savings }}</h5>
+                                <small>Total Yearly Savings</small>
+                            </div>
+                            <div class="col-md-4">
+                                <h5 class="text-success">{{ savings_percentage }}%</h5>
+                                <small>Discount</small>
+                            </div>
+                            <div class="col-md-4">
+                                <h5 class="text-success">2 Months</h5>
+                                <small>Effectively Free</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Proration Details -->
+                    {% if prorated_credit > 0 %}
+                    <div class="proration-details">
+                        <h6>
+                            <i class="fas fa-calculator text-primary"></i>
+                            Prorated Credit Details
+                        </h6>
+                        <p class="mb-2">
+                            <strong>Credit for unused monthly period:</strong> ${{ "%.2f"|format(prorated_credit) }}
+                        </p>
+                        <p class="mb-2">
+                            <strong>Annual charge:</strong> ${{ current_plan.annual_price }}
+                        </p>
+                        <p class="mb-0 text-success">
+                            <strong>Net charge today:</strong> ${{ "%.2f"|format(current_plan.annual_price - prorated_credit) }}
+                        </p>
+                        <small class="text-muted">
+                            * Credit will be applied immediately, and your next billing date will be one year from today
+                        </small>
+                    </div>
+                    {% endif %}
+
+                    <!-- Terms and Benefits -->
+                    <div class="alert alert-info">
+                        <h6><i class="fas fa-info-circle"></i> What happens next:</h6>
+                        <ul class="mb-0">
+                            <li>✅ Redirect to secure Stripe checkout</li>
+                            <li>✅ Complete payment with prorated credit applied</li>
+                            <li>✅ Immediate switch to annual billing upon completion</li>
+                            <li>✅ Next billing date: {{ new_billing_date.strftime('%B %d, %Y') if new_billing_date else 'One year from today' }}</li>
+                            <li>✅ Start saving immediately with annual pricing</li>
+                            <li>✅ No interruption to your service</li>
+                        </ul>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <h6><i class="fas fa-credit-card"></i> Secure Payment Process:</h6>
+                        <p class="mb-0">
+                            <small>You'll be redirected to Stripe's secure checkout to complete the billing frequency change.
+                            Your payment method will be charged the prorated amount immediately.</small>
+                        </p>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="text-center mt-4">
+                        <form method="POST" action="{{ url_for('confirm_billing_change') }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <input type="hidden" name="frequency" value="{{ target_frequency }}">
+                            <input type="hidden" name="confirmed" value="true">
+                            <button type="submit" class="btn btn-confirm btn-lg me-3">
+                                <i class="fas fa-check-circle"></i>
+                                Confirm & Switch to Annual
+                            </button>
+                        </form>
+
+                        <a href="{{ url_for('subscription_plans') }}" class="btn btn-cancel btn-lg">
+                            <i class="fas fa-times-circle"></i>
+                            Cancel
+                        </a>
+                    </div>
+
+                    <div class="text-center mt-3">
+                        <small class="text-muted">
+                            <i class="fas fa-shield-alt"></i>
+                            Secure payment processing by Stripe • Can be changed anytime
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add confirmation dialog for extra safety
+    const confirmButton = document.querySelector('.btn-confirm');
+    if (confirmButton) {
+        confirmButton.addEventListener('click', function(e) {
+            const confirmed = confirm(
+                'Are you sure you want to switch to annual billing? ' +
+                'This will charge your payment method today with the prorated amount.'
+            );
+            if (!confirmed) {
+                e.preventDefault();
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

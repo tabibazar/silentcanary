@@ -178,12 +178,12 @@
                         </td>
                         <td>
                             <div class="btn-group" role="group">
-                                <a href="{{ url_for('admin_view_contact_request', request_id=request.request_id) }}" 
+                                <a href="{{ url_for('admin_view_contact_request', request_id=request.request_id) }}"
                                    class="btn btn-sm btn-outline-primary" title="View Details">
                                     <i class="fas fa-eye"></i>
                                 </a>
                                 {% if request.status != 'closed' %}
-                                <form method="POST" action="{{ url_for('admin_close_contact_request', request_id=request.request_id) }}" 
+                                <form method="POST" action="{{ url_for('admin_close_contact_request', request_id=request.request_id) }}"
                                       class="d-inline" onsubmit="return confirm('Close this contact request?')">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <button type="submit" class="btn btn-sm btn-outline-secondary" title="Close Request">
@@ -191,6 +191,10 @@
                                     </button>
                                 </form>
                                 {% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-danger" title="Delete Request Permanently"
+                                        onclick="deleteContactRequest('{{ request.request_id }}', '{{ request.name }}', '{{ request.email }}', '{{ request.subject }}')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -248,6 +252,39 @@
 
 {% block scripts %}
 <script>
+// Confirm delete function with detailed information
+function deleteContactRequest(requestId, name, email, subject) {
+    // Simple confirmation dialog
+    const confirmed = confirm(`Delete contact request from ${name} (${email})?\n\nSubject: ${subject}\n\nThis action cannot be undone.`);
+
+    if (!confirmed) {
+        return;
+    }
+
+    // Show loading state
+    const button = event.target.closest('button');
+    const originalHtml = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+    // Create and submit form
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/admin/contact-requests/${requestId}/delete`;
+    form.style.display = 'none';
+
+    // Add CSRF token
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = csrfToken;
+    form.appendChild(csrfInput);
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
 // Auto-refresh every 30 seconds to show new requests
 setTimeout(function() {
     location.reload();

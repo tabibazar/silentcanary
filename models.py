@@ -2431,6 +2431,7 @@ class ContactRequest:
         """Save contact request to DynamoDB (using APIUsage table)"""
         try:
             api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+
             # Create escalation metadata JSON
             import json
             escalation_metadata = {
@@ -2440,7 +2441,7 @@ class ContactRequest:
                 'escalated_by': self.escalated_by,
                 'admin_reply': self.admin_reply
             }
-            
+
             item = {
                 'log_id': self.request_id,
                 'user_id': self.email,  # Store email in user_id for easy lookup
@@ -2456,7 +2457,7 @@ class ContactRequest:
                 'response_time_ms': Decimal('0') if self.replied_at else None,
                 'estimated_cost': json.dumps(escalation_metadata)  # Store escalation metadata as JSON
             }
-            
+
             api_usage_table.put_item(Item=item)
             return True
         except Exception as e:
@@ -2523,7 +2524,8 @@ class ContactRequest:
         """Get all contact requests, optionally filtered by status"""
         try:
             api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
-            
+
+            # Scan without limit to get all contact requests (like get_stats does)
             if status:
                 # Filter by status using success field mapping
                 success_value = True if status == 'replied' else False
@@ -2532,18 +2534,18 @@ class ContactRequest:
                     ExpressionAttributeValues={
                         ':api_type': 'contact_request',
                         ':status': success_value
-                    },
-                    Limit=limit
+                    }
                 )
             else:
                 response = api_usage_table.scan(
                     FilterExpression='api_type = :api_type',
-                    ExpressionAttributeValues={':api_type': 'contact_request'},
-                    Limit=limit
+                    ExpressionAttributeValues={':api_type': 'contact_request'}
                 )
-            
+
+            items = response.get('Items', [])
+
             requests = []
-            for item in response.get('Items', []):
+            for item in items:
                 # Parse escalation metadata from JSON
                 import json
                 escalation_metadata = {}
@@ -2580,11 +2582,13 @@ class ContactRequest:
                     escalated_by=escalation_metadata.get('escalated_by')
                 )
                 requests.append(contact_request)
-            
+
             # Sort by creation date (most recent first)
             requests.sort(key=lambda x: x.created_at, reverse=True)
-            return requests
-            
+
+            # Apply limit after sorting
+            return requests[:limit]
+
         except Exception as e:
             print(f"Error fetching contact requests: {e}")
             return []
@@ -2647,7 +2651,7 @@ class ContactRequest:
                 FilterExpression='api_type = :api_type',
                 ExpressionAttributeValues={':api_type': 'contact_request'}
             )
-            
+
             items = response.get('Items', [])
             total = len(items)
             
@@ -2681,5 +2685,15 @@ class ContactRequest:
         except Exception as e:
             print(f"Error getting contact request stats: {e}")
             return {'total': 0, 'new': 0, 'in_progress': 0, 'replied': 0, 'closed': 0}
+
+    def delete(self):
+        """Delete contact request permanently from DynamoDB"""
+        try:
+            api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+            response = api_usage_table.delete_item(Key={'log_id': self.request_id})
+            return True
+        except Exception as e:
+            print(f"Error deleting contact request: {e}")
+            return False
 
 

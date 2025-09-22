@@ -118,17 +118,35 @@
                 Subscription Plans
             </h1>
             
+            <!-- Annual Promotion Banner -->
+            <div class="alert alert-success text-center mb-4" id="annual-promo-banner" style="display: none;">
+                <div class="row align-items-center">
+                    <div class="col-lg-8 mx-auto">
+                        <h4 class="mb-2">🎉 <strong>Limited Time: Switch to Annual & Save Big!</strong></h4>
+                        <p class="mb-1">
+                            <i class="fas fa-gift text-warning"></i> <strong>Get 2 months absolutely FREE</strong> when you switch to annual billing
+                        </p>
+                        <small class="text-success">
+                            <i class="fas fa-calculator"></i> Plus receive a prorated discount on your remaining monthly period!
+                        </small>
+                    </div>
+                </div>
+            </div>
+
             <!-- Billing Period Toggle -->
             <div class="text-center mb-4">
                 <div class="btn-group" role="group" aria-label="Billing period">
                     <input type="radio" class="btn-check" name="billing-period" id="monthly" autocomplete="off" checked>
                     <label class="btn btn-outline-primary" for="monthly">Monthly</label>
-                    
+
                     <input type="radio" class="btn-check" name="billing-period" id="annual" autocomplete="off">
                     <label class="btn btn-outline-primary" for="annual">
-                        Annual 
+                        Annual
                         <span class="badge bg-success ms-1">2 months free!</span>
                     </label>
+                </div>
+                <div class="mt-2">
+                    <small class="text-muted">💡 Switch between monthly and annual pricing</small>
                 </div>
             </div>
             
@@ -228,9 +246,18 @@
                     
                     <div class="mt-4">
                         {% if current_user.is_authenticated and subscription and subscription.plan_name == 'startup' %}
-                            <button class="btn btn-success btn-block" disabled>
+                            <button class="btn btn-success btn-block mb-2" disabled>
                                 <i class="fas fa-check"></i> Current Plan
                             </button>
+                            <!-- Annual upgrade option for current monthly subscribers -->
+                            <div class="annual-upgrade-section" style="display: none;">
+                                <a href="{{ url_for('confirm_billing_change', frequency='annual') }}" class="btn btn-outline-primary btn-block btn-sm">
+                                    <i class="fas fa-calendar-alt"></i> Switch to Annual & Save!
+                                </a>
+                                <small class="text-success d-block mt-1">
+                                    <strong>💰 Get 2 months free + prorated discount</strong>
+                                </small>
+                            </div>
                         {% elif current_user.is_authenticated %}
                             <a href="{{ url_for('upgrade_plan', plan='startup') }}" class="btn btn-primary btn-block">
                                 Upgrade to Startup
@@ -279,9 +306,18 @@
                     
                     <div class="mt-4">
                         {% if current_user.is_authenticated and subscription and subscription.plan_name == 'growth' %}
-                            <button class="btn btn-success btn-block" disabled>
+                            <button class="btn btn-success btn-block mb-2" disabled>
                                 <i class="fas fa-check"></i> Current Plan
                             </button>
+                            <!-- Annual upgrade option for current monthly subscribers -->
+                            <div class="annual-upgrade-section" style="display: none;">
+                                <a href="{{ url_for('confirm_billing_change', frequency='annual') }}" class="btn btn-outline-primary btn-block btn-sm">
+                                    <i class="fas fa-calendar-alt"></i> Switch to Annual & Save!
+                                </a>
+                                <small class="text-success d-block mt-1">
+                                    <strong>💰 Get 2 months free + prorated discount</strong>
+                                </small>
+                            </div>
                         {% elif current_user.is_authenticated %}
                             <a href="{{ url_for('upgrade_plan', plan='growth') }}" class="btn btn-primary btn-block">
                                 Upgrade to Growth
@@ -330,9 +366,18 @@
                     
                     <div class="mt-4">
                         {% if current_user.is_authenticated and subscription and subscription.plan_name == 'enterprise' %}
-                            <button class="btn btn-success btn-block" disabled>
+                            <button class="btn btn-success btn-block mb-2" disabled>
                                 <i class="fas fa-check"></i> Current Plan
                             </button>
+                            <!-- Annual upgrade option for current monthly subscribers -->
+                            <div class="annual-upgrade-section" style="display: none;">
+                                <a href="{{ url_for('confirm_billing_change', frequency='annual') }}" class="btn btn-outline-primary btn-block btn-sm">
+                                    <i class="fas fa-calendar-alt"></i> Switch to Annual & Save!
+                                </a>
+                                <small class="text-success d-block mt-1">
+                                    <strong>💰 Get 2 months free + prorated discount</strong>
+                                </small>
+                            </div>
                         {% elif current_user.is_authenticated %}
                             <a href="{{ url_for('upgrade_plan', plan='enterprise') }}" class="btn btn-primary btn-block">
                                 Upgrade to Enterprise
@@ -421,6 +466,18 @@ document.addEventListener('DOMContentLoaded', function() {
                         button.href = `${baseHref}?billing=${billing}`;
                     }
                 });
+
+                // Show/hide annual upgrade sections for current subscribers
+                document.querySelectorAll('.annual-upgrade-section').forEach(section => {
+                    // Only show when annual billing is selected (to highlight the savings)
+                    section.style.display = isAnnual ? 'block' : 'none';
+                });
+
+                // Show/hide annual promotion banner
+                const promoBanner = document.getElementById('annual-promo-banner');
+                if (promoBanner) {
+                    promoBanner.style.display = isAnnual ? 'block' : 'none';
+                }
             } catch (error) {
                 console.error('Error updating pricing:', error);
             }

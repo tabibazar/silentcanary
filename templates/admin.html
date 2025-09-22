@@ -83,6 +83,7 @@
                         <th>Username</th>
                         <th>Email</th>
                         <th>Canaries</th>
+                        <th>Plan</th>
                         <th>Status</th>
                         <th>Created</th>
                         <th>Last Login</th>
@@ -107,6 +108,30 @@
                                 <span class="badge bg-primary">{{ user.canary_count }}</span>
                             {% else %}
                                 <span class="text-muted">0</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user.plan == 'Solo' %}
+                                <span class="badge bg-light text-dark">
+                                    <i class="fas fa-user"></i> Solo
+                                </span>
+                            {% elif user.plan == 'Startup' %}
+                                <span class="badge bg-info">
+                                    <i class="fas fa-rocket"></i> Startup
+                                </span>
+                            {% elif user.plan == 'Growth' %}
+                                <span class="badge bg-success">
+                                    <i class="fas fa-chart-line"></i> Growth
+                                </span>
+                            {% elif user.plan == 'Enterprise' %}
+                                <span class="badge bg-primary">
+                                    <i class="fas fa-building"></i> Enterprise
+                                </span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ user.plan }}</span>
+                            {% endif %}
+                            {% if user.plan_status and user.plan_status != 'active' %}
+                                <br><small class="text-muted">{{ user.plan_status }}</small>
                             {% endif %}
                         </td>
                         <td>
