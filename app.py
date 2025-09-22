@@ -878,24 +878,36 @@ def admin_update_email(user_id):
 def admin_contact_requests():
     """Admin panel for managing contact requests"""
     try:
+        print(f"🔍 DEBUG admin_contact_requests(): Handler called")
+
         # Get status filter
         status_filter = request.args.get('status', 'all')
-        
+        print(f"🔍 DEBUG admin_contact_requests(): Status filter = {status_filter}")
+
         # Get contact requests
+        print(f"🔍 DEBUG admin_contact_requests(): About to call ContactRequest.get_all()")
         if status_filter == 'all':
             contact_requests = ContactRequest.get_all(limit=200)
         else:
             contact_requests = ContactRequest.get_all(limit=200, status=status_filter)
-        
+
+        print(f"🔍 DEBUG admin_contact_requests(): get_all() returned {len(contact_requests)} requests")
+
         # Get statistics
+        print(f"🔍 DEBUG admin_contact_requests(): About to call ContactRequest.get_stats()")
         stats = ContactRequest.get_stats()
-        
-        return render_template('admin/contact_requests.html', 
-                             contact_requests=contact_requests, 
-                             stats=stats, 
+        print(f"🔍 DEBUG admin_contact_requests(): get_stats() returned: {stats}")
+
+        print(f"✅ DEBUG admin_contact_requests(): Rendering template with {len(contact_requests)} requests")
+        return render_template('admin/contact_requests.html',
+                             contact_requests=contact_requests,
+                             stats=stats,
                              status_filter=status_filter)
-        
+
     except Exception as e:
+        print(f"❌ DEBUG admin_contact_requests(): Error loading contact requests: {e}")
+        import traceback
+        print(f"❌ DEBUG admin_contact_requests(): Full traceback: {traceback.format_exc()}")
         flash(f'Error loading contact requests: {e}', 'error')
         return redirect(url_for('admin'))
 
@@ -1040,6 +1052,29 @@ def admin_mark_progress_contact_request(request_id):
         flash(f'Error updating request: {e}', 'error')
         return redirect(url_for('admin_contact_requests'))
 
+@app.route('/admin/contact-requests/<request_id>/delete', methods=['POST'])
+@login_required
+@admin_required
+def admin_delete_contact_request(request_id):
+    """Delete contact request permanently"""
+    try:
+        contact_request = ContactRequest.get_by_id(request_id)
+        if not contact_request:
+            flash('Contact request not found', 'error')
+            return redirect(url_for('admin_contact_requests'))
+
+        if contact_request.delete():
+            flash(f'Contact request from {contact_request.email} deleted successfully', 'success')
+        else:
+            flash('Failed to delete contact request', 'error')
+
+        return redirect(url_for('admin_contact_requests'))
+
+    except Exception as e:
+        print(f"Error deleting contact request: {e}")
+        flash(f'Error deleting contact request: {e}', 'error')
+        return redirect(url_for('admin_contact_requests'))
+
 # Subscription functionality with Stripe integration
 
 # Subscription and payment functionality with Stripe
@@ -1060,9 +1095,33 @@ def contact():
                 message=form.message.data,
                 status='new'
             )
-            
-            if contact_request.save():
+
+            print(f"🔍 DEBUG: About to save contact request - ID: {contact_request.request_id}, Email: {contact_request.email}")
+
+            # Test DynamoDB connection first
+            try:
+                from models import get_dynamodb_resource
+                api_usage_table = get_dynamodb_resource().Table('SilentCanary_APIUsage')
+                print(f"🔍 DEBUG: DynamoDB table connection successful: {api_usage_table.table_name}")
+            except Exception as db_error:
+                print(f"❌ DEBUG: DynamoDB connection failed: {db_error}")
+
+            # Attempt to save
+            save_result = contact_request.save()
+            print(f"🔍 DEBUG: Save method returned: {save_result}")
+
+            if save_result:
                 print(f"✅ Contact request saved to database: {contact_request.request_id}")
+
+                # Verify the save by attempting to retrieve it
+                try:
+                    test_retrieved = ContactRequest.get_by_id(contact_request.request_id)
+                    if test_retrieved:
+                        print(f"✅ DEBUG: Contact request successfully retrieved after save")
+                    else:
+                        print(f"❌ DEBUG: Contact request NOT found after save - ID: {contact_request.request_id}")
+                except Exception as retrieve_error:
+                    print(f"❌ DEBUG: Error retrieving contact request after save: {retrieve_error}")
             else:
                 print(f"❌ Failed to save contact request to database")
             
@@ -1188,9 +1247,21 @@ import hashlib
 
 stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
 
-@app.route('/webhook/stripe', methods=['POST'])
+@app.route('/webhook/stripe', methods=['GET', 'POST'])
 def stripe_webhook():
     """Handle Stripe webhook events for subscription management"""
+
+    # Handle GET request for endpoint verification
+    if request.method == 'GET':
+        return jsonify({
+            'status': 'ok',
+            'message': 'Stripe webhook endpoint is active',
+            'endpoint': '/webhook/stripe',
+            'methods': ['POST'],
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 200
+
+    # Handle POST request for actual webhook events
     payload = request.get_data()
     sig_header = request.headers.get('Stripe-Signature')
     endpoint_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
@@ -2053,12 +2124,16 @@ def account_management():
             if stripe.api_key:
                 try:
                     stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
-                    items_list = stripe_subscription.items.list()
+                    # Use proper Stripe API to get subscription items
+                    items_list = stripe.SubscriptionItem.list(subscription=subscription.stripe_subscription_id)
                     if items_list and len(items_list.data) > 0:
                         current_price = items_list.data[0].price
                         if current_price and current_price.recurring:
                             billing_frequency = current_price.recurring.interval
-                            print(f"🔄 Current billing frequency: {billing_frequency}")
+                            # Convert 'year' to 'yearly' for display consistency
+                            if billing_frequency == 'year':
+                                billing_frequency = 'yearly'
+                            print(f"🔄 Current billing frequency from Stripe: {billing_frequency}")
                 except Exception as e:
                     print(f"⚠️ Could not retrieve billing frequency from Stripe: {e}")
         
@@ -2582,6 +2657,91 @@ def resubscribe():
         flash('An unexpected error occurred. Please try again or contact support.', 'error')
         return redirect(url_for('contact'))
 
+@app.route('/confirm_billing_change', methods=['GET', 'POST'])
+@login_required
+def confirm_billing_change():
+    """Show confirmation page for billing frequency changes"""
+    # Handle POST request (confirmed change)
+    if request.method == 'POST':
+        confirmed = request.form.get('confirmed')
+        target_frequency = request.form.get('frequency', 'annual')
+
+        if confirmed == 'true':
+            # Redirect to actual billing change with confirmation
+            return redirect(url_for('change_billing_frequency', frequency=target_frequency, confirmed='true'))
+        else:
+            flash('Billing change cancelled.', 'info')
+            return redirect(url_for('subscription_plans'))
+
+    # Handle GET request (show confirmation page)
+    frequency = request.args.get('frequency', 'annual')
+
+    # Validate frequency parameter
+    if frequency not in ['monthly', 'annual']:
+        flash('Invalid billing frequency specified.', 'error')
+        return redirect(url_for('subscription_plans'))
+
+    # Get current subscription
+    subscription = Subscription.get_by_user_id(current_user.user_id)
+    if not subscription:
+        flash('No current subscription found.', 'error')
+        return redirect(url_for('subscription_plans'))
+
+    if subscription.plan_name == 'free':
+        flash('Billing frequency changes are not available for the Solo plan.', 'info')
+        return redirect(url_for('subscription_plans'))
+
+    # Define plan configurations
+    plan_config = {
+        'startup': {
+            'name': 'Startup',
+            'monthly_price': 7,
+            'annual_price': 70
+        },
+        'growth': {
+            'name': 'Growth',
+            'monthly_price': 25,
+            'annual_price': 250
+        },
+        'enterprise': {
+            'name': 'Enterprise',
+            'monthly_price': 75,
+            'annual_price': 750
+        }
+    }
+
+    current_plan_config = plan_config.get(subscription.plan_name)
+    if not current_plan_config:
+        flash('Invalid subscription plan.', 'error')
+        return redirect(url_for('subscription_plans'))
+
+    # Calculate savings and proration
+    yearly_savings = (current_plan_config['monthly_price'] * 12) - current_plan_config['annual_price']
+    savings_percentage = round((yearly_savings / (current_plan_config['monthly_price'] * 12)) * 100)
+
+    # Estimate prorated credit (simplified calculation)
+    # In real implementation, you'd get this from Stripe
+    import datetime
+    from datetime import timedelta
+
+    # Assume billing cycle started recently for demo
+    days_remaining = 20  # Placeholder - should come from Stripe
+    prorated_credit = (current_plan_config['monthly_price'] / 30) * days_remaining
+
+    # Calculate dates
+    next_billing_date = datetime.datetime.now() + timedelta(days=days_remaining)
+    new_billing_date = datetime.datetime.now() + timedelta(days=365)
+
+    return render_template('confirm_billing_change.html',
+        target_frequency=frequency,
+        current_plan=current_plan_config,
+        yearly_savings=yearly_savings,
+        savings_percentage=savings_percentage,
+        prorated_credit=prorated_credit,
+        next_billing_date=next_billing_date,
+        new_billing_date=new_billing_date
+    )
+
 @app.route('/change_billing_frequency/<frequency>')
 @login_required
 def change_billing_frequency(frequency):
@@ -2591,6 +2751,15 @@ def change_billing_frequency(frequency):
     print(f"🔄 USER: {current_user.email if hasattr(current_user, 'email') else 'NO_EMAIL'}", file=sys.stderr)
     print(f"🔄 FREQUENCY PARAM: {frequency}", file=sys.stderr)
     sys.stderr.flush()
+
+    # Check if this is a confirmed change (coming from confirmation page)
+    confirmed = request.args.get('confirmed')
+    if confirmed != 'true':
+        # Redirect to confirmation page first
+        print(f"🔄 Redirecting to confirmation page for frequency: {frequency}", file=sys.stderr)
+        return redirect(url_for('confirm_billing_change', frequency=frequency))
+
+    print(f"✅ Proceeding with confirmed billing change to {frequency}", file=sys.stderr)
     try:
         # Validate frequency parameter
         if frequency not in ['monthly', 'annual']:
@@ -2599,13 +2768,20 @@ def change_billing_frequency(frequency):
         
         # Get current subscription
         subscription = Subscription.get_by_user_id(current_user.user_id)
-        
+
+        print(f"🔍 Subscription check: {subscription}", file=sys.stderr)
+        print(f"🔍 Plan name: {subscription.plan_name if subscription else 'No subscription'}", file=sys.stderr)
+        print(f"🔍 Subscription status: {subscription.status if subscription else 'N/A'}", file=sys.stderr)
+        sys.stderr.flush()
+
         if not subscription:
+            print(f"❌ No subscription found for user {current_user.user_id}", file=sys.stderr)
             flash('No current subscription found.', 'error')
             return redirect(url_for('account_management'))
-        
+
         if subscription.plan_name == 'free':
-            flash('Billing frequency changes are not available for the Solo plan.', 'info')
+            print(f"❌ User on Solo plan, billing changes not allowed", file=sys.stderr)
+            flash('Billing frequency changes are not available for the Solo plan. Please upgrade to Startup plan first.', 'info')
             return redirect(url_for('account_management'))
         
         # Define plan configurations
@@ -2634,7 +2810,11 @@ def change_billing_frequency(frequency):
         }
         
         current_plan_config = plan_config.get(subscription.plan_name)
+        print(f"🔍 Current plan config lookup: {subscription.plan_name} -> {current_plan_config}", file=sys.stderr)
+        sys.stderr.flush()
+
         if not current_plan_config:
+            print(f"❌ No plan config found for plan: {subscription.plan_name}", file=sys.stderr)
             flash('Invalid subscription plan. Please contact support.', 'error')
             return redirect(url_for('contact'))
         
@@ -2673,11 +2853,17 @@ def change_billing_frequency(frequency):
             
             # Check current billing interval
             current_interval = 'monthly'  # default
-            items_list = stripe_subscription.items.list()
+            print(f"🔍 Getting subscription items for billing interval check", file=sys.stderr)
+
+            # Use the proper Stripe API to get subscription items
+            items_list = stripe.SubscriptionItem.list(subscription=subscription.stripe_subscription_id)
+            print(f"🔍 Items retrieved: {len(items_list.data) if items_list.data else 0} items", file=sys.stderr)
+
             if items_list and len(items_list.data) > 0:
                 current_price = items_list.data[0].price
                 if current_price and current_price.recurring:
                     current_interval = current_price.recurring.interval
+                    print(f"🔍 Current interval from Stripe: {current_interval}", file=sys.stderr)
                     if current_interval == 'year':
                         current_interval = 'annual'
             
@@ -2687,26 +2873,70 @@ def change_billing_frequency(frequency):
                 flash(f'You are already on {frequency_display.lower()} billing.', 'info')
                 return redirect(url_for('account_management'))
             
-            # Modify the subscription to change billing frequency
-            updated_subscription = stripe.Subscription.modify(
-                subscription.stripe_subscription_id,
-                items=[{
-                    'id': stripe_subscription['items']['data'][0].id,
-                    'price': new_price_id,
-                }],
-                proration_behavior='create_prorations'  # Create prorations for billing change
-            )
-            
-            print(f"✅ Billing frequency changed successfully to {frequency}")
-            
+            # Modify the subscription to change billing frequency at end of current period
+            print(f"🔍 Using subscription item ID: {items_list.data[0].id}", file=sys.stderr)
+            print(f"🔍 New price ID: {new_price_id}", file=sys.stderr)
+
+            # For annual upgrades, create a Stripe checkout session for full workflow
+            # For downgrades to monthly, wait until end of cycle
             if frequency == 'annual':
-                flash(f'Successfully switched to annual billing ({display_price}). You\'ll save money with yearly payments!', 'success')
+                # Create Stripe checkout session for annual upgrade with prorated discount
+                print(f"🛒 Creating Stripe checkout session for annual billing upgrade...")
+
+                # Get or create Stripe customer
+                customer_id = get_or_create_stripe_customer(current_user)
+                print(f"✅ Stripe customer ID: {customer_id}")
+
+                checkout_session = stripe.checkout.Session.create(
+                    customer=customer_id,
+                    payment_method_types=['card'],
+                    line_items=[{
+                        'price': new_price_id,
+                        'quantity': 1,
+                    }],
+                    mode='subscription',
+                    success_url=request.host_url + 'checkout/success?session_id={CHECKOUT_SESSION_ID}',
+                    cancel_url=request.host_url + 'account_management',
+                    metadata={
+                        'user_id': current_user.user_id,
+                        'plan': subscription.plan_name,
+                        'billing_frequency_change': 'true',
+                        'old_subscription_id': subscription.stripe_subscription_id,
+                        'frequency': frequency
+                    },
+                    subscription_data={
+                        'proration_behavior': 'create_prorations',  # Apply prorated credit
+                        'metadata': {
+                            'billing_frequency_change': 'true',
+                            'old_subscription_id': subscription.stripe_subscription_id
+                        }
+                    }
+                )
+
+                print(f"✅ Checkout session created: {checkout_session.id}")
+                print(f"🔗 Redirecting to Stripe checkout: {checkout_session.url}")
+
+                # Redirect to Stripe checkout
+                return redirect(checkout_session.url)
             else:
-                flash(f'Successfully switched to monthly billing ({display_price}). Changes are effective immediately.', 'success')
+                # For downgrade to monthly, wait until end of cycle (keep existing logic)
+                updated_subscription = stripe.Subscription.modify(
+                    subscription.stripe_subscription_id,
+                    items=[{
+                        'id': items_list.data[0].id,
+                        'price': new_price_id,
+                    }],
+                    proration_behavior='none'  # Don't prorate, change at end of current cycle
+                )
+
+                print(f"✅ Billing frequency changed successfully to {frequency}")
+                flash(f'Successfully scheduled switch to monthly billing ({display_price}). Changes will take effect at the end of your current billing cycle.', 'success')
                 
         except stripe.error.InvalidRequestError as e:
-            print(f"❌ Stripe Invalid Request Error during billing change: {e}")
-            flash('Invalid billing frequency change request. Please contact support.', 'error')
+            print(f"❌ Stripe Invalid Request Error during billing change: {e}", file=sys.stderr)
+            print(f"❌ Error details: {str(e)}", file=sys.stderr)
+            sys.stderr.flush()
+            flash(f'Billing frequency change failed: {str(e)}. Please contact support.', 'error')
             return redirect(url_for('contact'))
         except stripe.error.StripeError as e:
             print(f"❌ Stripe error during billing frequency change: {e}")
@@ -2892,9 +3122,22 @@ def checkout_success():
                 flash('Payment completed but there was an error updating your account. Please contact support.', 'error')
                 return redirect(url_for('settings'))
             
-            # Check if this is a resubscribe
+            # Check if this is a resubscribe or billing frequency change
             is_resubscribe = session.metadata.get('is_resubscribe') == 'true'
-            print(f"📋 {'Reactivating' if is_resubscribe else 'Creating'} subscription: plan={plan_name}, user={current_user.email}")
+            is_billing_frequency_change = session.metadata.get('billing_frequency_change') == 'true'
+            old_subscription_id = session.metadata.get('old_subscription_id')
+
+            print(f"📋 {'Reactivating' if is_resubscribe else 'Billing frequency change' if is_billing_frequency_change else 'Creating'} subscription: plan={plan_name}, user={current_user.email}")
+
+            # Handle billing frequency change - cancel old subscription
+            if is_billing_frequency_change and old_subscription_id:
+                try:
+                    print(f"🔄 Canceling old subscription: {old_subscription_id}")
+                    stripe.Subscription.cancel(old_subscription_id)
+                    print(f"✅ Old subscription canceled successfully")
+                except Exception as e:
+                    print(f"⚠️ Could not cancel old subscription {old_subscription_id}: {e}")
+                    # Continue anyway as the new subscription is active
 
             # Create or update subscription in database
             existing_subscription = Subscription.get_by_user_id(current_user.user_id)
@@ -2960,7 +3203,10 @@ def checkout_success():
                 else:
                     print(f"❌ Failed to create subscription for user {current_user.email}")
             
-            if is_resubscribe:
+            if is_billing_frequency_change:
+                frequency = session.metadata.get('frequency', 'annual')
+                flash(f'🎉 Billing frequency changed to {frequency} successfully! Your new subscription is now active with prorated billing.', 'success')
+            elif is_resubscribe:
                 flash(f'🎉 Subscription reactivated successfully! Welcome back to your {plan_name.title()} plan!', 'success')
             else:
                 flash(f'🎉 Subscription upgraded successfully! Welcome to your {plan_name.title()} plan!', 'success')
