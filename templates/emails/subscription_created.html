@@ -1,0 +1,59 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Welcome to {{ plan_name }} Plan - SilentCanary{% endblock %}
+
+{% block content %}
+<h2>Welcome to your {{ plan_name }} plan!</h2>
+
+<p>Hi {{ user_name }},</p>
+
+<p>🎉 <strong>Congratulations!</strong> Your <strong>{{ plan_name }}</strong> subscription is now active.</p>
+
+<div class="alert alert-info">
+    <strong>Subscription Details:</strong><br>
+    Plan: {{ plan_name }}<br>
+    Subscription ID: {{ subscription_id }}<br>
+    Next billing date: {{ next_billing_date }}
+</div>
+
+<p><strong>What's included in your {{ plan_name }} plan:</strong></p>
+<ul>
+    {% if plan_name.lower() == 'startup' %}
+    <li>✅ Up to 5 deployment canaries</li>
+    <li>✅ Real-time monitoring</li>
+    <li>✅ Email alerts</li>
+    <li>✅ Basic reporting</li>
+    {% elif plan_name.lower() == 'growth' %}
+    <li>✅ Up to 25 deployment canaries</li>
+    <li>✅ Advanced monitoring</li>
+    <li>✅ Email & webhook alerts</li>
+    <li>✅ Advanced reporting & analytics</li>
+    <li>✅ Priority support</li>
+    {% elif plan_name.lower() == 'enterprise' %}
+    <li>✅ Unlimited deployment canaries</li>
+    <li>✅ Enterprise monitoring</li>
+    <li>✅ Custom integrations</li>
+    <li>✅ Advanced analytics & insights</li>
+    <li>✅ Dedicated support</li>
+    {% endif %}
+</ul>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="https://silentcanary.com/dashboard" class="btn btn-success">Go to Dashboard</a>
+    <a href="https://silentcanary.com/help" class="btn">View Documentation</a>
+</div>
+
+<p><strong>Getting Started:</strong></p>
+<ol>
+    <li>Visit your <a href="https://silentcanary.com/dashboard">dashboard</a></li>
+    <li>Create your first deployment canary</li>
+    <li>Start monitoring your deployments!</li>
+</ol>
+
+<p>If you have any questions or need help getting started, our support team is here to help.</p>
+
+<p>Thank you for choosing SilentCanary!</p>
+
+<p>Best regards,<br>
+The SilentCanary Team</p>
+{% endblock %}

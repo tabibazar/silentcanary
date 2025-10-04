@@ -157,6 +157,37 @@
     </div>
 </div>
 
+<!-- Admin Reply (if exists) -->
+{% if request.admin_reply %}
+<div class="card mb-4">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0">
+            <i class="fas fa-reply"></i> Admin Reply
+            {% if request.replied_at and request.replied_by %}
+                <small class="float-end">
+                    Sent {{ request.replied_at[:10] }} at {{ request.replied_at[11:19] }} UTC by {{ request.replied_by }}
+                </small>
+            {% endif %}
+        </h5>
+    </div>
+    <div class="card-body">
+        <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+            {{ request.admin_reply | nl2br }}
+        </div>
+        {% if request.replied_at and request.replied_by %}
+        <div class="mt-3">
+            <small class="text-muted">
+                <i class="fas fa-paper-plane"></i>
+                Reply sent to <strong>{{ request.email }}</strong>
+                on {{ request.replied_at[:10] }} at {{ request.replied_at[11:19] }} UTC
+                by {{ request.replied_by }}
+            </small>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Reply Form -->
 {% if request.status != 'closed' %}
 <div class="card">

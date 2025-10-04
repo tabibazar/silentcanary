@@ -1,0 +1,40 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Payment Failed - Action Required - SilentCanary{% endblock %}
+
+{% block content %}
+<h2>Payment Failed - Action Required</h2>
+
+<p>Hi {{ user_name }},</p>
+
+<p>We were unable to process the payment for your <strong>{{ plan_name }}</strong> subscription.</p>
+
+<div class="alert alert-warning">
+    <strong>Payment Details:</strong><br>
+    Amount: {{ amount }}<br>
+    {% if next_attempt != 'Unknown' %}Next attempt: {{ next_attempt }}{% endif %}
+</div>
+
+<p><strong>What you need to do:</strong></p>
+<ol>
+    <li>Update your payment method</li>
+    <li>Ensure sufficient funds are available</li>
+    <li>Contact your bank if the issue persists</li>
+</ol>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="https://silentcanary.com/account" class="btn btn-warning">Update Payment Method</a>
+    <a href="https://silentcanary.com/contact" class="btn">Contact Support</a>
+</div>
+
+<p><strong>Important:</strong> To avoid service interruption, please update your payment information as soon as possible. If we're unable to process payment, your subscription may be suspended.</p>
+
+<div class="alert alert-info">
+    <strong>Need Help?</strong> If you're experiencing issues with payment, our support team is ready to assist you. We can help resolve billing issues and ensure your service continues uninterrupted.
+</div>
+
+<p>Thank you for your immediate attention to this matter.</p>
+
+<p>Best regards,<br>
+The SilentCanary Team</p>
+{% endblock %}

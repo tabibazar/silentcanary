@@ -1071,8 +1071,126 @@ def admin_delete_contact_request(request_id):
 def contact():
     """Contact form"""
     form = ContactForm()
-    
+
+    # Debug logging for form submission
+    if request.method == 'POST':
+        print(f"🔍 Contact form submitted. Form data: {request.form}")
+        print(f"🔍 Form validation result: {form.validate()}")
+        if form.errors:
+            print(f"🔍 Form errors: {form.errors}")
+
     if form.validate_on_submit():
+        # Validate reCAPTCHA if enabled
+        if app.config.get('RECAPTCHA_SECRET_KEY'):
+            recaptcha_response = request.form.get('g-recaptcha-response')
+            client_ip = request.remote_addr
+
+            if not recaptcha_response:
+                flash('Please complete the reCAPTCHA verification.', 'error')
+                return render_template('contact.html', form=form)
+
+            # Use reCAPTCHA Enterprise v3 verification
+            try:
+                # For reCAPTCHA Enterprise, we need to use the secret key as the API key
+                # and create assessments using the Enterprise API
+                api_key = app.config['RECAPTCHA_SECRET_KEY']
+                site_key = app.config['RECAPTCHA_SITE_KEY']
+
+                # Use a generic project ID - the actual project is determined by the API key
+                project_id = "projects/silentcanary-recaptcha"
+
+                # Create assessment using reCAPTCHA Enterprise API
+                url = f"https://recaptchaenterprise.googleapis.com/v1/{project_id}/assessments?key={api_key}"
+
+                payload = {
+                    "event": {
+                        "token": recaptcha_response,
+                        "expectedAction": "CONTACT",
+                        "siteKey": site_key
+                    }
+                }
+
+                headers = {
+                    'Content-Type': 'application/json'
+                }
+
+                response = requests.post(url, json=payload, headers=headers, timeout=10)
+                result = response.json()
+
+                # Check for API errors first
+                if 'error' in result:
+                    error_code = result['error'].get('code', 'unknown')
+                    error_message = result['error'].get('message', 'unknown')
+                    app.logger.warning(f"reCAPTCHA Enterprise API error - IP: {client_ip}, Error: {error_code} - {error_message}")
+
+                    # Fall back to standard reCAPTCHA verification
+                    app.logger.info("Falling back to standard reCAPTCHA verification")
+                    fallback_data = {
+                        'secret': api_key,
+                        'response': recaptcha_response,
+                        'remoteip': client_ip
+                    }
+                    fallback_response = requests.post('https://www.google.com/recaptcha/api/siteverify', data=fallback_data, timeout=10)
+                    fallback_result = fallback_response.json()
+
+                    if not fallback_result.get('success', False):
+                        app.logger.warning(f"Standard reCAPTCHA also failed - IP: {client_ip}, Email: {form.email.data}, Errors: {fallback_result.get('error-codes', [])}")
+                        flash('reCAPTCHA verification failed. Please try again.', 'error')
+                        return render_template('contact.html', form=form)
+                    else:
+                        app.logger.info(f"Standard reCAPTCHA verification successful - IP: {client_ip}, Email: {form.email.data}")
+
+                elif 'tokenProperties' in result:
+                    # Check token validity
+                    token_valid = result['tokenProperties'].get('valid', False)
+                    token_action = result['tokenProperties'].get('action', '')
+
+                    if not token_valid:
+                        app.logger.warning(f"reCAPTCHA token invalid - IP: {client_ip}, Email: {form.email.data}")
+                        flash('reCAPTCHA verification failed. Please try again.', 'error')
+                        return render_template('contact.html', form=form)
+
+                    if token_action != 'CONTACT':
+                        app.logger.warning(f"reCAPTCHA action mismatch - IP: {client_ip}, Expected: CONTACT, Got: {token_action}")
+
+                    # Check risk analysis if available
+                    risk_score = 0.5  # Default neutral score
+                    if 'riskAnalysis' in result:
+                        risk_score = result['riskAnalysis'].get('score', 0.5)
+
+                    app.logger.info(f"reCAPTCHA Enterprise verification successful - IP: {client_ip}, Email: {form.email.data}, Score: {risk_score}")
+
+                else:
+                    app.logger.warning(f"reCAPTCHA Enterprise unexpected response format - IP: {client_ip}, Response: {result}")
+                    flash('reCAPTCHA verification failed. Please try again.', 'error')
+                    return render_template('contact.html', form=form)
+
+            except Exception as e:
+                app.logger.error(f"reCAPTCHA Enterprise verification error - IP: {client_ip}, Error: {str(e)}")
+
+                # Fall back to standard reCAPTCHA verification
+                try:
+                    app.logger.info("Falling back to standard reCAPTCHA verification due to exception")
+                    fallback_data = {
+                        'secret': app.config['RECAPTCHA_SECRET_KEY'],
+                        'response': recaptcha_response,
+                        'remoteip': client_ip
+                    }
+                    fallback_response = requests.post('https://www.google.com/recaptcha/api/siteverify', data=fallback_data, timeout=10)
+                    fallback_result = fallback_response.json()
+
+                    if not fallback_result.get('success', False):
+                        app.logger.warning(f"Fallback reCAPTCHA failed - IP: {client_ip}, Email: {form.email.data}, Errors: {fallback_result.get('error-codes', [])}")
+                        flash('reCAPTCHA verification error. Please try again.', 'error')
+                        return render_template('contact.html', form=form)
+                    else:
+                        app.logger.info(f"Fallback reCAPTCHA verification successful - IP: {client_ip}, Email: {form.email.data}")
+
+                except Exception as fallback_error:
+                    app.logger.error(f"Both reCAPTCHA verification methods failed - IP: {client_ip}, Error: {str(fallback_error)}")
+                    flash('reCAPTCHA verification error. Please try again.', 'error')
+                    return render_template('contact.html', form=form)
+
         try:
             # Save contact request to database
             contact_request = ContactRequest(
@@ -1210,6 +1328,7 @@ import hashlib
 stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
 
 @app.route('/webhook/stripe', methods=['GET', 'POST'])
+@csrf.exempt
 def stripe_webhook():
     """Handle Stripe webhook events for subscription management"""
 
@@ -1249,9 +1368,21 @@ def stripe_webhook():
         handle_payment_succeeded(event['data']['object'])
     elif event['type'] == 'invoice.payment_failed':
         handle_payment_failed(event['data']['object'])
+    elif event['type'] == 'invoice.paid':
+        handle_invoice_paid(event['data']['object'])
+    elif event['type'] == 'invoice.created':
+        handle_invoice_created(event['data']['object'])
+    elif event['type'] == 'invoice.finalization_failed':
+        handle_invoice_finalization_failed(event['data']['object'])
+    elif event['type'] == 'customer.created':
+        handle_customer_created(event['data']['object'])
+    elif event['type'] == 'customer.updated':
+        handle_customer_updated(event['data']['object'])
+    elif event['type'] == 'customer.deleted':
+        handle_customer_deleted(event['data']['object'])
     else:
         print(f"Unhandled event type: {event['type']}")
-    
+
     return jsonify({'status': 'success'}), 200
 
 def handle_subscription_created(subscription):
@@ -1284,6 +1415,21 @@ def handle_subscription_created(subscription):
         
         if sub.save():
             print(f"✅ Subscription created for user {user_email}: {plan_name}")
+
+            # Send subscription confirmation email
+            try:
+                send_templated_email(
+                    recipients=user_email,
+                    subject=f'Welcome to SilentCanary {plan_name.title()} Plan!',
+                    template_name='subscription_created',
+                    user_name=user.name if hasattr(user, 'name') else user_email.split('@')[0],
+                    plan_name=plan_name.title(),
+                    subscription_id=subscription['id'],
+                    next_billing_date=datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc).strftime('%B %d, %Y')
+                )
+                print(f"✅ Subscription confirmation email sent to {user_email}")
+            except Exception as email_error:
+                print(f"❌ Failed to send subscription confirmation email: {email_error}")
         else:
             print(f"❌ Failed to save subscription for user {user_email}")
             
@@ -1322,9 +1468,44 @@ def handle_subscription_deleted(subscription):
     try:
         stripe_subscription_id = subscription['id']
         existing_sub = Subscription.get_by_stripe_subscription_id(stripe_subscription_id)
-        
+
         if not existing_sub:
-            print(f"❌ Subscription not found: {stripe_subscription_id}")
+            print(f"⚠️ Subscription not found in database: {stripe_subscription_id}")
+            print(f"🔄 Attempting to send cancellation email using Stripe customer data...")
+
+            # Get customer info from Stripe
+            try:
+                customer_id = subscription['customer']
+                customer = stripe.Customer.retrieve(customer_id)
+                customer_email = customer['email']
+
+                # Extract plan info from subscription
+                plan_name = 'Unknown'
+                if subscription.get('items') and len(subscription['items']['data']) > 0:
+                    price_id = subscription['items']['data'][0]['price']['id']
+                    plan_name = get_plan_name_from_price_id(price_id)
+
+                # Calculate access end date
+                access_end_date = 'immediately'
+                if subscription.get('current_period_end'):
+                    from datetime import datetime, timezone
+                    access_end_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc).strftime('%B %d, %Y')
+
+                # Send cancellation email directly
+                send_templated_email(
+                    recipients=customer_email,
+                    subject='Your SilentCanary subscription has been canceled',
+                    template_name='subscription_canceled',
+                    user_name=customer_email.split('@')[0],
+                    plan_name=plan_name.title(),
+                    access_end_date=access_end_date,
+                    subscription_id=stripe_subscription_id
+                )
+                print(f"✅ Cancellation email sent to {customer_email} (Stripe-only subscription)")
+
+            except Exception as stripe_error:
+                print(f"❌ Failed to send cancellation email using Stripe data: {stripe_error}")
+
             return
         
         # Update subscription status to canceled
@@ -1333,6 +1514,27 @@ def handle_subscription_deleted(subscription):
         
         if existing_sub.save():
             print(f"✅ Subscription canceled: {stripe_subscription_id}")
+
+            # Get user information for email
+            user = User.get_by_id(existing_sub.user_id)
+            if user:
+                # Send cancellation confirmation email
+                try:
+                    # Calculate access end date
+                    access_end_date = existing_sub.current_period_end.strftime('%B %d, %Y') if existing_sub.current_period_end else 'immediately'
+
+                    send_templated_email(
+                        recipients=user.email,
+                        subject='Your SilentCanary subscription has been canceled',
+                        template_name='subscription_canceled',
+                        user_name=user.name if hasattr(user, 'name') else user.email.split('@')[0],
+                        plan_name=existing_sub.plan_name.title(),
+                        access_end_date=access_end_date,
+                        subscription_id=stripe_subscription_id
+                    )
+                    print(f"✅ Subscription cancellation email sent to {user.email}")
+                except Exception as email_error:
+                    print(f"❌ Failed to send subscription cancellation email: {email_error}")
         else:
             print(f"❌ Failed to cancel subscription: {stripe_subscription_id}")
             
@@ -1357,13 +1559,142 @@ def handle_payment_failed(invoice):
     try:
         customer_id = invoice['customer']
         subscription_id = invoice['subscription']
-        
+
         print(f"❌ Payment failed for customer {customer_id}, subscription {subscription_id}")
-        
-        # You can add logic here to notify the user or handle dunning
-        
+
+        # Get customer and subscription information for email
+        customer = stripe.Customer.retrieve(customer_id)
+        user_email = customer['email']
+
+        if subscription_id:
+            sub = Subscription.get_by_stripe_subscription_id(subscription_id)
+            if sub:
+                user = User.get_by_id(sub.user_id)
+                if user:
+                    try:
+                        # Send payment failure notification
+                        send_templated_email(
+                            recipients=user_email,
+                            subject='Payment Failed - Action Required for SilentCanary',
+                            template_name='payment_failed',
+                            user_name=user.name if hasattr(user, 'name') else user_email.split('@')[0],
+                            plan_name=sub.plan_name.title(),
+                            amount=f"${invoice.get('amount_due', 0) / 100:.2f}",
+                            next_attempt=datetime.fromtimestamp(invoice.get('next_payment_attempt', 0), tz=timezone.utc).strftime('%B %d, %Y') if invoice.get('next_payment_attempt') else 'Unknown'
+                        )
+                        print(f"✅ Payment failure email sent to {user_email}")
+                    except Exception as email_error:
+                        print(f"❌ Failed to send payment failure email: {email_error}")
+
     except Exception as e:
         print(f"❌ Error handling payment failure: {e}")
+
+def handle_invoice_paid(invoice):
+    """Handle successful invoice payment - most reliable for subscription renewal"""
+    try:
+        customer_id = invoice['customer']
+        subscription_id = invoice['subscription']
+
+        print(f"✅ Invoice paid for customer {customer_id}, subscription {subscription_id}")
+
+        # This is the most reliable event for subscription renewal
+        # Update subscription status to active if needed
+        if subscription_id:
+            sub = Subscription.get_by_stripe_subscription_id(subscription_id)
+            if sub:
+                was_inactive = sub.status != 'active'
+                sub.status = 'active'
+                sub.current_period_start = datetime.fromtimestamp(invoice['period_start'], tz=timezone.utc)
+                sub.current_period_end = datetime.fromtimestamp(invoice['period_end'], tz=timezone.utc)
+                sub.save()
+
+                if was_inactive:
+                    print(f"✅ Subscription reactivated for {subscription_id}")
+
+                # Send payment success email for renewals
+                user = User.get_by_id(sub.user_id)
+                if user and was_inactive:  # Only send for reactivations/renewals
+                    try:
+                        send_templated_email(
+                            recipients=user.email,
+                            subject='Payment Successful - SilentCanary Subscription Renewed',
+                            template_name='payment_success',
+                            user_name=user.name if hasattr(user, 'name') else user.email.split('@')[0],
+                            plan_name=sub.plan_name.title(),
+                            amount=f"${invoice.get('amount_paid', 0) / 100:.2f}",
+                            next_billing_date=sub.current_period_end.strftime('%B %d, %Y')
+                        )
+                        print(f"✅ Payment success email sent to {user.email}")
+                    except Exception as email_error:
+                        print(f"❌ Failed to send payment success email: {email_error}")
+
+    except Exception as e:
+        print(f"❌ Error handling invoice paid: {e}")
+
+def handle_invoice_created(invoice):
+    """Handle new invoice creation"""
+    try:
+        customer_id = invoice['customer']
+        subscription_id = invoice['subscription']
+
+        print(f"📄 Invoice created for customer {customer_id}, subscription {subscription_id}")
+
+        # You can add logic here to notify users of upcoming billing
+
+    except Exception as e:
+        print(f"❌ Error handling invoice creation: {e}")
+
+def handle_invoice_finalization_failed(invoice):
+    """Handle invoice finalization failure"""
+    try:
+        customer_id = invoice['customer']
+        subscription_id = invoice['subscription']
+
+        print(f"⚠️ Invoice finalization failed for customer {customer_id}, subscription {subscription_id}")
+
+        # Important: Users may still have access while invoices can't be finalized
+        # Consider sending alerts to admin for manual review
+
+    except Exception as e:
+        print(f"❌ Error handling invoice finalization failure: {e}")
+
+def handle_customer_created(customer):
+    """Handle new customer creation"""
+    try:
+        customer_id = customer['id']
+        email = customer['email']
+
+        print(f"👤 Customer created: {customer_id} ({email})")
+
+        # You can add logic here to sync customer data
+
+    except Exception as e:
+        print(f"❌ Error handling customer creation: {e}")
+
+def handle_customer_updated(customer):
+    """Handle customer updates"""
+    try:
+        customer_id = customer['id']
+        email = customer['email']
+
+        print(f"👤 Customer updated: {customer_id} ({email})")
+
+        # You can add logic here to sync customer data changes
+
+    except Exception as e:
+        print(f"❌ Error handling customer update: {e}")
+
+def handle_customer_deleted(customer):
+    """Handle customer deletion"""
+    try:
+        customer_id = customer['id']
+
+        print(f"👤 Customer deleted: {customer_id}")
+
+        # You can add logic here to handle customer data cleanup
+
+    except Exception as e:
+        print(f"❌ Error handling customer deletion: {e}")
 
 def get_plan_name_from_price_id(price_id):
     """Map Stripe price ID to internal plan name"""
@@ -2329,8 +2660,15 @@ def cancel_subscription():
                     # Update subscription status in database
                     subscription.status = 'canceled'
                     if subscription.save():
-                        period_end = datetime.fromtimestamp(stripe_subscription.current_period_end).strftime('%B %d, %Y')
-                        flash(f'Your subscription has been cancelled. You\'ll continue to have access to your current plan until {period_end}.', 'success')
+                        try:
+                            if hasattr(stripe_subscription, 'current_period_end') and stripe_subscription.current_period_end:
+                                period_end = datetime.fromtimestamp(stripe_subscription.current_period_end).strftime('%B %d, %Y')
+                                flash(f'Your subscription has been cancelled. You\'ll continue to have access to your current plan until {period_end}.', 'success')
+                            else:
+                                flash('Your subscription has been cancelled and will end at the current billing period.', 'success')
+                        except Exception as date_error:
+                            print(f"❌ Error formatting period end date: {date_error}")
+                            flash('Your subscription has been cancelled and will end at the current billing period.', 'success')
                     else:
                         flash('Subscription cancelled in Stripe but failed to update local database. Please contact support.', 'warning')
             else:

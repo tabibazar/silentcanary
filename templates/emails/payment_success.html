@@ -1,0 +1,49 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Payment Successful - SilentCanary{% endblock %}
+
+{% block content %}
+<h2>Payment Successful - Subscription Renewed</h2>
+
+<p>Hi {{ user_name }},</p>
+
+<p>✅ <strong>Great news!</strong> Your payment has been processed successfully and your <strong>{{ plan_name }}</strong> subscription has been renewed.</p>
+
+<div class="alert alert-info">
+    <strong>Payment Details:</strong><br>
+    Amount paid: {{ amount }}<br>
+    Plan: {{ plan_name }}<br>
+    Next billing date: {{ next_billing_date }}
+</div>
+
+<p><strong>Your subscription benefits continue:</strong></p>
+<ul>
+    {% if plan_name.lower() == 'startup' %}
+    <li>✅ Up to 5 deployment canaries</li>
+    <li>✅ Real-time monitoring</li>
+    <li>✅ Email alerts</li>
+    {% elif plan_name.lower() == 'growth' %}
+    <li>✅ Up to 25 deployment canaries</li>
+    <li>✅ Advanced monitoring</li>
+    <li>✅ Email & webhook alerts</li>
+    <li>✅ Priority support</li>
+    {% elif plan_name.lower() == 'enterprise' %}
+    <li>✅ Unlimited deployment canaries</li>
+    <li>✅ Enterprise monitoring</li>
+    <li>✅ Custom integrations</li>
+    <li>✅ Dedicated support</li>
+    {% endif %}
+</ul>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="https://silentcanary.com/dashboard" class="btn btn-success">Go to Dashboard</a>
+    <a href="https://silentcanary.com/account" class="btn">View Account</a>
+</div>
+
+<p>Thank you for continuing to trust SilentCanary with your deployment monitoring needs. We're committed to providing you with the best service possible.</p>
+
+<p>If you have any questions about your subscription or need assistance, please don't hesitate to reach out to our support team.</p>
+
+<p>Best regards,<br>
+The SilentCanary Team</p>
+{% endblock %}

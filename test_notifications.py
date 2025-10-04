@@ -46,73 +46,41 @@ def test_email_only():
             print(f"❌ Direct email test FAILED: {e}")
             return False
 
-def test_notification_function():
-    """Test the actual send_notifications function"""
-    print("\n=== TESTING NOTIFICATION FUNCTION ===")
-    
-    # We need to import from the main app to get the proper Flask context
+def test_cancellation_email():
+    """Test the cancellation email template"""
+    print("\n=== TESTING CANCELLATION EMAIL TEMPLATE ===")
+
     try:
-        from app import app, send_notifications
-        
-        # Get the overdue canary
-        from models import get_dynamodb_resource
-        dynamodb = get_dynamodb_resource()
-        canaries_table = dynamodb.Table('SilentCanary_Canaries')
-        response = canaries_table.scan()
-        canaries = response.get('Items', [])
-        
-        # Find the overdue canary
-        target_canary = None
-        for canary_data in canaries:
-            if canary_data['name'] == 'prod-backups-job':
-                target_canary = canary_data
-                break
-        
-        if not target_canary:
-            print("❌ Could not find prod-backups-job canary")
-            return
-        
-        # Convert to Canary object
-        canary = Canary(
-            canary_id=target_canary['canary_id'],
-            name=target_canary['name'],
-            user_id=target_canary['user_id'],
-            alert_type=target_canary.get('alert_type', 'email'),
-            alert_email=target_canary.get('alert_email'),
-            slack_webhook=target_canary.get('slack_webhook'),
-            interval_minutes=target_canary.get('interval_minutes', 60),
-            grace_minutes=target_canary.get('grace_minutes', 5)
-        )
-        
-        print(f"Testing with canary: {canary.name}")
-        print(f"Alert type: {canary.alert_type}")
-        print(f"Alert email: {canary.alert_email}")
-        print(f"User ID: {canary.user_id}")
-        
-        # Get user
-        user = User.get_by_id(canary.user_id)
-        print(f"User email: {user.email if user else 'No user found'}")
-        
+        from app import app, send_templated_email
+
         # Test within Flask context
         with app.app_context():
-            print("Calling send_notifications...")
-            send_notifications(canary)
-            print("send_notifications completed")
-            
+            print("Sending test cancellation email...")
+            send_templated_email(
+                recipients='reza@tabibazar.com',
+                subject='TEST: Your SilentCanary subscription has been canceled',
+                template_name='subscription_canceled',
+                user_name='reza',
+                plan_name='Growth',
+                access_end_date='October 15, 2025',
+                subscription_id='sub_test_orphaned_subscription'
+            )
+            print("✅ Cancellation email sent successfully")
+
     except Exception as e:
-        print(f"❌ Notification function test FAILED: {e}")
+        print(f"❌ Cancellation email test FAILED: {e}")
         import traceback
         traceback.print_exc()
 
 if __name__ == '__main__':
     print("SilentCanary Notification Debug Test")
     print("=" * 40)
-    
+
     # Test email directly first
     email_works = test_email_only()
-    
+
     if email_works:
-        # Test the actual notification function
-        test_notification_function()
+        # Test the cancellation email template
+        test_cancellation_email()
     else:
-        print("❌ Skipping notification function test due to email failure")
+        print("❌ Skipping template email test due to email failure")
