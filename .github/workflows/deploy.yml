@@ -62,7 +62,46 @@ jobs:
         # Create .env file if it doesn't exist
         if [ ! -f ".env" ]; then
           echo "📝 Creating .env file..."
-          cp .env.template .env 2>/dev/null || echo "# Environment file" > .env
+          if [ -f ".env.template" ]; then
+            cp .env.template .env
+          else
+            echo "📝 Creating basic .env file..."
+            cat > .env << 'ENVEOF'
+# SilentCanary Environment Configuration
+FLASK_ENV=production
+FLASK_APP=app.py
+SECRET_KEY=temp_secret_key_change_this
+
+# AWS Configuration
+AWS_ACCESS_KEY_ID=your_aws_access_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+AWS_DEFAULT_REGION=ca-central-1
+
+# Stripe Configuration
+STRIPE_PUBLISHABLE_KEY=pk_live_your_key
+STRIPE_SECRET_KEY=sk_live_your_key
+STRIPE_WEBHOOK_SECRET=whsec_RcURWsWzfABXKmQiEmpwMJCUabKvrEZh
+
+# SendGrid Configuration
+SENDGRID_API_KEY=SG.your_sendgrid_key
+FROM_EMAIL=noreply@silentcanary.com
+
+# reCAPTCHA Configuration
+RECAPTCHA_SITE_KEY=your_site_key
+RECAPTCHA_SECRET_KEY=your_secret_key
+
+# Redis Configuration
+REDIS_URL=redis://redis:6379/0
+REDIS_HOST=redis
+REDIS_ENDPOINT=
+
+# Application URLs
+BASE_URL=https://silentcanary.com
+
+# AI Configuration
+ANTHROPIC_API_KEY=your_anthropic_key
+ENVEOF
+          fi
         fi
 
         # Update environment variables
