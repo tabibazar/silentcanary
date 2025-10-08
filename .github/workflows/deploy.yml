@@ -86,6 +86,14 @@ jobs:
 
         # Update environment variables
         echo "⚙️ Updating environment..."
+
+        # Update AWS credentials if provided via environment
+        if [ ! -z "$AWS_ACCESS_KEY_ID" ] && [ ! -z "$AWS_SECRET_ACCESS_KEY" ]; then
+          echo "🔑 Updating AWS credentials..."
+          sed -i "s/AWS_ACCESS_KEY_ID=.*/AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID/" .env
+          sed -i "s/AWS_SECRET_ACCESS_KEY=.*/AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY/" .env
+        fi
+
         # Ensure Redis uses Docker network
         if ! grep -q "REDIS_HOST=redis" .env; then
           echo "REDIS_HOST=redis" >> .env
@@ -209,7 +217,7 @@ jobs:
         EOF
 
         # Execute deployment script on EC2
-        ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} "bash -s" < deploy_script.sh
+        ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} "AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' bash -s" < deploy_script.sh
 
     - name: Verify deployment
       run: |
