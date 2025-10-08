@@ -56,7 +56,9 @@ jobs:
 
           # Pull latest changes
           echo "📥 Pulling latest code..."
+          git stash
           git pull origin main
+          git stash pop 2>/dev/null || echo "No stash to pop"
         fi
 
         # Create .env file if it doesn't exist
