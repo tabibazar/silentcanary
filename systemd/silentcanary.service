@@ -1,0 +1,19 @@
+[Unit]
+Description=SilentCanary Application
+Documentation=https://github.com/tabibazar/silentcanary
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=forking
+RemainAfterExit=yes
+WorkingDirectory=/opt/silentcanary
+ExecStart=/usr/local/bin/docker-compose up -d
+ExecStop=/usr/local/bin/docker-compose down
+ExecReload=/usr/local/bin/docker-compose restart
+TimeoutStartSec=0
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

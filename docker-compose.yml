@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.arm64
+    container_name: silentcanary-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - FLASK_ENV=production
+      - FLASK_APP=app.py
+      - REDIS_URL=redis://redis:6379/0
+      - AWS_DEFAULT_REGION=ca-central-1
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./static:/app/static
+    depends_on:
+      - redis
+    command: gunicorn --bind 0.0.0.0:8000 --workers 2 --worker-class gevent --worker-connections 1000 app:app
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.arm64
+    container_name: silentcanary-worker
+    restart: unless-stopped
+    environment:
+      - FLASK_ENV=production
+      - FLASK_APP=app.py
+      - REDIS_URL=redis://redis:6379/0
+      - AWS_DEFAULT_REGION=ca-central-1
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+    command: python worker.py
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.arm64
+    container_name: silentcanary-scheduler
+    restart: unless-stopped
+    environment:
+      - FLASK_ENV=production
+      - FLASK_APP=app.py
+      - REDIS_URL=redis://redis:6379/0
+      - AWS_DEFAULT_REGION=ca-central-1
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+    command: python -c "
+      import time
+      from app import app
+      from apscheduler.schedulers.blocking import BlockingScheduler
+      from apscheduler.jobstores.redis import RedisJobStore
+      from apscheduler.executors.pool import ThreadPoolExecutor
+      import redis
+
+      # Configure scheduler
+      jobstores = {'default': RedisJobStore(host='redis', port=6379, db=1)}
+      executors = {'default': ThreadPoolExecutor(20)}
+      job_defaults = {'coalesce': False, 'max_instances': 3}
+
+      scheduler = BlockingScheduler(jobstores=jobstores, executors=executors, job_defaults=job_defaults)
+
+      # Import and add jobs
+      with app.app_context():
+          from scheduler_jobs import setup_scheduler_jobs
+          setup_scheduler_jobs(scheduler)
+
+      try:
+          scheduler.start()
+      except (KeyboardInterrupt, SystemExit):
+          pass
+      "
+
+  redis:
+    image: redis:7-alpine
+    container_name: silentcanary-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  nginx:
+    image: nginx:alpine
+    container_name: silentcanary-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/ssl/certs
+      - /var/log/nginx:/var/log/nginx
+    depends_on:
+      - app
+
+volumes:
+  redis_data:
