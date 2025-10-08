@@ -4,7 +4,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile.arm64
+      dockerfile: Dockerfile.simple
     container_name: silentcanary-app
     restart: unless-stopped
     ports:
@@ -21,12 +21,12 @@ services:
       - ./static:/app/static
     depends_on:
       - redis
-    command: gunicorn --bind 0.0.0.0:8000 --workers 2 --worker-class gevent --worker-connections 1000 app:app
+    command: gunicorn --bind 0.0.0.0:8000 --workers 2 --timeout 120 app:app
 
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.arm64
+      dockerfile: Dockerfile.simple
     container_name: silentcanary-worker
     restart: unless-stopped
     environment:
@@ -45,7 +45,7 @@ services:
   scheduler:
     build:
       context: .
-      dockerfile: Dockerfile.arm64
+      dockerfile: Dockerfile.simple
     container_name: silentcanary-scheduler
     restart: unless-stopped
     environment:
