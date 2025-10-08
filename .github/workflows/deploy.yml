@@ -94,6 +94,13 @@ jobs:
           sed -i "s/AWS_SECRET_ACCESS_KEY=.*/AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY/" .env
         fi
 
+        # Update reCAPTCHA credentials if provided via environment
+        if [ ! -z "$RECAPTCHA_SITE_KEY" ] && [ ! -z "$RECAPTCHA_SECRET_KEY" ]; then
+          echo "🛡️ Updating reCAPTCHA credentials..."
+          sed -i "s/RECAPTCHA_SITE_KEY=.*/RECAPTCHA_SITE_KEY=$RECAPTCHA_SITE_KEY/" .env
+          sed -i "s/RECAPTCHA_SECRET_KEY=.*/RECAPTCHA_SECRET_KEY=$RECAPTCHA_SECRET_KEY/" .env
+        fi
+
         # Ensure Redis uses Docker network
         if ! grep -q "REDIS_HOST=redis" .env; then
           echo "REDIS_HOST=redis" >> .env
@@ -217,7 +224,7 @@ jobs:
         EOF
 
         # Execute deployment script on EC2
-        ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} "AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' bash -s" < deploy_script.sh
+        ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} "AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' RECAPTCHA_SITE_KEY='${{ secrets.RECAPTCHA_SITE_KEY }}' RECAPTCHA_SECRET_KEY='${{ secrets.RECAPTCHA_SECRET_KEY }}' bash -s" < deploy_script.sh
 
     - name: Verify deployment
       run: |
