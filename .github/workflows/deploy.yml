@@ -106,6 +106,17 @@ jobs:
           sudo chmod +x /usr/local/bin/docker-compose
         fi
 
+        # Fix port conflicts
+        echo "🔧 Fixing port conflicts..."
+        sudo systemctl stop nginx 2>/dev/null || echo "System nginx not running"
+        sudo systemctl disable nginx 2>/dev/null || echo "System nginx not enabled"
+        sudo systemctl stop apache2 2>/dev/null || echo "Apache not running"
+        sudo systemctl disable apache2 2>/dev/null || echo "Apache not enabled"
+
+        # Kill any processes using port 80
+        sudo fuser -k 80/tcp 2>/dev/null || echo "No processes on port 80"
+        sudo fuser -k 443/tcp 2>/dev/null || echo "No processes on port 443"
+
         # Stop current containers if they exist
         echo "🛑 Stopping current containers..."
         docker-compose down 2>/dev/null || echo "No containers to stop"
