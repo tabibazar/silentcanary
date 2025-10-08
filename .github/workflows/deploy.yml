@@ -36,12 +36,34 @@ jobs:
 
         echo "🚀 Starting deployment..."
 
-        # Navigate to app directory
-        cd ${{ env.APP_DIR }}
+        # Check if app directory exists, if not create it and clone
+        if [ ! -d "${{ env.APP_DIR }}" ]; then
+          echo "📁 Creating app directory and cloning repository..."
+          sudo mkdir -p ${{ env.APP_DIR }}
+          sudo chown ubuntu:ubuntu ${{ env.APP_DIR }}
+          git clone https://github.com/tabibazar/silentcanary.git ${{ env.APP_DIR }}
+          cd ${{ env.APP_DIR }}
 
-        # Pull latest changes
-        echo "📥 Pulling latest code..."
-        git pull origin main
+          # Run initial setup
+          echo "🔧 Running initial setup..."
+          if [ -f "complete-deployment.sh" ]; then
+            chmod +x complete-deployment.sh
+            ./complete-deployment.sh
+          fi
+        else
+          # Navigate to app directory
+          cd ${{ env.APP_DIR }}
+
+          # Pull latest changes
+          echo "📥 Pulling latest code..."
+          git pull origin main
+        fi
+
+        # Create .env file if it doesn't exist
+        if [ ! -f ".env" ]; then
+          echo "📝 Creating .env file..."
+          cp .env.template .env 2>/dev/null || echo "# Environment file" > .env
+        fi
 
         # Update environment variables
         echo "⚙️ Updating environment..."
@@ -53,9 +75,23 @@ jobs:
           echo "REDIS_ENDPOINT=" >> .env
         fi
 
-        # Stop current containers
+        # Ensure Docker and Docker Compose are installed
+        if ! command -v docker &> /dev/null; then
+          echo "🐳 Installing Docker..."
+          curl -fsSL https://get.docker.com -o get-docker.sh
+          sudo sh get-docker.sh
+          sudo usermod -aG docker ubuntu
+        fi
+
+        if ! command -v docker-compose &> /dev/null; then
+          echo "🐳 Installing Docker Compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        fi
+
+        # Stop current containers if they exist
         echo "🛑 Stopping current containers..."
-        docker-compose down
+        docker-compose down 2>/dev/null || echo "No containers to stop"
 
         # Clean up old images
         echo "🧹 Cleaning up..."
