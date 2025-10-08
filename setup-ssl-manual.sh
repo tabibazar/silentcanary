@@ -39,8 +39,9 @@ if certbot certonly --standalone \
     --email admin@silentcanary.com \
     --agree-tos \
     --no-eff-email \
-    -d silentcanary.com \
-    --force-renewal; then
+    --non-interactive \
+    --force-renewal \
+    -d silentcanary.com; then
 
     echo "✅ Certificate obtained successfully!"
 

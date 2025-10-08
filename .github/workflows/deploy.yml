@@ -154,6 +154,7 @@ jobs:
             --email admin@silentcanary.com \
             --agree-tos \
             --no-eff-email \
+            --force-renewal \
             -d silentcanary.com \
             -d www.silentcanary.com; then
 
@@ -163,6 +164,7 @@ jobs:
               --email admin@silentcanary.com \
               --agree-tos \
               --no-eff-email \
+              --force-renewal \
               -d silentcanary.com
           fi
 
