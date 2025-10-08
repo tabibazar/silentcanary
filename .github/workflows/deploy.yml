@@ -148,13 +148,23 @@ jobs:
           docker-compose stop nginx
 
           # Generate certificate using standalone mode
-          sudo certbot certonly --standalone \
+          # Try with both domains first, fallback to main domain only
+          if ! sudo certbot certonly --standalone \
             --preferred-challenges http \
             --email admin@silentcanary.com \
             --agree-tos \
             --no-eff-email \
             -d silentcanary.com \
-            -d www.silentcanary.com
+            -d www.silentcanary.com; then
+
+            echo "⚠️ Failed with both domains, trying main domain only..."
+            sudo certbot certonly --standalone \
+              --preferred-challenges http \
+              --email admin@silentcanary.com \
+              --agree-tos \
+              --no-eff-email \
+              -d silentcanary.com
+          fi
 
           # Copy certificates to accessible location
           sudo mkdir -p /opt/silentcanary/ssl
