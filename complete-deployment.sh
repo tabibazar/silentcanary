@@ -49,10 +49,18 @@ sudo apt-get install -y \
     jq \
     python3-pip
 
-# Install AWS CLI via pip (better compatibility on ARM64)
+# Install AWS CLI (ARM64 compatible)
 echo "☁️ Installing AWS CLI..."
-pip3 install --user awscli
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
+if [ -f "awscliv2.zip" ]; then
+    unzip -q awscliv2.zip
+    sudo ./aws/install
+    rm -rf aws awscliv2.zip
+    echo "✅ AWS CLI installed successfully"
+else
+    echo "⚠️ Official installer failed, using system package..."
+    sudo apt-get install -y python3-boto3
+fi
 
 # Clone repository
 echo "📥 Step 5: Cloning SilentCanary repository..."
