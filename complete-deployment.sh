@@ -47,7 +47,12 @@ sudo apt-get install -y \
     python3-certbot-nginx \
     unzip \
     jq \
-    awscli
+    python3-pip
+
+# Install AWS CLI via pip (better compatibility on ARM64)
+echo "☁️ Installing AWS CLI..."
+pip3 install --user awscli
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 
 # Clone repository
 echo "📥 Step 5: Cloning SilentCanary repository..."
