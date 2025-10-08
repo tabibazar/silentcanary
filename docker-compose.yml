@@ -82,8 +82,7 @@ services:
     image: redis:7-alpine
     container_name: silentcanary-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    # Remove external port mapping - only accessible from within Docker network
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
