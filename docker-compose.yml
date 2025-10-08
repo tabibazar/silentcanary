@@ -76,9 +76,12 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx-simple.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/ssl/certs:ro
       - /var/log/nginx:/var/log/nginx
+      - /var/www/certbot:/var/www/certbot:ro
     depends_on:
       - app
 

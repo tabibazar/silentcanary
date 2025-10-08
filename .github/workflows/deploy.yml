@@ -133,6 +133,56 @@ jobs:
         echo "⏳ Waiting for services..."
         sleep 30
 
+        # Setup SSL certificates with Let's Encrypt
+        echo "🔒 Setting up SSL certificates..."
+        if [ ! -f "/etc/letsencrypt/live/silentcanary.com/fullchain.pem" ]; then
+          echo "📜 Obtaining SSL certificate from Let's Encrypt..."
+
+          # Install certbot if not present
+          if ! command -v certbot &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y certbot
+          fi
+
+          # Stop nginx container temporarily for certificate generation
+          docker-compose stop nginx
+
+          # Generate certificate using standalone mode
+          sudo certbot certonly --standalone \
+            --preferred-challenges http \
+            --email admin@silentcanary.com \
+            --agree-tos \
+            --no-eff-email \
+            -d silentcanary.com \
+            -d www.silentcanary.com
+
+          # Copy certificates to accessible location
+          sudo mkdir -p /opt/silentcanary/ssl
+          sudo cp /etc/letsencrypt/live/silentcanary.com/fullchain.pem /opt/silentcanary/ssl/silentcanary.com.crt
+          sudo cp /etc/letsencrypt/live/silentcanary.com/privkey.pem /opt/silentcanary/ssl/silentcanary.com.key
+          sudo chown -R ubuntu:ubuntu /opt/silentcanary/ssl
+
+          # Update nginx config to use SSL
+          if [ -f "nginx-ssl.conf" ]; then
+            cp nginx-ssl.conf nginx.conf
+          fi
+
+          # Restart containers with SSL
+          docker-compose up -d
+        else
+          echo "✅ SSL certificates already exist"
+        fi
+
+        # Set up automatic SSL renewal
+        echo "🔄 Setting up SSL certificate auto-renewal..."
+        if ! crontab -l | grep -q "renew-ssl.sh"; then
+          # Add cron job for certificate renewal (runs daily at 2 AM)
+          (crontab -l 2>/dev/null; echo "0 2 * * * /opt/silentcanary/renew-ssl.sh >> /opt/silentcanary/logs/ssl-renewal.log 2>&1") | crontab -
+          echo "✅ SSL auto-renewal cron job added"
+        else
+          echo "✅ SSL auto-renewal already configured"
+        fi
+
         # Health check
         echo "🔍 Running health check..."
         if curl -f http://localhost/health; then
