@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  EC2_HOST: 15.223.77.246
+  EC2_HOST: 35.182.6.75
   EC2_USER: ubuntu
   APP_DIR: /opt/silentcanary
 
