@@ -3206,7 +3206,13 @@ def change_billing_frequency(frequency):
             print(f"❌ User on Solo plan, billing changes not allowed", file=sys.stderr)
             flash('Billing frequency changes are not available for the Solo plan. Please upgrade to Startup plan first.', 'info')
             return redirect(url_for('account_management'))
-        
+
+        # Check if subscription is canceled
+        if subscription.status == 'canceled':
+            print(f"❌ Subscription is canceled, billing changes not allowed", file=sys.stderr)
+            flash('Your subscription has been canceled. Please resubscribe to change your plan or billing frequency.', 'error')
+            return redirect(url_for('account_management'))
+
         # Define plan configurations
         plan_config = {
             'startup': {
