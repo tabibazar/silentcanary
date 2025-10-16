@@ -259,8 +259,11 @@
                                 </small>
                             </div>
                         {% elif current_user.is_authenticated %}
-                            <a href="{{ url_for('upgrade_plan', plan='startup') }}" class="btn btn-primary btn-block">
+                            <a href="{{ url_for('upgrade_plan', plan='startup') }}" class="btn btn-primary btn-block mb-2">
                                 Upgrade to Startup
+                            </a>
+                            <a href="{{ url_for('apply_coupon_page', plan='startup') }}" class="btn btn-outline-secondary btn-block btn-sm">
+                                <i class="fas fa-ticket-alt"></i> Have a coupon?
                             </a>
                         {% else %}
                             <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
@@ -319,8 +322,11 @@
                                 </small>
                             </div>
                         {% elif current_user.is_authenticated %}
-                            <a href="{{ url_for('upgrade_plan', plan='growth') }}" class="btn btn-primary btn-block">
+                            <a href="{{ url_for('upgrade_plan', plan='growth') }}" class="btn btn-primary btn-block mb-2">
                                 Upgrade to Growth
+                            </a>
+                            <a href="{{ url_for('apply_coupon_page', plan='growth') }}" class="btn btn-outline-secondary btn-block btn-sm">
+                                <i class="fas fa-ticket-alt"></i> Have a coupon?
                             </a>
                         {% else %}
                             <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
@@ -379,8 +385,11 @@
                                 </small>
                             </div>
                         {% elif current_user.is_authenticated %}
-                            <a href="{{ url_for('upgrade_plan', plan='enterprise') }}" class="btn btn-primary btn-block">
+                            <a href="{{ url_for('upgrade_plan', plan='enterprise') }}" class="btn btn-primary btn-block mb-2">
                                 Upgrade to Enterprise
+                            </a>
+                            <a href="{{ url_for('apply_coupon_page', plan='enterprise') }}" class="btn btn-outline-secondary btn-block btn-sm">
+                                <i class="fas fa-ticket-alt"></i> Have a coupon?
                             </a>
                         {% else %}
                             <a href="{{ url_for('register') }}" class="btn btn-primary btn-block">
@@ -464,6 +473,20 @@ document.addEventListener('DOMContentLoaded', function() {
                         const baseHref = href.split('?')[0];
                         const billing = isAnnual ? 'annual' : 'monthly';
                         button.href = `${baseHref}?billing=${billing}`;
+                    }
+                });
+
+                // Update coupon page URLs
+                document.querySelectorAll('a[href*="apply_coupon"]').forEach(button => {
+                    const href = button.getAttribute('href');
+                    if (href) {
+                        const baseHref = href.split('?')[0];
+                        const billing = isAnnual ? 'annual' : 'monthly';
+                        // Extract plan from URL
+                        const urlParts = baseHref.split('=');
+                        if (urlParts.length > 1) {
+                            button.href = `${baseHref}&billing=${billing}`;
+                        }
                     }
                 });
 

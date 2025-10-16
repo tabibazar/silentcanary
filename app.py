@@ -1275,6 +1275,105 @@ def subscription_plans():
     
     return render_template('subscription_plans.html', subscription=subscription, usage=usage)
 
+@app.route('/apply_coupon')
+@login_required
+def apply_coupon_page():
+    """Display coupon entry page before checkout"""
+    plan = request.args.get('plan', 'startup')
+    billing_period = request.args.get('billing', 'monthly')
+
+    # Define plan configurations
+    plan_config = {
+        'startup': {'monthly_price': 7, 'annual_price': 70, 'name': 'Startup'},
+        'growth': {'monthly_price': 25, 'annual_price': 250, 'name': 'Growth'},
+        'enterprise': {'monthly_price': 75, 'annual_price': 750, 'name': 'Enterprise'}
+    }
+
+    if plan not in plan_config:
+        flash('Invalid plan selected', 'error')
+        return redirect(url_for('subscription_plans'))
+
+    config = plan_config[plan]
+    price = config['annual_price'] if billing_period == 'annual' else config['monthly_price']
+
+    return render_template('apply_coupon.html',
+                         plan=plan,
+                         plan_name=config['name'],
+                         billing_period=billing_period,
+                         price=price)
+
+@app.route('/validate_coupon', methods=['POST'])
+@login_required
+def validate_coupon():
+    """Validate a coupon code via AJAX"""
+    import stripe
+
+    try:
+        data = request.get_json()
+        coupon_code = data.get('coupon_code', '').strip().upper()
+
+        if not coupon_code:
+            return jsonify({'valid': False, 'message': 'Please enter a coupon code'})
+
+        # Initialize Stripe
+        stripe_secret_key = os.environ.get('STRIPE_SECRET_KEY')
+        if not stripe_secret_key:
+            return jsonify({'valid': False, 'message': 'Payment system not configured'})
+
+        stripe.api_key = stripe_secret_key
+
+        try:
+            # Retrieve coupon from Stripe
+            coupon = stripe.Coupon.retrieve(coupon_code)
+
+            # Check if coupon is valid
+            if not coupon.valid:
+                return jsonify({'valid': False, 'message': 'This coupon is no longer valid'})
+
+            # Build discount information message
+            if coupon.percent_off:
+                discount_info = f"{int(coupon.percent_off)}% off"
+            elif coupon.amount_off:
+                discount_info = f"${coupon.amount_off / 100:.2f} off"
+            else:
+                discount_info = "Discount applied"
+
+            # Add duration information
+            if coupon.duration == 'forever':
+                discount_info += ' (forever)'
+            elif coupon.duration == 'repeating':
+                discount_info += f' (for {coupon.duration_in_months} months)'
+            elif coupon.duration == 'once':
+                discount_info += ' (first payment)'
+
+            return jsonify({
+                'valid': True,
+                'message': f'Coupon "{coupon_code}" is valid!',
+                'discount_info': discount_info,
+                'coupon_id': coupon.id
+            })
+
+        except stripe.error.InvalidRequestError:
+            return jsonify({'valid': False, 'message': 'Invalid coupon code'})
+        except stripe.error.StripeError as e:
+            print(f"Stripe error validating coupon: {e}")
+            return jsonify({'valid': False, 'message': 'Error validating coupon'})
+
+    except Exception as e:
+        print(f"Error in validate_coupon: {e}")
+        return jsonify({'valid': False, 'message': 'An error occurred'})
+
+@app.route('/apply_coupon', methods=['POST'])
+@login_required
+def apply_coupon():
+    """Handle coupon form submission (redirects to checkout)"""
+    plan = request.form.get('plan')
+    billing_period = request.form.get('billing_period')
+    coupon_code = request.form.get('coupon_code', '').strip().upper()
+
+    # Redirect to upgrade_plan with coupon parameter
+    return redirect(url_for('upgrade_plan', plan=plan, billing=billing_period, coupon=coupon_code if coupon_code else None))
+
 @app.route('/terms-of-service')
 def terms_of_service():
     """Terms of Service page"""
@@ -2536,7 +2635,12 @@ def upgrade_plan(plan):
         # Get billing period from query params (default to monthly)
         billing_period = request.args.get('billing', 'monthly')
         print(f"💰 Billing period: {billing_period}")
-        
+
+        # Get coupon code from query params
+        coupon_code = request.args.get('coupon', '').strip().upper()
+        if coupon_code:
+            print(f"🎟️ Coupon code provided: {coupon_code}")
+
         # Select the appropriate price ID
         config = plan_config[plan]
         if billing_period == 'annual':
@@ -2545,37 +2649,56 @@ def upgrade_plan(plan):
         else:
             price_id = config['monthly_price_id']
             display_price = f"${config['monthly_price']}/month"
-        
+
         print(f"💳 Using price ID: {price_id} for {display_price}")
-        
+
         # Create Stripe checkout session
         import stripe
         stripe.api_key = stripe_secret_key
-        
+
         try:
             print(f"👤 Getting or creating Stripe customer for user: {current_user.email}")
             # Get or create Stripe customer
             customer_id = get_or_create_stripe_customer(current_user)
             print(f"✅ Stripe customer ID: {customer_id}")
-            
+
             print(f"🛒 Creating checkout session...")
-            checkout_session = stripe.checkout.Session.create(
-                customer=customer_id,
-                payment_method_types=['card'],
-                line_items=[{
+
+            # Build checkout session parameters
+            checkout_params = {
+                'customer': customer_id,
+                'payment_method_types': ['card'],
+                'line_items': [{
                     'price': price_id,
                     'quantity': 1,
                 }],
-                mode='subscription',
-                success_url=request.host_url + 'checkout/success?session_id={CHECKOUT_SESSION_ID}',
-                cancel_url=request.host_url + 'pricing',
-                metadata={
+                'mode': 'subscription',
+                'success_url': request.host_url + 'checkout/success?session_id={CHECKOUT_SESSION_ID}',
+                'cancel_url': request.host_url + 'pricing',
+                'metadata': {
                     'user_id': current_user.user_id,
                     'plan': plan,
                     'billing_period': billing_period,
                     'is_resubscribe': 'true' if is_resubscribe else 'false'
                 }
-            )
+            }
+
+            # Add coupon if provided
+            if coupon_code:
+                try:
+                    # Validate coupon exists in Stripe
+                    coupon = stripe.Coupon.retrieve(coupon_code)
+                    if coupon.valid:
+                        checkout_params['discounts'] = [{'coupon': coupon_code}]
+                        print(f"✅ Coupon {coupon_code} applied to checkout session")
+                    else:
+                        print(f"⚠️ Coupon {coupon_code} is not valid, proceeding without discount")
+                        flash('The coupon code is no longer valid. Proceeding without discount.', 'warning')
+                except stripe.error.InvalidRequestError:
+                    print(f"⚠️ Coupon {coupon_code} not found, proceeding without discount")
+                    flash('Invalid coupon code. Proceeding without discount.', 'warning')
+
+            checkout_session = stripe.checkout.Session.create(**checkout_params)
             
             print(f"✅ Checkout session created: {checkout_session.id}")
             print(f"🔗 Redirecting to: {checkout_session.url}")

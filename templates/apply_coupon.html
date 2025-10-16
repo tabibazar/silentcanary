@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block title %}Apply Coupon - SilentCanary{% endblock %}
+
+{% block head %}
+<style>
+    .coupon-card {
+        max-width: 600px;
+        margin: 0 auto;
+        border: 2px solid #dee2e6;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+
+    .coupon-input {
+        font-size: 1.2rem;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        font-weight: bold;
+    }
+
+    .plan-summary {
+        background: linear-gradient(135deg, #f8fbff, #e3f2fd);
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .discount-badge {
+        background: #28a745;
+        color: white;
+        padding: 8px 15px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: bold;
+        display: inline-block;
+        margin-top: 10px;
+    }
+
+    .skip-link {
+        color: #6c757d;
+        text-decoration: underline;
+        cursor: pointer;
+    }
+
+    .skip-link:hover {
+        color: #495057;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-12">
+            <div class="card coupon-card">
+                <div class="card-body p-5">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-ticket-alt fa-3x text-primary mb-3"></i>
+                        <h2>Have a Coupon Code?</h2>
+                        <p class="text-muted">Enter your coupon code to get a discount on your subscription</p>
+                    </div>
+
+                    <!-- Plan Summary -->
+                    <div class="plan-summary">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-0">{{ plan_name|title }} Plan</h5>
+                                <p class="text-muted mb-0">{{ billing_period|title }} Billing</p>
+                            </div>
+                            <div class="text-right">
+                                <h4 class="mb-0 text-primary">${{ price }}</h4>
+                                <small class="text-muted">{{ '/year' if billing_period == 'annual' else '/month' }}</small>
+                            </div>
+                        </div>
+                        <div id="discount-display" style="display: none;">
+                            <hr>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-success"><i class="fas fa-check-circle"></i> Coupon Applied</span>
+                                <span id="discount-amount" class="text-success font-weight-bold"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Coupon Form -->
+                    <form id="coupon-form" method="POST" action="{{ url_for('apply_coupon') }}">
+                        <input type="hidden" name="plan" value="{{ plan }}">
+                        <input type="hidden" name="billing_period" value="{{ billing_period }}">
+
+                        <div class="form-group mb-4">
+                            <label for="coupon_code" class="font-weight-bold">Coupon Code</label>
+                            <input type="text"
+                                   class="form-control coupon-input"
+                                   id="coupon_code"
+                                   name="coupon_code"
+                                   placeholder="ENTER CODE"
+                                   maxlength="50">
+                            <small class="form-text text-muted">Codes are not case-sensitive</small>
+                        </div>
+
+                        <div id="coupon-error" class="alert alert-danger" style="display: none;">
+                            <i class="fas fa-exclamation-circle"></i> <span id="error-message"></span>
+                        </div>
+
+                        <div id="coupon-success" class="alert alert-success" style="display: none;">
+                            <i class="fas fa-check-circle"></i> <span id="success-message"></span>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="button" id="validate-btn" class="btn btn-primary btn-lg mb-2">
+                                <i class="fas fa-check"></i> Validate Coupon
+                            </button>
+                            <button type="submit" id="continue-btn" class="btn btn-success btn-lg mb-2" style="display: none;">
+                                <i class="fas fa-arrow-right"></i> Continue to Checkout
+                            </button>
+                            <a href="{{ url_for('upgrade_plan', plan=plan, billing=billing_period) }}" class="btn btn-outline-secondary btn-lg">
+                                <i class="fas fa-times"></i> Skip & Continue Without Coupon
+                            </a>
+                        </div>
+                    </form>
+
+                    <div class="text-center mt-4">
+                        <small class="text-muted">
+                            <i class="fas fa-lock"></i> Secure checkout powered by Stripe
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('coupon-form');
+    const couponInput = document.getElementById('coupon_code');
+    const validateBtn = document.getElementById('validate-btn');
+    const continueBtn = document.getElementById('continue-btn');
+    const errorDiv = document.getElementById('coupon-error');
+    const successDiv = document.getElementById('coupon-success');
+    const errorMessage = document.getElementById('error-message');
+    const successMessage = document.getElementById('success-message');
+    const discountDisplay = document.getElementById('discount-display');
+    const discountAmount = document.getElementById('discount-amount');
+
+    let validatedCoupon = null;
+
+    // Validate coupon
+    validateBtn.addEventListener('click', async function() {
+        const couponCode = couponInput.value.trim();
+
+        if (!couponCode) {
+            showError('Please enter a coupon code');
+            return;
+        }
+
+        // Show loading state
+        validateBtn.disabled = true;
+        validateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Validating...';
+
+        try {
+            const response = await fetch('/validate_coupon', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    coupon_code: couponCode,
+                    plan: '{{ plan }}',
+                    billing_period: '{{ billing_period }}'
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.valid) {
+                validatedCoupon = couponCode;
+                showSuccess(data.message);
+
+                // Show discount information
+                if (data.discount_info) {
+                    discountDisplay.style.display = 'block';
+                    discountAmount.textContent = data.discount_info;
+                }
+
+                // Hide validate button, show continue button
+                validateBtn.style.display = 'none';
+                continueBtn.style.display = 'block';
+                couponInput.disabled = true;
+            } else {
+                showError(data.message || 'Invalid coupon code');
+                validateBtn.disabled = false;
+                validateBtn.innerHTML = '<i class="fas fa-check"></i> Validate Coupon';
+            }
+        } catch (error) {
+            showError('Error validating coupon. Please try again.');
+            validateBtn.disabled = false;
+            validateBtn.innerHTML = '<i class="fas fa-check"></i> Validate Coupon';
+        }
+    });
+
+    // Handle form submission
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const couponCode = validatedCoupon || couponInput.value.trim();
+        const plan = '{{ plan }}';
+        const billingPeriod = '{{ billing_period }}';
+
+        // Redirect to upgrade_plan with coupon parameter
+        const url = `/upgrade_plan/${plan}?billing=${billingPeriod}${couponCode ? '&coupon=' + encodeURIComponent(couponCode) : ''}`;
+        window.location.href = url;
+    });
+
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorDiv.style.display = 'block';
+        successDiv.style.display = 'none';
+    }
+
+    function showSuccess(message) {
+        successMessage.textContent = message;
+        successDiv.style.display = 'block';
+        errorDiv.style.display = 'none';
+    }
+
+    // Allow Enter key to validate
+    couponInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (validateBtn.style.display !== 'none') {
+                validateBtn.click();
+            } else {
+                continueBtn.click();
+            }
+        }
+    });
+});
+</script>
+{% endblock %}
