@@ -101,6 +101,87 @@ jobs:
           sed -i "s/RECAPTCHA_SECRET_KEY=.*/RECAPTCHA_SECRET_KEY=$RECAPTCHA_SECRET_KEY/" .env
         fi
 
+        # Update Stripe credentials if provided via environment
+        if [ ! -z "$STRIPE_SECRET_KEY" ]; then
+          echo "💳 Updating Stripe credentials..."
+
+          # Update or add Stripe secret key
+          if grep -q "STRIPE_SECRET_KEY=" .env; then
+            sed -i "s|STRIPE_SECRET_KEY=.*|STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY|" .env
+          else
+            echo "STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY" >> .env
+          fi
+
+          # Update or add Stripe publishable key
+          if [ ! -z "$STRIPE_PUBLISHABLE_KEY" ]; then
+            if grep -q "STRIPE_PUBLISHABLE_KEY=" .env; then
+              sed -i "s|STRIPE_PUBLISHABLE_KEY=.*|STRIPE_PUBLISHABLE_KEY=$STRIPE_PUBLISHABLE_KEY|" .env
+            else
+              echo "STRIPE_PUBLISHABLE_KEY=$STRIPE_PUBLISHABLE_KEY" >> .env
+            fi
+          fi
+
+          # Update or add Stripe webhook secret
+          if [ ! -z "$STRIPE_WEBHOOK_SECRET" ]; then
+            if grep -q "STRIPE_WEBHOOK_SECRET=" .env; then
+              sed -i "s|STRIPE_WEBHOOK_SECRET=.*|STRIPE_WEBHOOK_SECRET=$STRIPE_WEBHOOK_SECRET|" .env
+            else
+              echo "STRIPE_WEBHOOK_SECRET=$STRIPE_WEBHOOK_SECRET" >> .env
+            fi
+          fi
+
+          # Update or add Stripe price IDs
+          if [ ! -z "$STRIPE_STARTUP_MONTHLY_PRICE_ID" ]; then
+            if grep -q "STRIPE_STARTUP_MONTHLY_PRICE_ID=" .env; then
+              sed -i "s|STRIPE_STARTUP_MONTHLY_PRICE_ID=.*|STRIPE_STARTUP_MONTHLY_PRICE_ID=$STRIPE_STARTUP_MONTHLY_PRICE_ID|" .env
+            else
+              echo "STRIPE_STARTUP_MONTHLY_PRICE_ID=$STRIPE_STARTUP_MONTHLY_PRICE_ID" >> .env
+            fi
+          fi
+
+          if [ ! -z "$STRIPE_STARTUP_ANNUAL_PRICE_ID" ]; then
+            if grep -q "STRIPE_STARTUP_ANNUAL_PRICE_ID=" .env; then
+              sed -i "s|STRIPE_STARTUP_ANNUAL_PRICE_ID=.*|STRIPE_STARTUP_ANNUAL_PRICE_ID=$STRIPE_STARTUP_ANNUAL_PRICE_ID|" .env
+            else
+              echo "STRIPE_STARTUP_ANNUAL_PRICE_ID=$STRIPE_STARTUP_ANNUAL_PRICE_ID" >> .env
+            fi
+          fi
+
+          if [ ! -z "$STRIPE_GROWTH_MONTHLY_PRICE_ID" ]; then
+            if grep -q "STRIPE_GROWTH_MONTHLY_PRICE_ID=" .env; then
+              sed -i "s|STRIPE_GROWTH_MONTHLY_PRICE_ID=.*|STRIPE_GROWTH_MONTHLY_PRICE_ID=$STRIPE_GROWTH_MONTHLY_PRICE_ID|" .env
+            else
+              echo "STRIPE_GROWTH_MONTHLY_PRICE_ID=$STRIPE_GROWTH_MONTHLY_PRICE_ID" >> .env
+            fi
+          fi
+
+          if [ ! -z "$STRIPE_GROWTH_ANNUAL_PRICE_ID" ]; then
+            if grep -q "STRIPE_GROWTH_ANNUAL_PRICE_ID=" .env; then
+              sed -i "s|STRIPE_GROWTH_ANNUAL_PRICE_ID=.*|STRIPE_GROWTH_ANNUAL_PRICE_ID=$STRIPE_GROWTH_ANNUAL_PRICE_ID|" .env
+            else
+              echo "STRIPE_GROWTH_ANNUAL_PRICE_ID=$STRIPE_GROWTH_ANNUAL_PRICE_ID" >> .env
+            fi
+          fi
+
+          if [ ! -z "$STRIPE_ENTERPRISE_MONTHLY_PRICE_ID" ]; then
+            if grep -q "STRIPE_ENTERPRISE_MONTHLY_PRICE_ID=" .env; then
+              sed -i "s|STRIPE_ENTERPRISE_MONTHLY_PRICE_ID=.*|STRIPE_ENTERPRISE_MONTHLY_PRICE_ID=$STRIPE_ENTERPRISE_MONTHLY_PRICE_ID|" .env
+            else
+              echo "STRIPE_ENTERPRISE_MONTHLY_PRICE_ID=$STRIPE_ENTERPRISE_MONTHLY_PRICE_ID" >> .env
+            fi
+          fi
+
+          if [ ! -z "$STRIPE_ENTERPRISE_ANNUAL_PRICE_ID" ]; then
+            if grep -q "STRIPE_ENTERPRISE_ANNUAL_PRICE_ID=" .env; then
+              sed -i "s|STRIPE_ENTERPRISE_ANNUAL_PRICE_ID=.*|STRIPE_ENTERPRISE_ANNUAL_PRICE_ID=$STRIPE_ENTERPRISE_ANNUAL_PRICE_ID|" .env
+            else
+              echo "STRIPE_ENTERPRISE_ANNUAL_PRICE_ID=$STRIPE_ENTERPRISE_ANNUAL_PRICE_ID" >> .env
+            fi
+          fi
+
+          echo "✅ Stripe credentials updated"
+        fi
+
         # Ensure Redis uses Docker network
         if ! grep -q "REDIS_HOST=redis" .env; then
           echo "REDIS_HOST=redis" >> .env
@@ -224,7 +305,21 @@ jobs:
         EOF
 
         # Execute deployment script on EC2
-        ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} "AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' RECAPTCHA_SITE_KEY='${{ secrets.RECAPTCHA_SITE_KEY }}' RECAPTCHA_SECRET_KEY='${{ secrets.RECAPTCHA_SECRET_KEY }}' bash -s" < deploy_script.sh
+        ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ env.EC2_HOST }} "\
+          AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' \
+          AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' \
+          RECAPTCHA_SITE_KEY='${{ secrets.RECAPTCHA_SITE_KEY }}' \
+          RECAPTCHA_SECRET_KEY='${{ secrets.RECAPTCHA_SECRET_KEY }}' \
+          STRIPE_SECRET_KEY='${{ secrets.STRIPE_SECRET_KEY }}' \
+          STRIPE_PUBLISHABLE_KEY='${{ secrets.STRIPE_PUBLISHABLE_KEY }}' \
+          STRIPE_WEBHOOK_SECRET='${{ secrets.STRIPE_WEBHOOK_SECRET }}' \
+          STRIPE_STARTUP_MONTHLY_PRICE_ID='${{ secrets.STRIPE_STARTUP_MONTHLY_PRICE_ID }}' \
+          STRIPE_STARTUP_ANNUAL_PRICE_ID='${{ secrets.STRIPE_STARTUP_ANNUAL_PRICE_ID }}' \
+          STRIPE_GROWTH_MONTHLY_PRICE_ID='${{ secrets.STRIPE_GROWTH_MONTHLY_PRICE_ID }}' \
+          STRIPE_GROWTH_ANNUAL_PRICE_ID='${{ secrets.STRIPE_GROWTH_ANNUAL_PRICE_ID }}' \
+          STRIPE_ENTERPRISE_MONTHLY_PRICE_ID='${{ secrets.STRIPE_ENTERPRISE_MONTHLY_PRICE_ID }}' \
+          STRIPE_ENTERPRISE_ANNUAL_PRICE_ID='${{ secrets.STRIPE_ENTERPRISE_ANNUAL_PRICE_ID }}' \
+          bash -s" < deploy_script.sh
 
     - name: Verify deployment
       run: |
