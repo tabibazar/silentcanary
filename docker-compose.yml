@@ -13,6 +13,7 @@ services:
       - FLASK_ENV=production
       - FLASK_APP=app.py
       - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
       - AWS_DEFAULT_REGION=ca-central-1
     env_file:
       - .env
@@ -33,6 +34,7 @@ services:
       - FLASK_ENV=production
       - FLASK_APP=app.py
       - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
       - AWS_DEFAULT_REGION=ca-central-1
     env_file:
       - .env
@@ -52,6 +54,7 @@ services:
       - FLASK_ENV=production
       - FLASK_APP=app.py
       - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
       - AWS_DEFAULT_REGION=ca-central-1
     env_file:
       - .env
