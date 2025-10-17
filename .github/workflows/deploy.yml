@@ -265,7 +265,7 @@ jobs:
 
         # Wait for services to start
         echo "⏳ Waiting for services..."
-        sleep 30
+        sleep 45
 
         # Setup SSL certificates with Let's Encrypt
         echo "🔒 Setting up SSL certificates..."
@@ -329,13 +329,40 @@ jobs:
           echo "✅ SSL auto-renewal already configured"
         fi
 
-        # Health check
+        # Health check with retries
         echo "🔍 Running health check..."
-        if curl -f http://localhost/health; then
+
+        # Check if containers are running
+        echo "📋 Checking container status..."
+        docker-compose ps
+
+        # Retry health check up to 5 times with 10 second delays
+        MAX_RETRIES=5
+        RETRY_COUNT=0
+        HEALTH_CHECK_PASSED=false
+
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          echo "🔍 Health check attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
+          if curl -f -s http://localhost/health > /dev/null 2>&1; then
+            echo "✅ Health check passed!"
+            HEALTH_CHECK_PASSED=true
+            break
+          fi
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+          if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+            echo "⏳ Health check failed, waiting 10 seconds before retry..."
+            sleep 10
+          fi
+        done
+
+        if [ "$HEALTH_CHECK_PASSED" = true ]; then
           echo "✅ Deployment successful!"
         else
-          echo "❌ Health check failed"
-          docker-compose logs
+          echo "❌ Health check failed after $MAX_RETRIES attempts"
+          echo "📋 Container status:"
+          docker-compose ps
+          echo "📜 Application logs:"
+          docker-compose logs --tail=50
           exit 1
         fi
         EOF
