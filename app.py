@@ -2779,21 +2779,18 @@ def cancel_subscription():
                         cancel_at_period_end=True
                     )
                     print(f"✅ Subscription {subscription.stripe_subscription_id} marked for cancellation at period end")
-                    
-                    # Update subscription status in database
-                    subscription.status = 'canceled'
-                    if subscription.save():
-                        try:
-                            if hasattr(stripe_subscription, 'current_period_end') and stripe_subscription.current_period_end:
-                                period_end = datetime.fromtimestamp(stripe_subscription.current_period_end).strftime('%B %d, %Y')
-                                flash(f'Your subscription has been cancelled. You\'ll continue to have access to your current plan until {period_end}.', 'success')
-                            else:
-                                flash('Your subscription has been cancelled and will end at the current billing period.', 'success')
-                        except Exception as date_error:
-                            print(f"❌ Error formatting period end date: {date_error}")
+
+                    # Keep status as 'active' until period ends - Stripe webhook will update to 'canceled'
+                    # The subscription remains active until the current billing period ends
+                    try:
+                        if hasattr(stripe_subscription, 'current_period_end') and stripe_subscription.current_period_end:
+                            period_end = datetime.fromtimestamp(stripe_subscription.current_period_end).strftime('%B %d, %Y')
+                            flash(f'Your subscription has been cancelled. You\'ll continue to have access to your current plan until {period_end}.', 'success')
+                        else:
                             flash('Your subscription has been cancelled and will end at the current billing period.', 'success')
-                    else:
-                        flash('Subscription cancelled in Stripe but failed to update local database. Please contact support.', 'warning')
+                    except Exception as date_error:
+                        print(f"❌ Error formatting period end date: {date_error}")
+                        flash('Your subscription has been cancelled and will end at the current billing period.', 'success')
             else:
                 # No Stripe subscription ID, just cancel locally
                 subscription.status = 'canceled'
