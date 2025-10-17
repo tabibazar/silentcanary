@@ -1,0 +1,79 @@
+name: Test Subscriptions
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+  schedule:
+    # Run tests daily at 6 AM UTC
+    - cron: '0 6 * * *'
+
+jobs:
+  test-subscriptions:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run comprehensive subscription tests
+      env:
+        STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+        STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+        STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+        STRIPE_STARTUP_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_STARTUP_MONTHLY_PRICE_ID }}
+        STRIPE_STARTUP_ANNUAL_PRICE_ID: ${{ secrets.STRIPE_STARTUP_ANNUAL_PRICE_ID }}
+        STRIPE_GROWTH_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_GROWTH_MONTHLY_PRICE_ID }}
+        STRIPE_GROWTH_ANNUAL_PRICE_ID: ${{ secrets.STRIPE_GROWTH_ANNUAL_PRICE_ID }}
+        STRIPE_ENTERPRISE_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_ENTERPRISE_MONTHLY_PRICE_ID }}
+        STRIPE_ENTERPRISE_ANNUAL_PRICE_ID: ${{ secrets.STRIPE_ENTERPRISE_ANNUAL_PRICE_ID }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: ca-central-1
+      run: |
+        echo "🧪 Running comprehensive subscription tests..."
+        python3 test_subscriptions_comprehensive.py
+
+    - name: Check for test failures
+      if: failure()
+      run: |
+        echo "❌ Subscription tests failed!"
+        echo "Please review the test output above and fix any issues."
+        exit 1
+
+    - name: Test summary
+      if: success()
+      run: |
+        echo "✅ All subscription tests passed!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Test Categories:"
+        echo "  ✅ Environment Configuration"
+        echo "  ✅ Stripe Products & Prices"
+        echo "  ✅ Plan Limits & Features"
+        echo "  ✅ Upgrade/Downgrade Paths"
+        echo "  ✅ Billing Frequency Changes"
+        echo "  ✅ Edge Cases & Error Handling"
+        echo "  ✅ Price Consistency"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Status: PRODUCTION READY 🚀"
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: subscription-test-results
+        path: |
+          SUBSCRIPTION_TEST_REPORT.md
+        retention-days: 30
