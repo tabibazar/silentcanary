@@ -302,9 +302,9 @@
                                 <i class="fas fa-redo me-2"></i>Choose Plan to Resubscribe
                             </a>
                             {% else %}
-                            <a href="{{ url_for('resubscribe') }}" class="btn btn-outline-success btn-account">
+                            <button class="btn btn-outline-success btn-account" data-bs-toggle="modal" data-bs-target="#resubscribeModal">
                                 <i class="fas fa-redo me-2"></i>Resubscribe to {{ subscription.plan_name.title() }}
-                            </a>
+                            </button>
                             {% endif %}
                         {% elif subscription and subscription.plan_name == 'free' %}
                             <a href="{{ url_for('upgrade_plan', plan='startup') }}" class="btn btn-success btn-account">
@@ -484,6 +484,48 @@
     </div>
 </div>
 {% endif %}
+
+<!-- Resubscribe Modal -->
+{% if subscription and subscription.status == 'canceled' and subscription.plan_name != 'free' %}
+<div class="modal fade" id="resubscribeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Resubscribe to {{ subscription.plan_name.title() }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Welcome back! Resubscribe to your <strong>{{ subscription.plan_name.title() }}</strong> plan.</p>
+
+                <!-- Coupon Code Input -->
+                <div class="mb-3">
+                    <label for="resubscribeCouponCode" class="form-label">
+                        <i class="fas fa-tag me-2"></i>Coupon Code (Optional)
+                    </label>
+                    <input type="text" class="form-control" id="resubscribeCouponCode" placeholder="Enter coupon code">
+                    <small class="text-muted">Have a promo code? Enter it to get a discount!</small>
+                </div>
+
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>What happens next:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>You'll be redirected to our secure payment page</li>
+                        <li>Choose your billing frequency (monthly or annual)</li>
+                        <li>Your plan will be reactivated immediately after payment</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="submitResubscribe()">
+                    <i class="fas fa-redo me-2"></i>Continue to Payment
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -497,28 +539,41 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function submitCancellation() {
     const selectedOption = document.querySelector('input[name="cancellation_option"]:checked').value;
-    
+
     // Create and submit form
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = '{{ url_for("cancel_subscription") }}';
-    
+
     // CSRF token
     const csrfToken = document.createElement('input');
     csrfToken.type = 'hidden';
     csrfToken.name = 'csrf_token';
     csrfToken.value = '{{ csrf_token() }}';
     form.appendChild(csrfToken);
-    
+
     // Cancellation type
     const cancelationType = document.createElement('input');
     cancelationType.type = 'hidden';
     cancelationType.name = 'cancellation_type';
     cancelationType.value = selectedOption;
     form.appendChild(cancelationType);
-    
+
     document.body.appendChild(form);
     form.submit();
+}
+
+function submitResubscribe() {
+    const couponCode = document.getElementById('resubscribeCouponCode').value.trim().toUpperCase();
+
+    // Build resubscribe URL with optional coupon code
+    let url = '{{ url_for("resubscribe") }}';
+    if (couponCode) {
+        url += '?coupon=' + encodeURIComponent(couponCode);
+    }
+
+    // Redirect to resubscribe page
+    window.location.href = url;
 }
 </script>
 {% endblock %}

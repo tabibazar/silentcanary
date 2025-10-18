@@ -3054,8 +3054,14 @@ def resubscribe():
                         else:
                             print(f"⚠️ Price ID {price_id} mapped to 'free' plan, continuing search")
 
+                # Get coupon code from query params if provided
+                coupon_code = request.args.get('coupon', '').strip().upper()
+
                 if original_plan:
-                    return redirect(url_for('upgrade_plan', plan=original_plan, resubscribe='true'))
+                    if coupon_code:
+                        return redirect(url_for('upgrade_plan', plan=original_plan, resubscribe='true', coupon=coupon_code))
+                    else:
+                        return redirect(url_for('upgrade_plan', plan=original_plan, resubscribe='true'))
                 else:
                     flash('Could not determine your previous plan. Please select a plan to subscribe.', 'info')
                     return redirect(url_for('subscription_plans'))
@@ -3069,8 +3075,14 @@ def resubscribe():
             flash('Please select your previous plan to resubscribe.', 'info')
             return redirect(url_for('subscription_plans'))
 
-        # Redirect to upgrade with their previous plan and resubscribe flag
-        return redirect(url_for('upgrade_plan', plan=subscription.plan_name, resubscribe='true'))
+        # Get coupon code from query params if provided
+        coupon_code = request.args.get('coupon', '').strip().upper()
+
+        # Redirect to upgrade with their previous plan, resubscribe flag, and optional coupon
+        if coupon_code:
+            return redirect(url_for('upgrade_plan', plan=subscription.plan_name, resubscribe='true', coupon=coupon_code))
+        else:
+            return redirect(url_for('upgrade_plan', plan=subscription.plan_name, resubscribe='true'))
         
     except Exception as e:
         print(f"❌ Error in resubscribe: {e}")
