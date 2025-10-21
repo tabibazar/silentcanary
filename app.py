@@ -715,7 +715,7 @@ def admin():
         for user_data in users_data:
             # Count canaries for this user
             canary_count = len([c for c in canaries_data if c.get('user_id') == user_data.get('user_id')])
-            
+
             # Parse created_at datetime
             created_at = None
             if user_data.get('created_at'):
@@ -724,7 +724,7 @@ def admin():
                     created_at = datetime.fromisoformat(user_data['created_at'].replace('Z', '+00:00'))
                 except:
                     pass
-            
+
             # Parse last_login if it exists
             last_login = None
             if user_data.get('last_login'):
@@ -732,7 +732,13 @@ def admin():
                     last_login = datetime.fromisoformat(user_data['last_login'].replace('Z', '+00:00'))
                 except:
                     pass
-            
+
+            # Get subscription info for this user
+            from models import Subscription
+            subscription = Subscription.get_by_user_id(user_data.get('user_id'))
+            plan = subscription.plan_name if subscription else 'free'
+            subscription_status = subscription.status if subscription else 'active'
+
             admin_user = {
                 'user_id': user_data.get('user_id', 'N/A'),
                 'username': user_data.get('username', 'N/A'),
@@ -741,7 +747,9 @@ def admin():
                 'created_at': created_at,
                 'last_login': last_login,
                 'is_verified': user_data.get('is_verified', False),
-                'timezone': user_data.get('timezone', 'UTC')
+                'timezone': user_data.get('timezone', 'UTC'),
+                'plan': plan,
+                'subscription_status': subscription_status
             }
             admin_users.append(admin_user)
         

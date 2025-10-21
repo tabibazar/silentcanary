@@ -84,6 +84,7 @@
                         <th>Email</th>
                         <th>Canaries</th>
                         <th>Plan</th>
+                        <th>Subscription</th>
                         <th>Status</th>
                         <th>Created</th>
                         <th>Last Login</th>
@@ -111,27 +112,49 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if user.plan == 'Solo' %}
+                            {% if user.plan == 'Solo' or user.plan == 'free' %}
                                 <span class="badge bg-light text-dark">
                                     <i class="fas fa-user"></i> Solo
                                 </span>
-                            {% elif user.plan == 'Startup' %}
+                            {% elif user.plan == 'startup' or user.plan == 'Startup' %}
                                 <span class="badge bg-info">
                                     <i class="fas fa-rocket"></i> Startup
                                 </span>
-                            {% elif user.plan == 'Growth' %}
+                            {% elif user.plan == 'growth' or user.plan == 'Growth' %}
                                 <span class="badge bg-success">
                                     <i class="fas fa-chart-line"></i> Growth
                                 </span>
-                            {% elif user.plan == 'Enterprise' %}
+                            {% elif user.plan == 'enterprise' or user.plan == 'Enterprise' %}
                                 <span class="badge bg-primary">
                                     <i class="fas fa-building"></i> Enterprise
                                 </span>
                             {% else %}
                                 <span class="badge bg-secondary">{{ user.plan }}</span>
                             {% endif %}
-                            {% if user.plan_status and user.plan_status != 'active' %}
-                                <br><small class="text-muted">{{ user.plan_status }}</small>
+                        </td>
+                        <td>
+                            {% if user.subscription_status == 'active' %}
+                                <span class="badge bg-success">
+                                    <i class="fas fa-check-circle"></i> Active
+                                </span>
+                            {% elif user.subscription_status == 'canceled' %}
+                                <span class="badge bg-danger">
+                                    <i class="fas fa-times-circle"></i> Canceled
+                                </span>
+                            {% elif user.subscription_status == 'past_due' %}
+                                <span class="badge bg-warning">
+                                    <i class="fas fa-exclamation-triangle"></i> Past Due
+                                </span>
+                            {% elif user.subscription_status == 'incomplete' %}
+                                <span class="badge bg-secondary">
+                                    <i class="fas fa-hourglass-half"></i> Incomplete
+                                </span>
+                            {% elif user.subscription_status == 'trialing' %}
+                                <span class="badge bg-info">
+                                    <i class="fas fa-flask"></i> Trial
+                                </span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ user.subscription_status }}</span>
                             {% endif %}
                         </td>
                         <td>
