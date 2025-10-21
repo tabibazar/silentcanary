@@ -62,7 +62,7 @@ services:
       - ./logs:/app/logs
     depends_on:
       - redis
-    command: python -c "import time; print('Scheduler placeholder - will implement later')"
+    command: python scheduler.py
 
   redis:
     image: redis:7-alpine
