@@ -1,0 +1,27 @@
+name: Check Email System Status
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  check-email-system:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Add EC2 to known hosts
+      run: |
+        ssh-keyscan -H 35.182.6.75 >> ~/.ssh/known_hosts
+
+    - name: Run email system diagnostics
+      run: |
+        echo "🔍 Running email system diagnostics on production server..."
+        ssh -i ~/.ssh/id_rsa ubuntu@35.182.6.75 'cd /opt/silentcanary && bash check_email_system.sh'
