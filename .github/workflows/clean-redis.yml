@@ -1,0 +1,46 @@
+name: Clean Redis and Restart Email System
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  clean-redis:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Add EC2 to known hosts
+      run: |
+        ssh-keyscan -H 35.182.6.75 >> ~/.ssh/known_hosts
+
+    - name: Clean Redis and restart services
+      run: |
+        echo "🧹 Cleaning Redis and restarting email system..."
+        ssh -i ~/.ssh/id_rsa ubuntu@35.182.6.75 'cd /opt/silentcanary && \
+          echo "📋 Cleaning Redis..." && \
+          docker exec silentcanary-worker python3 clean_redis.py && \
+          echo "" && \
+          echo "🔄 Restarting scheduler..." && \
+          docker-compose restart scheduler && \
+          echo "" && \
+          echo "🔄 Restarting worker..." && \
+          docker-compose restart worker && \
+          echo "" && \
+          echo "⏳ Waiting 10 seconds for services to start..." && \
+          sleep 10 && \
+          echo "" && \
+          echo "📊 Checking scheduler status..." && \
+          docker logs --tail 20 silentcanary-scheduler && \
+          echo "" && \
+          echo "📊 Checking worker status..." && \
+          docker logs --tail 20 silentcanary-worker && \
+          echo "" && \
+          echo "✅ Cleanup and restart complete!"'
