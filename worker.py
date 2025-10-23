@@ -238,9 +238,6 @@ def check_canary_health():
         learning_updates = 0
         
         for canary in active_canaries:
-            if canary.status == 'failed':
-                continue  # Skip already failed canaries
-                
             # Phase 1: Check Smart Alert ML predictions FIRST (before overdue threshold)
             if should_use_smart_alerts(canary):
                 smart_alert = SmartAlert.get_by_canary_id(canary.canary_id)
@@ -281,19 +278,20 @@ def check_canary_health():
             if canary.is_overdue():
                 # Determine alert type based on canary characteristics
                 alert_type = "standard"
-                
+
                 # For long-running jobs (>30 days), use special handling
                 if is_long_running_job(canary):
                     alert_type = "long_job"
                     print(f"⚠️ Long-running job '{canary.name}' is overdue (interval: {canary.interval_minutes/1440:.1f} days)")
                 else:
                     print(f"⚠️ Standard canary '{canary.name}' is overdue")
-                
-                # Update canary status
-                canary.status = 'failed'
-                canary.save()
-                
-                # Enqueue notification job
+
+                # Update canary status if not already failed
+                if canary.status != 'failed':
+                    canary.status = 'failed'
+                    canary.save()
+
+                # Enqueue notification job (will be suppressed by cooldown if recently sent)
                 notification_queue.enqueue(
                     send_notifications,
                     canary.canary_id,
@@ -301,7 +299,7 @@ def check_canary_health():
                     job_timeout=300,  # 5 minutes timeout
                     retry=3
                 )
-                
+
                 failed_count += 1
         
         # Report results
