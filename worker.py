@@ -267,8 +267,7 @@ def check_canary_health():
                             send_notifications,
                             canary.canary_id,
                             "smart_alert",
-                            job_timeout=300,
-                            retry=3
+                            timeout=300
                         )
                         
                         smart_anomaly_count += 1
@@ -296,8 +295,7 @@ def check_canary_health():
                     send_notifications,
                     canary.canary_id,
                     alert_type,
-                    job_timeout=300,  # 5 minutes timeout
-                    retry=3
+                    timeout=300
                 )
 
                 failed_count += 1
@@ -330,8 +328,7 @@ def schedule_health_checks():
         # Enqueue health check to run immediately and then every minute
         scheduler.enqueue(
             check_canary_health,
-            job_timeout=300,  # 5 minutes timeout
-            retry=2
+            timeout=300
         )
         
         print("✅ Health check scheduled")
