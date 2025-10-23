@@ -1,0 +1,43 @@
+name: Deploy to EC2
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Add EC2 to known hosts
+      run: |
+        ssh-keyscan -H 35.182.6.75 >> ~/.ssh/known_hosts
+
+    - name: Deploy to EC2
+      run: |
+        echo "🚀 Deploying to EC2..."
+        ssh -i ~/.ssh/id_rsa ubuntu@35.182.6.75 'cd /opt/silentcanary && \
+          echo "📥 Pulling latest code..." && \
+          git pull origin main && \
+          echo "" && \
+          echo "🏗️  Rebuilding Docker images..." && \
+          docker-compose build && \
+          echo "" && \
+          echo "🔄 Restarting services..." && \
+          docker-compose up -d && \
+          echo "" && \
+          echo "⏳ Waiting 10 seconds for services to start..." && \
+          sleep 10 && \
+          echo "" && \
+          echo "📊 Checking service status..." && \
+          docker-compose ps && \
+          echo "" && \
+          echo "✅ Deployment complete!"'
