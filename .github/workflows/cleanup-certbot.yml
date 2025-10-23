@@ -1,0 +1,28 @@
+name: Cleanup Certbot Directories
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Add EC2 to known hosts
+      run: |
+        ssh-keyscan -H 35.182.6.75 >> ~/.ssh/known_hosts
+
+    - name: Cleanup certbot directories
+      run: |
+        echo "🧹 Cleaning up certbot directories..."
+        ssh -i ~/.ssh/id_rsa ubuntu@35.182.6.75 'cd /opt/silentcanary && \
+          echo "Removing certbot directories..." && \
+          sudo rm -rf certbot/ && \
+          echo "✅ Certbot directories removed" && \
+          ls -la | grep -v "^d" | tail -10'
