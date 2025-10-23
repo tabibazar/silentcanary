@@ -1,0 +1,46 @@
+name: Restart All Services
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  restart-all:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Add EC2 to known hosts
+      run: |
+        ssh-keyscan -H 35.182.6.75 >> ~/.ssh/known_hosts
+
+    - name: Restart all services
+      run: |
+        echo "🔄 Restarting all services..."
+        ssh -i ~/.ssh/id_rsa ubuntu@35.182.6.75 'cd /opt/silentcanary && \
+          echo "🛑 Stopping all services..." && \
+          docker-compose down && \
+          echo "" && \
+          echo "⏳ Waiting 5 seconds..." && \
+          sleep 5 && \
+          echo "" && \
+          echo "🚀 Starting all services..." && \
+          docker-compose up -d app redis worker scheduler nginx && \
+          echo "" && \
+          echo "⏳ Waiting 15 seconds for services to start..." && \
+          sleep 15 && \
+          echo "" && \
+          echo "📊 Checking service status..." && \
+          docker-compose ps && \
+          echo "" && \
+          echo "🧪 Testing local connectivity..." && \
+          curl -I http://localhost:80 || echo "Port 80 not responding" && \
+          echo "" && \
+          echo "✅ Restart complete!"'
