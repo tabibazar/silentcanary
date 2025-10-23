@@ -1,0 +1,71 @@
+name: Setup SSL Certificates
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: 'Email for Let\'s Encrypt notifications'
+        required: true
+        default: 'reza@tabibazar.com'
+
+jobs:
+  setup-ssl:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Add EC2 to known hosts
+      run: |
+        ssh-keyscan -H 35.182.6.75 >> ~/.ssh/known_hosts
+
+    - name: Deploy updated configuration and obtain SSL certificates
+      run: |
+        echo "🚀 Deploying SSL configuration..."
+        ssh -i ~/.ssh/id_rsa ubuntu@35.182.6.75 'cd /opt/silentcanary && \
+          echo "📥 Pulling latest code..." && \
+          git pull origin main && \
+          echo "" && \
+          echo "📁 Creating certbot directories..." && \
+          mkdir -p certbot/conf certbot/www && \
+          echo "" && \
+          echo "🔄 Starting services with updated config..." && \
+          docker-compose up -d nginx && \
+          echo "" && \
+          echo "⏳ Waiting 5 seconds for nginx to start..." && \
+          sleep 5 && \
+          echo "" && \
+          echo "🔐 Obtaining SSL certificate for silentcanary.com..." && \
+          docker-compose run --rm certbot certonly \
+            --webroot \
+            --webroot-path=/var/www/certbot \
+            --email ${{ github.event.inputs.email }} \
+            --agree-tos \
+            --no-eff-email \
+            --force-renewal \
+            -d silentcanary.com \
+            -d www.silentcanary.com && \
+          echo "" && \
+          echo "🔄 Restarting nginx with SSL..." && \
+          docker-compose restart nginx && \
+          echo "" && \
+          echo "⏳ Waiting 5 seconds..." && \
+          sleep 5 && \
+          echo "" && \
+          echo "🔄 Starting certbot renewal service..." && \
+          docker-compose up -d certbot && \
+          echo "" && \
+          echo "📊 Checking service status..." && \
+          docker-compose ps && \
+          echo "" && \
+          echo "🧪 Testing HTTPS locally..." && \
+          curl -I https://localhost --insecure || echo "HTTPS test failed" && \
+          echo "" && \
+          echo "✅ SSL setup complete!"'
