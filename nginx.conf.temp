@@ -1,0 +1,44 @@
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Logging
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
+
+    # Basic settings
+    sendfile on;
+    keepalive_timeout 65;
+    client_max_body_size 20M;
+
+    # Upstream app servers
+    upstream app {
+        server app:8000;
+    }
+
+    # HTTP server - for Let's Encrypt validation
+    server {
+        listen 80;
+        server_name silentcanary.com www.silentcanary.com;
+
+        # Let's Encrypt challenge
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+
+        # Temporary: serve app on HTTP
+        location / {
+            proxy_pass http://app;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 60s;
+            proxy_connect_timeout 60s;
+        }
+    }
+}
