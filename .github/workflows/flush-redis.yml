@@ -1,0 +1,41 @@
+name: Flush Redis Database
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  flush-redis:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Add EC2 to known hosts
+      run: |
+        ssh-keyscan -H 35.182.6.75 >> ~/.ssh/known_hosts
+
+    - name: Flush Redis and restart services
+      run: |
+        echo "🧹 Flushing Redis database..."
+        ssh -i ~/.ssh/id_rsa ubuntu@35.182.6.75 'cd /opt/silentcanary && \
+          echo "📋 Flushing all Redis keys..." && \
+          docker exec silentcanary-redis redis-cli FLUSHALL && \
+          echo "✅ Redis flushed successfully" && \
+          echo "" && \
+          echo "🔄 Restarting all services..." && \
+          docker-compose restart && \
+          echo "" && \
+          echo "⏳ Waiting 15 seconds for services to start..." && \
+          sleep 15 && \
+          echo "" && \
+          echo "📊 Checking service status..." && \
+          docker-compose ps && \
+          echo "" && \
+          echo "✅ Services restarted successfully!"'
