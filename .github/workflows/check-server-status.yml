@@ -1,0 +1,47 @@
+name: Check Server Status
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  check-status:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Add EC2 to known hosts
+      run: |
+        ssh-keyscan -H 35.182.6.75 >> ~/.ssh/known_hosts
+
+    - name: Check server and services
+      run: |
+        echo "🔍 Checking server status..."
+        ssh -i ~/.ssh/id_rsa ubuntu@35.182.6.75 'cd /opt/silentcanary && \
+          echo "📊 Docker container status:" && \
+          docker-compose ps && \
+          echo "" && \
+          echo "🏥 Docker container health:" && \
+          docker ps --format "table {{.Names}}\t{{.Status}}" && \
+          echo "" && \
+          echo "📋 Recent app logs:" && \
+          docker logs --tail 30 silentcanary-app && \
+          echo "" && \
+          echo "📋 Recent nginx logs:" && \
+          docker logs --tail 30 silentcanary-nginx && \
+          echo "" && \
+          echo "🌐 Checking if port 80 is listening:" && \
+          netstat -tuln | grep -E ":80|:443" || echo "No ports listening" && \
+          echo "" && \
+          echo "💾 Disk space:" && \
+          df -h && \
+          echo "" && \
+          echo "🧠 Memory usage:" && \
+          free -h'
