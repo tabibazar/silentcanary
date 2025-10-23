@@ -1,0 +1,36 @@
+name: Setup HTTPS
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  setup-https:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Add EC2 to known hosts
+      run: |
+        ssh-keyscan -H 35.182.6.75 >> ~/.ssh/known_hosts
+
+    - name: Setup HTTPS
+      run: |
+        echo "🚀 Setting up HTTPS..."
+        ssh -i ~/.ssh/id_rsa ubuntu@35.182.6.75 'cd /opt/silentcanary && \
+          echo "📥 Pulling latest code..." && \
+          git pull origin main && \
+          echo "" && \
+          echo "🔐 Running HTTPS setup script..." && \
+          chmod +x setup-https.sh && \
+          ./setup-https.sh && \
+          echo "" && \
+          echo "📊 Final service status:" && \
+          docker-compose ps'
